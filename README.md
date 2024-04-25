@@ -11,7 +11,7 @@ steam_monitor is a Python script which allows for real-time monitoring of Steam 
 - Possibility to control the running copy of the script via signals
 
 <p align="center">
-   <img src="./assets/steam_monitor.png" alt="steam_monitor_screenshot" width="70%"/>
+   <img src="./assets/steam_monitor.png" alt="steam_monitor_screenshot" width="80%"/>
 </p>
 
 ## Change Log
@@ -127,7 +127,7 @@ Make sure you defined your SMTP settings earlier (see [SMTP settings](#smtp-sett
 Example email:
 
 <p align="center">
-   <img src="./assets/steam_monitor_email_notifications.png" alt="steam_monitor_email_notifications" width="60%"/>
+   <img src="./assets/steam_monitor_email_notifications.png" alt="steam_monitor_email_notifications" width="70%"/>
 </p>
 
 If you want to be informed about any user status changes (online/away/snooze/offline) use  **-s** parameter:
