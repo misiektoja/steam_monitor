@@ -175,7 +175,7 @@ List of supported signals:
 
 So if you want to change functionality of the running tool, just send the proper signal to the desired copy of the script.
 
-I personally use **pkill** tool, so for example to toggle email notifications when user gets online or offline, for the tool instance monitoring the *misiektoja* user:
+I personally use **pkill** tool, so for example to toggle email notifications when user gets online or offline, for the tool instance monitoring the *76561198116287247* user:
 
 ```sh
 pkill -f -USR1 "python3 ./steam_monitor.py 76561198116287247"
