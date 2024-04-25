@@ -1,0 +1,3 @@
+python_dateutil
+Requests
+steam[client]
