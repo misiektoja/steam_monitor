@@ -66,7 +66,7 @@ Change the **STEAM_API_KEY** variable to respective value.
 
 ### SMTP settings
 
-If you want to use email notifications functionality you need to change the SMTP settings (host, port, user, password, sender, recipient).
+If you want to use email notifications functionality you need to change the SMTP settings (host, port, user, password, sender, recipient). If you leave the default settings then no notifications will be sent.
 
 ### Other settings
 
@@ -167,9 +167,9 @@ List of supported signals:
 
 | Signal | Description |
 | ----------- | ----------- |
-| USR1 | Toggle email notifications when user gets online or offline |
-| USR2 | Toggle email notifications when user starts/stops playing or changes game |
-| CONT | Toggle email notifications when user's status changes (online/away/snooze/offline) |
+| USR1 | Toggle email notifications when user gets online or offline (-a) |
+| USR2 | Toggle email notifications when user starts/stops playing or changes game (-g) |
+| CONT | Toggle email notifications when user's status changes (online/away/snooze/offline) (-s) |
 | TRAP | Increase the check timer for player activity when user is online (by 30 seconds) |
 | ABRT | Decrease check timer for player activity when user is online (by 30 seconds) |
 
@@ -185,7 +185,7 @@ pkill -f -USR1 "python3 ./steam_monitor.py 76561198116287247"
 
 Check other supported parameters using **-h**.
 
-You can of course combine all the parameters mentioned earlier together.
+You can combine all the parameters mentioned earlier.
 
 ## Colouring log output with GRC
 
