@@ -4,10 +4,10 @@ steam_monitor is a Python script which allows for real-time monitoring of Steam 
 
 ## Features
 
-- Real-time monitoring of Steam users gaming activity (including detection when user gets online/offline or played games)
+- Real-time tracking of Steam users gaming activity (including detection when user gets online/offline or played games)
 - Basics statistics for user activity (how long in different states, how long played game etc.)
 - Email notifications for different events (player gets online/away/snooze/offline, starts/finishes/changes game, errors)
-- Saving all gaming activity with timestamps to the CSV file
+- Saving all user activity with timestamps to the CSV file
 - Possibility to control the running copy of the script via signals
 
 <p align="center">
@@ -130,13 +130,13 @@ Example email:
    <img src="./assets/steam_monitor_email_notifications.png" alt="steam_monitor_email_notifications" width="80%"/>
 </p>
 
-If you want to be informed about any user status changes (online/away/snooze/offline) use  **-s** parameter:
+If you want to be informed about any user status changes (online/away/snooze/offline) use **-s** parameter:
 
 ```sh
 ./steam_monitor.py -r "https://steamcommunity.com/id/misiektoja/" -s
 ```
 
-If you also want to be informed about any game changes (user started/stopped playing or changed game) then use  **-g** parameter:
+If you want to be informed when user starts, stops or changes the played game then use **-g** parameter:
 
 ```sh
 ./steam_monitor.py -r "https://steamcommunity.com/id/misiektoja/" -g
@@ -144,7 +144,7 @@ If you also want to be informed about any game changes (user started/stopped pla
 
 ### Saving gaming activity to the CSV file
 
-If you want to save the gaming activity of the Steam user, use **-b** parameter with the name of the file (it will be automatically created if it does not exist):
+If you want to save all activities of the Steam user, use **-b** parameter with the name of the file (it will be automatically created if it does not exist):
 
 ```sh
 ./steam_monitor.py -r "https://steamcommunity.com/id/misiektoja/" -b steam_misiektoja.csv
@@ -167,8 +167,8 @@ List of supported signals:
 | Signal | Description |
 | ----------- | ----------- |
 | USR1 | Toggle email notifications when user gets online or offline (-a) |
-| USR2 | Toggle email notifications when user starts/stops playing or changes game (-g) |
-| CONT | Toggle email notifications when user's status changes (online/away/snooze/offline) (-s) |
+| USR2 | Toggle email notifications when user starts/stops/changes the game (-g) |
+| CONT | Toggle email notifications for all user status changes (online/away/snooze/offline) (-s) |
 | TRAP | Increase the check timer for player activity when user is online (by 30 seconds) |
 | ABRT | Decrease check timer for player activity when user is online (by 30 seconds) |
 
