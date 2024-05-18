@@ -455,7 +455,7 @@ def steam_monitor_user(steamid,error_notification,csv_file_name,csv_exists):
     if realname:
         print("Real name:\t\t\t" + str(realname))
 
-    print("Status:\t\t\t\t" + str(steam_personastates[status]).upper())
+    print("\nStatus:\t\t\t\t" + str(steam_personastates[status]).upper())
     print("Profile visibility:\t\t" + str(steam_visibilitystates[visibilitystate]))
 
     if timecreated:
@@ -478,7 +478,7 @@ def steam_monitor_user(steamid,error_notification,csv_file_name,csv_exists):
             print(f"\n* Last time user was available:\t{last_status_ts_weekday} {last_status_dt_str}")          
         status_str=str(steam_personastates[status]).upper()
         status_for=calculate_timespan(int(time.time()),int(status_old_ts),show_seconds=False)
-        print(f"* User is {status_str} for:\t\t{status_for}")       
+        print(f"\n* User is {status_str} for:\t\t{status_for}")       
 
     if gameid:
         print("\nUser is currently in-game:\t" + str(gamename))
@@ -652,6 +652,7 @@ if __name__ == "__main__":
 
     parser=argparse.ArgumentParser("steam_monitor")
     parser.add_argument("STEAM_ID", nargs="?", help="User's Steam ID (steam64)", type=int)  
+    parser.add_argument("-u", "--steam_api_key", help="Steam Web API key to override the value defined within the script (STEAM_API_KEY)", type=str)
     parser.add_argument("-r", "--resolve_community_url", help="Use Steam community URL & resolve it to Steam ID (steam64)", type=str)
     parser.add_argument("-a","--active_inactive_notification", help="Send email notification once user changes status from active to inactive and vice versa (online/offline)", action='store_true')
     parser.add_argument("-g","--game_change_notification", help="Send email notification once user starts/changes/stops playing the game", action='store_true')
@@ -667,6 +668,13 @@ if __name__ == "__main__":
         parser.print_help(sys.stderr)
         sys.exit(1)
 
+    if args.steam_api_key:
+        STEAM_API_KEY=args.steam_api_key
+
+    if not STEAM_API_KEY or STEAM_API_KEY=="your_steam_web_api_key":
+        print("* Error: STEAM_API_KEY (-u / --steam_api_key) value is empty or incorrect")
+        sys.exit(1)
+
     if args.check_interval:
         STEAM_CHECK_INTERVAL=args.check_interval
         TOOL_ALIVE_COUNTER=TOOL_ALIVE_INTERVAL/STEAM_CHECK_INTERVAL
@@ -677,20 +685,6 @@ if __name__ == "__main__":
     s_id=0
     if args.STEAM_ID:
         s_id=int(args.STEAM_ID)
-
-    if args.csv_file:
-        csv_enabled=True
-        csv_exists=os.path.isfile(args.csv_file)
-        try:
-            csv_file=open(args.csv_file, 'a', newline='', buffering=1)
-        except Exception as e:
-            print("\n* Error, CSV file cannot be opened for writing -", e)
-            sys.exit(1)
-        csv_file.close()
-    else:
-        csv_enabled=False
-        csv_file=None
-        csv_exists=False
 
     sys.stdout.write("* Checking internet connectivity ... ")
     sys.stdout.flush()
@@ -709,23 +703,40 @@ if __name__ == "__main__":
             sys.exit(1)
 
     if not s_id:
-        print("* Error: cannot get Steam ID needs to be defined !")
+        print("* Error: STEAM_ID needs to be defined !")
         sys.exit(1)
 
+    if args.csv_file:
+        csv_enabled=True
+        csv_exists=os.path.isfile(args.csv_file)
+        try:
+            csv_file=open(args.csv_file, 'a', newline='', buffering=1)
+        except Exception as e:
+            print("\n* Error, CSV file cannot be opened for writing -", e)
+            sys.exit(1)
+        csv_file.close()
+    else:
+        csv_enabled=False
+        csv_file=None
+        csv_exists=False
+
     if not args.disable_logging:
-        ST_LOGFILE=ST_LOGFILE + "_" + str(s_id) + ".log"
+        ST_LOGFILE=f"{ST_LOGFILE}_{s_id}.log"
         sys.stdout=Logger(ST_LOGFILE)
 
     active_inactive_notification=args.active_inactive_notification
     game_change_notification=args.game_change_notification
     status_notification=args.status_notification
 
-    print("* Steam timers: [check interval: " + display_time(STEAM_CHECK_INTERVAL) + "] [active check interval: " + display_time(STEAM_ACTIVE_CHECK_INTERVAL) + "]")
-    print("* Email notifications: [all status changes = " + str(status_notification) + "] [game changes = " + str(game_change_notification) + "] [active/inactive status changes = " + str(active_inactive_notification) + "] [errors = " + str(args.error_notification) + "]")
-    print("* Output logging disabled:",str(args.disable_logging))
-    print("* CSV logging enabled:",str(csv_enabled))
+    print(f"* Steam timers:\t\t\t[check interval: {display_time(STEAM_CHECK_INTERVAL)}] [active check interval: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]")
+    print(f"* Email notifications:\t\t[active/inactive status changes = {active_inactive_notification}] [game changes = {game_change_notification}]\n*\t\t\t\t[all status changes = {status_notification}] [errors = {args.error_notification}]")
+    print(f"* Output logging disabled:\t{args.disable_logging}")
+    if csv_enabled:
+        print(f"* CSV logging enabled:\t\t{csv_enabled} ({args.csv_file})")
+    else:
+        print(f"* CSV logging enabled:\t\t{csv_enabled}")
 
-    out="\nMonitoring user with Steam ID %d" % s_id
+    out=f"\nMonitoring user with Steam ID {s_id}"
     print(out)
     print("-" * len(out))
 
