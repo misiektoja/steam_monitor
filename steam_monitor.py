@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.0
+v1.1
 
 Script implementing real-time monitoring of Steam players activity:
 https://github.com/misiektoja/steam_monitor/
@@ -13,14 +13,29 @@ python-dateutil
 requests
 """
 
-VERSION=1.0
+VERSION=1.1
 
 # ---------------------------
 # CONFIGURATION SECTION START
 # ---------------------------
 
 # Get the Steam Web API key from: http://steamcommunity.com/dev/apikey
-STEAM_API_KEY = "your_steam_web_api_key"
+STEAM_API_KEY="your_steam_web_api_key"
+
+# SMTP settings for sending email notifications
+SMTP_HOST="your_smtp_server_ssl"
+SMTP_PORT=587
+SMTP_USER="your_smtp_user"
+SMTP_PASSWORD="your_smtp_password"
+SMTP_SSL=True
+SENDER_EMAIL="your_sender_email"
+#SMTP_HOST="your_smtp_server_plaintext"
+#SMTP_PORT=25
+#SMTP_USER="your_smtp_user"
+#SMTP_PASSWORD="your_smtp_password"
+#SMTP_SSL=False
+#SENDER_EMAIL="your_sender_email"
+RECEIVER_EMAIL="your_receiver_email"
 
 # How often do we perform checks for player activity when user is offline; in seconds
 STEAM_CHECK_INTERVAL=90 # 1.5 min
@@ -40,23 +55,8 @@ CHECK_INTERNET_URL='http://www.google.com/'
 # Default value for initial checking of internet connectivity; in seconds
 CHECK_INTERNET_TIMEOUT=5
 
-# SMTP settings for sending email notifications
-SMTP_HOST = "your_smtp_server_ssl"
-SMTP_PORT = 587
-SMTP_USER = "your_smtp_user"
-SMTP_PASSWORD = "your_smtp_password"
-SMTP_SSL = True
-SENDER_EMAIL = "your_sender_email"
-#SMTP_HOST = "your_smtp_server_plaintext"
-#SMTP_PORT = 25
-#SMTP_USER = "your_smtp_user"
-#SMTP_PASSWORD = "your_smtp_password"
-#SMTP_SSL = False
-#SENDER_EMAIL = "your_sender_email"
-RECEIVER_EMAIL = "your_receiver_email"
-
 # The name of the .log file; the tool by default will output its messages to steam_monitor_usersteamid.log file
-st_logfile="steam_monitor"
+ST_LOGFILE="steam_monitor"
 
 # Value used by signal handlers increasing/decreasing the check for player activity when user is online/away/snooze; in seconds
 STEAM_ACTIVE_CHECK_SIGNAL_VALUE=30 # 30 seconds
@@ -67,11 +67,11 @@ STEAM_ACTIVE_CHECK_SIGNAL_VALUE=30 # 30 seconds
 
 TOOL_ALIVE_COUNTER=TOOL_ALIVE_INTERVAL/STEAM_CHECK_INTERVAL
 
-stdout_bck = None
-csvfieldnames = ['Date', 'Status', 'Game name', 'Game ID']
+stdout_bck=None
+csvfieldnames=['Date', 'Status', 'Game name', 'Game ID']
 
-steam_personastates = ["offline", "online", "busy", "away", "snooze", "looking to trade", "looking to play"]
-steam_visibilitystates = ["private", "private", "private", "public"]
+steam_personastates=["offline", "online", "busy", "away", "snooze", "looking to trade", "looking to play"]
+steam_visibilitystates=["private", "private", "private", "public"]
 
 active_inactive_notification=False
 game_change_notification=False
@@ -100,8 +100,8 @@ import steam.webapi
 # Logger class to output messages to stdout and log file
 class Logger(object):
     def __init__(self, filename):
-        self.terminal = sys.stdout
-        self.logfile = open(filename, "a", buffering=1)
+        self.terminal=sys.stdout
+        self.logfile=open(filename, "a", buffering=1)
 
     def write(self, message):
         self.terminal.write(message)
@@ -114,7 +114,7 @@ class Logger(object):
 
 # Signal handler when user presses Ctrl+C
 def signal_handler(sig, frame):
-    sys.stdout = stdout_bck
+    sys.stdout=stdout_bck
     print('\n* You pressed Ctrl+C, tool is terminated.')
     sys.exit(0)
 
@@ -122,7 +122,7 @@ def signal_handler(sig, frame):
 def check_internet():
     url=CHECK_INTERNET_URL
     try:
-        _ = req.get(url, timeout=CHECK_INTERNET_TIMEOUT)
+        _=req.get(url, timeout=CHECK_INTERNET_TIMEOUT)
         print("OK")
         return True
     except Exception as e:
@@ -132,7 +132,7 @@ def check_internet():
 
 # Function to convert absolute value of seconds to human readable format
 def display_time(seconds, granularity=2):
-    intervals = (
+    intervals=(
         ('years', 31556952), # approximation
         ('months', 2629746), # approximation
         ('weeks', 604800),  # 60 * 60 * 24 * 7
@@ -141,15 +141,15 @@ def display_time(seconds, granularity=2):
         ('minutes', 60),
         ('seconds', 1),
     )
-    result = []
+    result=[]
 
     if seconds > 0:
         for name, count in intervals:
-            value = seconds // count
+            value=seconds // count
             if value:
                 seconds -= value * count
                 if value == 1:
-                    name = name.rstrip('s')
+                    name=name.rstrip('s')
                 result.append("{} {}".format(value, name))
         return ', '.join(result[:granularity])
     else:
@@ -157,7 +157,7 @@ def display_time(seconds, granularity=2):
 
 # Function to calculate time span between two timestamps in seconds
 def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True, show_minutes=True, show_seconds=True, granularity=3):
-    result = []
+    result=[]
     intervals=['years', 'months', 'weeks', 'days', 'hours', 'minutes', 'seconds']
     ts1=timestamp1
     ts2=timestamp2
@@ -182,7 +182,7 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
         ts_diff=ts1-ts2
     else:
         ts_diff=ts2-ts1
-        dt1, dt2 = dt2, dt1
+        dt1, dt2=dt2, dt1
 
     if ts_diff>0:
         date_diff=relativedelta.relativedelta(dt1, dt2)
@@ -209,7 +209,7 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
             if interval>0:
                 name=intervals[index]
                 if interval==1:
-                    name = name.rstrip('s')
+                    name=name.rstrip('s')
                 result.append("{} {}".format(interval, name))
 #        return ', '.join(result)
         return ', '.join(result[:granularity])
@@ -221,25 +221,25 @@ def send_email(subject,body,body_html,use_ssl):
 
     try:     
         if use_ssl:
-            ssl_context = ssl.create_default_context()
-            smtpObj = smtplib.SMTP(SMTP_HOST,SMTP_PORT)
+            ssl_context=ssl.create_default_context()
+            smtpObj=smtplib.SMTP(SMTP_HOST,SMTP_PORT)
             smtpObj.starttls(context=ssl_context)
         else:
-            smtpObj = smtplib.SMTP(SMTP_HOST,SMTP_PORT)
+            smtpObj=smtplib.SMTP(SMTP_HOST,SMTP_PORT)
         smtpObj.login(SMTP_USER,SMTP_PASSWORD)
-        email_msg = MIMEMultipart('alternative')
-        email_msg["From"] = SENDER_EMAIL
-        email_msg["To"] = RECEIVER_EMAIL
-        email_msg["Subject"] =  Header(subject, 'utf-8')
+        email_msg=MIMEMultipart('alternative')
+        email_msg["From"]=SENDER_EMAIL
+        email_msg["To"]=RECEIVER_EMAIL
+        email_msg["Subject"]= Header(subject, 'utf-8')
 
         if body:
-            part1 = MIMEText(body, 'plain')
-            part1 = MIMEText(body.encode('utf-8'), 'plain', _charset='utf-8')
+            part1=MIMEText(body, 'plain')
+            part1=MIMEText(body.encode('utf-8'), 'plain', _charset='utf-8')
             email_msg.attach(part1)
 
         if body_html:       
-            part2 = MIMEText(body_html, 'html')
-            part2 = MIMEText(body_html.encode('utf-8'), 'html', _charset='utf-8')
+            part2=MIMEText(body_html, 'html')
+            part2=MIMEText(body_html.encode('utf-8'), 'html', _charset='utf-8')
             email_msg.attach(part2)
 
         smtpObj.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, email_msg.as_string())
@@ -253,7 +253,7 @@ def send_email(subject,body,body_html,use_ssl):
 def write_csv_entry(csv_file_name, timestamp, status, gamename, gameid):
     try:
         csv_file=open(csv_file_name, 'a', newline='', buffering=1)
-        csvwriter = csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
+        csvwriter=csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
         csvwriter.writerow({'Date': timestamp, 'Status': status, 'Game name': gamename, 'Game ID': gameid})
         csv_file.close()
     except Exception as e:
@@ -350,19 +350,19 @@ def decrease_active_check_signal_handler(sig, frame):
 # Main function monitoring gaming activity of the specified Steam user
 def steam_monitor_user(steamid,error_notification,csv_file_name,csv_exists):
 
-    alive_counter = 0
-    status_ts = 0
-    status_old_ts = 0
-    status_online_start_ts = 0
-    status_online_start_ts_old = 0
-    game_ts = 0
-    game_old_ts = 0
-    status = 0
+    alive_counter=0
+    status_ts=0
+    status_old_ts=0
+    status_online_start_ts=0
+    status_online_start_ts_old=0
+    game_ts=0
+    game_old_ts=0
+    status=0
 
     try:
         if csv_file_name:
             csv_file=open(csv_file_name, 'a', newline='', buffering=1)
-            csvwriter = csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
+            csvwriter=csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
             if not csv_exists:
                 csvwriter.writeheader()
             csv_file.close()
@@ -394,22 +394,22 @@ def steam_monitor_user(steamid,error_notification,csv_file_name,csv_exists):
     gameid=s_user["response"]["players"][0].get("gameid")
     gamename=s_user["response"]["players"][0].get("gameextrainfo","")
 
-    status_old_ts = int(time.time())
-    status_old_ts_bck = status_old_ts
+    status_old_ts=int(time.time())
+    status_old_ts_bck=status_old_ts
 
     if status > 0:
         status_online_start_ts=status_old_ts
         status_online_start_ts_old=status_online_start_ts
 
-    steam_last_status_file = "steam_" + str(username) + "_last_status.json"
-    last_status_read = []
-    last_status_ts = 0
-    last_status = -1
+    steam_last_status_file="steam_" + str(username) + "_last_status.json"
+    last_status_read=[]
+    last_status_ts=0
+    last_status=-1
 
     try:
         if os.path.isfile(steam_last_status_file):
             with open(steam_last_status_file, 'r') as f:
-                last_status_read = json.load(f)
+                last_status_read=json.load(f)
             if last_status_read:
                 last_status_ts=last_status_read[0]
                 last_status=last_status_read[1]
@@ -463,7 +463,7 @@ def steam_monitor_user(steamid,error_notification,csv_file_name,csv_exists):
 
     if last_status_ts==0:
         if lastlogoff and status==0:
-            status_old_ts = lastlogoff
+            status_old_ts=lastlogoff
         last_status_to_save=[]
         last_status_to_save.append(status_old_ts)
         last_status_to_save.append(status)
@@ -482,7 +482,7 @@ def steam_monitor_user(steamid,error_notification,csv_file_name,csv_exists):
 
     if gameid:
         print("\nUser is currently in-game:\t" + str(gamename))
-        game_old_ts = int(time.time())
+        game_old_ts=int(time.time())
 
     if "games" in s_played["response"].keys():
         print("\nList of recently played games:")
@@ -508,7 +508,7 @@ def steam_monitor_user(steamid,error_notification,csv_file_name,csv_exists):
             status=int(s_user["response"]["players"][0]["personastate"])
             gameid=s_user["response"]["players"][0].get("gameid")
             gamename=s_user["response"]["players"][0].get("gameextrainfo","")           
-            email_sent = False
+            email_sent=False
         except Exception as e:
             if status>0:
                 sleep_interval=STEAM_ACTIVE_CHECK_INTERVAL
@@ -530,12 +530,12 @@ def steam_monitor_user(steamid,error_notification,csv_file_name,csv_exists):
 
             continue
 
-        change = False
+        change=False
         act_inact_flag=False
 
         # Player status changed
         if status != status_old:
-            status_ts = int(time.time())
+            status_ts=int(time.time())
 
             last_status_to_save=[]
             last_status_to_save.append(status_ts)
@@ -582,11 +582,11 @@ def steam_monitor_user(steamid,error_notification,csv_file_name,csv_exists):
             if status_notification or (active_inactive_notification and act_inact_flag):
                 print("Sending email notification to",RECEIVER_EMAIL)
                 send_email(m_subject,m_body,"",SMTP_SSL)
-            status_old_ts = status_ts
+            status_old_ts=status_ts
                    
         # Player started/stopped/changed the game
         if gameid != gameid_old: 
-            game_ts = int(time.time())
+            game_ts=int(time.time())
 
             if gameid_old and gameid:
                 print(f"Steam user " + username + " changed game from '" + gamename_old + "' to '" + gamename + "' after " + calculate_timespan(int(game_ts),int(game_old_ts)))
@@ -609,10 +609,10 @@ def steam_monitor_user(steamid,error_notification,csv_file_name,csv_exists):
                 print("Sending email notification to",RECEIVER_EMAIL)
                 send_email(m_subject,m_body,"",SMTP_SSL)
 
-            game_old_ts = game_ts
+            game_old_ts=game_ts
 
         if change:
-            alive_counter = 0
+            alive_counter=0
 
             try: 
                 if csv_file_name:
@@ -629,7 +629,7 @@ def steam_monitor_user(steamid,error_notification,csv_file_name,csv_exists):
 
         if alive_counter >= TOOL_ALIVE_COUNTER and status==0:
             print_cur_ts("Alive check, timestamp:\t\t")
-            alive_counter = 0
+            alive_counter=0
 
         if status>0:
             time.sleep(STEAM_ACTIVE_CHECK_INTERVAL)
@@ -638,7 +638,7 @@ def steam_monitor_user(steamid,error_notification,csv_file_name,csv_exists):
 
 if __name__ == "__main__":
 
-    stdout_bck = sys.stdout
+    stdout_bck=sys.stdout
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
@@ -648,25 +648,24 @@ if __name__ == "__main__":
     except:
         print("* Cannot clear the screen contents")
 
-    print("Steam Monitoring Tool",VERSION,"\n")
+    print(f"Steam Monitoring Tool v{VERSION}\n")
 
-    parser = argparse.ArgumentParser("steam_monitor")
-    parser.add_argument("steamid", nargs="?", default=103582791429521412, help="User's Steam ID (steam64)", type=int)
+    parser=argparse.ArgumentParser("steam_monitor")
+    parser.add_argument("STEAM_ID", nargs="?", help="User's Steam ID (steam64)", type=int)  
     parser.add_argument("-r", "--resolve_community_url", help="Use Steam community URL & resolve it to Steam ID (steam64)", type=str)
-    parser.add_argument("-b", "--csv_file", help="Write all status & game changes to CSV file", type=str, metavar="CSV_FILENAME")
-    parser.add_argument("-s","--status_notification", help="Send email notification once user changes status", action='store_true')
-    parser.add_argument("-g","--game_change_notification", help="Send email notification once user changes played game", action='store_true')
-    parser.add_argument("-a","--active_inactive_notification", help="Send email notification once user changes status from active to inactive and vice versa", action='store_true')
+    parser.add_argument("-a","--active_inactive_notification", help="Send email notification once user changes status from active to inactive and vice versa (online/offline)", action='store_true')
+    parser.add_argument("-g","--game_change_notification", help="Send email notification once user starts/changes/stops playing the game", action='store_true')
+    parser.add_argument("-s","--status_notification", help="Send email notification for all player status changes (online/away/snooze/offline)", action='store_true')
     parser.add_argument("-e","--error_notification", help="Disable sending email notifications in case of errors like invalid API key", action='store_false')
     parser.add_argument("-c", "--check_interval", help="Time between monitoring checks if user is offline, in seconds", type=int)
-    parser.add_argument("-k", "--active_check_interval", help="Time between monitoring checks if user is not offline, in seconds", type=int)
+    parser.add_argument("-k", "--active_check_interval", help="Time between monitoring checks if user is NOT offline, in seconds", type=int)
+    parser.add_argument("-b", "--csv_file", help="Write all status & game changes to CSV file", type=str, metavar="CSV_FILENAME")
     parser.add_argument("-d", "--disable_logging", help="Disable logging to file 'steam_monitor_user.log' file", action='store_true')
-    args = parser.parse_args()
+    args=parser.parse_args()
 
-    sys.stdout.write("* Checking internet connectivity ... ")
-    sys.stdout.flush()
-    check_internet()
-    print("")
+    if len(sys.argv)==1:
+        parser.print_help(sys.stderr)
+        sys.exit(1)
 
     if args.check_interval:
         STEAM_CHECK_INTERVAL=args.check_interval
@@ -675,7 +674,9 @@ if __name__ == "__main__":
     if args.active_check_interval:
         STEAM_ACTIVE_CHECK_INTERVAL=args.active_check_interval
 
-    s_id=int(args.steamid)
+    s_id=0
+    if args.STEAM_ID:
+        s_id=int(args.STEAM_ID)
 
     if args.csv_file:
         csv_enabled=True
@@ -691,24 +692,29 @@ if __name__ == "__main__":
         csv_file=None
         csv_exists=False
 
+    sys.stdout.write("* Checking internet connectivity ... ")
+    sys.stdout.flush()
+    check_internet()
+    print("")
+
     if args.resolve_community_url:
         print("* Resolving Steam community URL to Steam ID:", args.resolve_community_url,"\n")
         try:
             s_id=steam.steamid.steam64_from_url(args.resolve_community_url)
+            if s_id:
+                s_id=int(s_id)
         except Exception as e:
             print("* Error: cannot get Steam ID for specified community URL")
             print("*", e)
             sys.exit(1)
 
     if not s_id:
-        print("* Error: cannot get Steam ID for specified community URL")
+        print("* Error: cannot get Steam ID needs to be defined !")
         sys.exit(1)
 
-    s_id=int(s_id)
-
     if not args.disable_logging:
-        st_logfile = st_logfile + "_" + str(s_id) + ".log"
-        sys.stdout = Logger(st_logfile)
+        ST_LOGFILE=ST_LOGFILE + "_" + str(s_id) + ".log"
+        sys.stdout=Logger(ST_LOGFILE)
 
     active_inactive_notification=args.active_inactive_notification
     game_change_notification=args.game_change_notification
@@ -719,7 +725,7 @@ if __name__ == "__main__":
     print("* Output logging disabled:",str(args.disable_logging))
     print("* CSV logging enabled:",str(csv_enabled))
 
-    out = "\nMonitoring user with Steam ID %d" % s_id
+    out="\nMonitoring user with Steam ID %d" % s_id
     print(out)
     print("-" * len(out))
 
@@ -731,6 +737,6 @@ if __name__ == "__main__":
 
     steam_monitor_user(s_id,args.error_notification,args.csv_file,csv_exists)
 
-    sys.stdout = stdout_bck
+    sys.stdout=stdout_bck
     sys.exit(0)
 
