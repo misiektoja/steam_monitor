@@ -95,6 +95,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import argparse
 import csv
+import platform
 import steam.steamid
 import steam.client
 import steam.webapi
@@ -104,7 +105,7 @@ import steam.webapi
 class Logger(object):
     def __init__(self, filename):
         self.terminal = sys.stdout
-        self.logfile = open(filename, "a", buffering=1)
+        self.logfile = open(filename, "a", buffering=1, encoding="utf-8")
 
     def write(self, message):
         self.terminal.write(message)
@@ -261,7 +262,7 @@ def send_email(subject, body, body_html, use_ssl):
 # Function to write CSV entry
 def write_csv_entry(csv_file_name, timestamp, status, gamename, gameid):
     try:
-        csv_file = open(csv_file_name, 'a', newline='', buffering=1)
+        csv_file = open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8")
         csvwriter = csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
         csvwriter.writerow({'Date': timestamp, 'Status': status, 'Game name': gamename, 'Game ID': gameid})
         csv_file.close()
@@ -382,7 +383,7 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
 
     try:
         if csv_file_name:
-            csv_file = open(csv_file_name, 'a', newline='', buffering=1)
+            csv_file = open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8")
             csvwriter = csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
             if not csv_exists:
                 csvwriter.writeheader()
@@ -429,7 +430,7 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
 
     try:
         if os.path.isfile(steam_last_status_file):
-            with open(steam_last_status_file, 'r') as f:
+            with open(steam_last_status_file, 'r', encoding="utf-8") as f:
                 last_status_read = json.load(f)
             if last_status_read:
                 last_status_ts = last_status_read[0]
@@ -459,7 +460,7 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
                     last_status_to_save = []
                     last_status_to_save.append(status_old_ts)
                     last_status_to_save.append(status)
-                    with open(steam_last_status_file, 'w') as f:
+                    with open(steam_last_status_file, 'w', encoding="utf-8") as f:
                         json.dump(last_status_to_save, f, indent=2)
 
     except Exception as e:
@@ -488,7 +489,7 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
         last_status_to_save = []
         last_status_to_save.append(status_old_ts)
         last_status_to_save.append(status)
-        with open(steam_last_status_file, 'w') as f:
+        with open(steam_last_status_file, 'w', encoding="utf-8") as f:
             json.dump(last_status_to_save, f, indent=2)
 
     if status_old_ts != status_old_ts_bck:
@@ -561,7 +562,7 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
             last_status_to_save = []
             last_status_to_save.append(status_ts)
             last_status_to_save.append(status)
-            with open(steam_last_status_file, 'w') as f:
+            with open(steam_last_status_file, 'w', encoding="utf-8") as f:
                 json.dump(last_status_to_save, f, indent=2)
 
             print("Steam user " + username + " changed status from " + steam_personastates[status_old] + " to " + steam_personastates[status])
@@ -674,7 +675,10 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, signal_handler)
 
     try:
-        os.system('clear')
+        if platform.system() == 'Windows':
+            os.system('cls')
+        else:
+            os.system('clear')
     except:
         print("* Cannot clear the screen contents")
 
@@ -740,7 +744,7 @@ if __name__ == "__main__":
         csv_enabled = True
         csv_exists = os.path.isfile(args.csv_file)
         try:
-            csv_file = open(args.csv_file, 'a', newline='', buffering=1)
+            csv_file = open(args.csv_file, 'a', newline='', buffering=1, encoding="utf-8")
         except Exception as e:
             print("\n* Error, CSV file cannot be opened for writing -", e)
             sys.exit(1)
@@ -770,11 +774,13 @@ if __name__ == "__main__":
     print(out)
     print("-" * len(out))
 
-    signal.signal(signal.SIGUSR1, toggle_active_inactive_notifications_signal_handler)
-    signal.signal(signal.SIGUSR2, toggle_game_change_notifications_signal_handler)
-    signal.signal(signal.SIGCONT, toggle_all_status_changes_notifications_signal_handler)
-    signal.signal(signal.SIGTRAP, increase_active_check_signal_handler)
-    signal.signal(signal.SIGABRT, decrease_active_check_signal_handler)
+    # We define signal handlers only for Linux, Unix & MacOS since Windows has limited number of signals supported
+    if platform.system() != 'Windows':
+        signal.signal(signal.SIGUSR1, toggle_active_inactive_notifications_signal_handler)
+        signal.signal(signal.SIGUSR2, toggle_game_change_notifications_signal_handler)
+        signal.signal(signal.SIGCONT, toggle_all_status_changes_notifications_signal_handler)
+        signal.signal(signal.SIGTRAP, increase_active_check_signal_handler)
+        signal.signal(signal.SIGABRT, decrease_active_check_signal_handler)
 
     steam_monitor_user(s_id, args.error_notification, args.csv_file, csv_exists)
 
