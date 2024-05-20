@@ -20,9 +20,10 @@ VERSION = 1.1
 # ---------------------------
 
 # Get the Steam Web API key from: http://steamcommunity.com/dev/apikey
+# Put the respective value below (or use -u parameter)
 STEAM_API_KEY = "your_steam_web_api_key"
 
-# SMTP settings for sending email notifications
+# SMTP settings for sending email notifications, you can leave it as it is below and no notifications will be sent
 SMTP_HOST = "your_smtp_server_ssl"
 SMTP_PORT = 587
 SMTP_USER = "your_smtp_user"
@@ -46,8 +47,8 @@ STEAM_ACTIVE_CHECK_INTERVAL = 30  # 30 sec
 # How often do we perform alive check by printing "alive check" message in the output; in seconds
 TOOL_ALIVE_INTERVAL = 21600  # 6 hours
 
-# If user gets offline and online again during the next OFFLINE_INTERRUPT seconds (short offline interruption) we set online start timestamp back to the previous one
-OFFLINE_INTERRUPT = 360  # 6 mins
+# If user gets offline and online again (for example due to rebooting the PC) during the next OFFLINE_INTERRUPT seconds then we set online start timestamp back to the previous one (so called short offline interruption)
+OFFLINE_INTERRUPT = 420  # 7 mins
 
 # URL we check in the beginning to make sure we have internet connectivity
 CHECK_INTERNET_URL = 'http://www.google.com/'
@@ -157,7 +158,7 @@ def display_time(seconds, granularity=2):
                 seconds -= value * count
                 if value == 1:
                     name = name.rstrip('s')
-                result.append("{} {}".format(value, name))
+                result.append(f"{value} {name}")
         return ', '.join(result[:granularity])
     else:
         return '0 seconds'
@@ -218,8 +219,7 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
                 name = intervals[index]
                 if interval == 1:
                     name = name.rstrip('s')
-                result.append("{} {}".format(interval, name))
-#        return ', '.join(result)
+                result.append(f"{interval} {name}")
         return ', '.join(result[:granularity])
     else:
         return '0 seconds'
@@ -227,6 +227,39 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
 
 # Function to send email notification
 def send_email(subject, body, body_html, use_ssl):
+    fqdn_re = re.compile(r'(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)')
+    email_re = re.compile(r'[^@]+@[^@]+\.[^@]+')
+
+    try:
+        is_ip = ipaddress.ip_address(str(SMTP_HOST))
+    except ValueError:
+        if not fqdn_re.search(str(SMTP_HOST)):
+            print("Error sending email - SMTP settings are incorrect (invalid IP address/FQDN in SMTP_HOST)")
+            return 1
+
+    try:
+        port = int(SMTP_PORT)
+        if not (1 <= port <= 65535):
+            raise ValueError
+    except ValueError:
+        print("Error sending email - SMTP settings are incorrect (invalid port number in SMTP_PORT)")
+        return 1
+
+    if not email_re.search(str(SENDER_EMAIL)) or not email_re.search(str(RECEIVER_EMAIL)):
+        print("Error sending email - SMTP settings are incorrect (invalid email in SENDER_EMAIL or RECEIVER_EMAIL)")
+        return 1
+
+    if not SMTP_USER or not isinstance(SMTP_USER, str) or SMTP_USER == "your_smtp_user" or not SMTP_PASSWORD or not isinstance(SMTP_PASSWORD, str) or SMTP_PASSWORD == "your_smtp_password":
+        print("Error sending email - SMTP settings are incorrect (check SMTP_USER & SMTP_PASSWORD variables)")
+        return 1
+
+    if not subject or not isinstance(subject, str):
+        print("Error sending email - SMTP settings are incorrect (subject is not a string or is empty)")
+        return 1
+
+    if not body and not body_html:
+        print("Error sending email - SMTP settings are incorrect (body and body_html cannot be empty at the same time)")
+        return 1
 
     try:
         if use_ssl:
@@ -254,7 +287,7 @@ def send_email(subject, body, body_html, use_ssl):
         smtpObj.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, email_msg.as_string())
         smtpObj.quit()
     except Exception as e:
-        print("Error sending email -", e)
+        print(f"Error sending email - {e}")
         return 1
     return 0
 
@@ -746,7 +779,7 @@ if __name__ == "__main__":
         try:
             csv_file = open(args.csv_file, 'a', newline='', buffering=1, encoding="utf-8")
         except Exception as e:
-            print("\n* Error, CSV file cannot be opened for writing -", e)
+            print(f"* Error: CSV file cannot be opened for writing - {e}")
             sys.exit(1)
         csv_file.close()
     else:
