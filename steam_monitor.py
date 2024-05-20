@@ -463,43 +463,45 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
     last_status_ts = 0
     last_status = -1
 
-    try:
-        if os.path.isfile(steam_last_status_file):
+    if os.path.isfile(steam_last_status_file):
+        try:
             with open(steam_last_status_file, 'r', encoding="utf-8") as f:
                 last_status_read = json.load(f)
-            if last_status_read:
-                last_status_ts = last_status_read[0]
-                last_status = last_status_read[1]
-                steam_last_status_file_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(steam_last_status_file)))
-                steam_last_status_file_mdate = steam_last_status_file_mdate_dt.strftime("%d %b %Y, %H:%M:%S")
-                steam_last_status_file_mdate_weekday = str(calendar.day_abbr[(steam_last_status_file_mdate_dt).weekday()])
+        except Exception as e:
+            print(f"* Cannot load last status from '{steam_last_status_file}' file - {e}")
+        if last_status_read:
+            last_status_ts = last_status_read[0]
+            last_status = last_status_read[1]
+            steam_last_status_file_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(steam_last_status_file)))
+            steam_last_status_file_mdate = steam_last_status_file_mdate_dt.strftime("%d %b %Y, %H:%M:%S")
+            steam_last_status_file_mdate_weekday = str(calendar.day_abbr[(steam_last_status_file_mdate_dt).weekday()])
 
-                print(f"* Last status loaded from file '{steam_last_status_file}' ({steam_last_status_file_mdate_weekday} {steam_last_status_file_mdate})")
+            print(f"* Last status loaded from file '{steam_last_status_file}' ({steam_last_status_file_mdate_weekday} {steam_last_status_file_mdate})")
 
-                if last_status_ts > 0:
-                    last_status_dt_str = datetime.fromtimestamp(last_status_ts).strftime("%d %b %Y, %H:%M:%S")
-                    last_status_str = str(steam_personastates[last_status]).upper()
-                    last_status_ts_weekday = str(calendar.day_abbr[(datetime.fromtimestamp(last_status_ts)).weekday()])
-                    print(f"* Last status read from file: {last_status_str} ({last_status_ts_weekday} {last_status_dt_str})")
+            if last_status_ts > 0:
+                last_status_dt_str = datetime.fromtimestamp(last_status_ts).strftime("%d %b %Y, %H:%M:%S")
+                last_status_str = str(steam_personastates[last_status]).upper()
+                last_status_ts_weekday = str(calendar.day_abbr[(datetime.fromtimestamp(last_status_ts)).weekday()])
+                print(f"* Last status read from file: {last_status_str} ({last_status_ts_weekday} {last_status_dt_str})")
 
-                    if lastlogoff and status == 0 and lastlogoff > last_status_ts:
-                        status_ts_old = lastlogoff
-                    elif status == 0:
-                        status_ts_old = last_status_ts
-                    if status > 0 and status == last_status:
-                        status_online_start_ts = last_status_ts
-                        status_online_start_ts_old = status_online_start_ts
-                        status_ts_old = last_status_ts
+                if lastlogoff and status == 0 and lastlogoff > last_status_ts:
+                    status_ts_old = lastlogoff
+                elif status == 0:
+                    status_ts_old = last_status_ts
+                if status > 0 and status == last_status:
+                    status_online_start_ts = last_status_ts
+                    status_online_start_ts_old = status_online_start_ts
+                    status_ts_old = last_status_ts
 
-                if last_status_ts > 0 and status != last_status:
-                    last_status_to_save = []
-                    last_status_to_save.append(status_ts_old)
-                    last_status_to_save.append(status)
-                    with open(steam_last_status_file, 'w', encoding="utf-8") as f:
-                        json.dump(last_status_to_save, f, indent=2)
-
-    except Exception as e:
-        print(f"Error - {e}")
+    if last_status_ts > 0 and status != last_status:
+        last_status_to_save = []
+        last_status_to_save.append(status_ts_old)
+        last_status_to_save.append(status)
+        try:
+            with open(steam_last_status_file, 'w', encoding="utf-8") as f:
+                json.dump(last_status_to_save, f, indent=2)
+        except Exception as e:
+            print(f"* Cannot save last status to '{steam_last_status_file}' file - {e}")
 
     try:
         if csv_file_name and (status != last_status):
@@ -524,8 +526,11 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
         last_status_to_save = []
         last_status_to_save.append(status_ts_old)
         last_status_to_save.append(status)
-        with open(steam_last_status_file, 'w', encoding="utf-8") as f:
-            json.dump(last_status_to_save, f, indent=2)
+        try:
+            with open(steam_last_status_file, 'w', encoding="utf-8") as f:
+                json.dump(last_status_to_save, f, indent=2)
+        except Exception as e:
+            print(f"* Cannot save last status to '{steam_last_status_file}' file - {e}")
 
     if status_ts_old != status_ts_old_bck:
         if status == 0:
@@ -595,8 +600,11 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
             last_status_to_save = []
             last_status_to_save.append(status_ts)
             last_status_to_save.append(status)
-            with open(steam_last_status_file, 'w', encoding="utf-8") as f:
-                json.dump(last_status_to_save, f, indent=2)
+            try:
+                with open(steam_last_status_file, 'w', encoding="utf-8") as f:
+                    json.dump(last_status_to_save, f, indent=2)
+            except Exception as e:
+                print(f"* Cannot save last status to '{steam_last_status_file}' file - {e}")
 
             print(f"Steam user {username} changed status from {steam_personastates[status_old]} to {steam_personastates[status]}")
             print(f"User was {steam_personastates[status_old]} for {calculate_timespan(int(status_ts), int(status_ts_old))} ({get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)})")
