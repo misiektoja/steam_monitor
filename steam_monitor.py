@@ -556,6 +556,7 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
     print_cur_ts("\nTimestamp:\t\t\t")
 
     alive_counter = 0
+    email_sent = False
 
     # Main loop
     while True:
@@ -726,7 +727,7 @@ if __name__ == "__main__":
     print(f"Steam Monitoring Tool v{VERSION}\n")
 
     parser = argparse.ArgumentParser("steam_monitor")
-    parser.add_argument("STEAM_ID", nargs="?", help="User's Steam ID (steam64)", type=int)
+    parser.add_argument("STEAM64_ID", nargs="?", help="User's Steam ID (steam64)", type=int)
     parser.add_argument("-u", "--steam_api_key", help="Steam Web API key to override the value defined within the script (STEAM_API_KEY)", type=str)
     parser.add_argument("-r", "--resolve_community_url", help="Use Steam community URL & resolve it to Steam ID (steam64)", type=str)
     parser.add_argument("-a", "--active_inactive_notification", help="Send email notification once user changes status from active to inactive and vice versa (online/offline)", action='store_true')
@@ -758,8 +759,8 @@ if __name__ == "__main__":
         STEAM_ACTIVE_CHECK_INTERVAL = args.active_check_interval
 
     s_id = 0
-    if args.STEAM_ID:
-        s_id = int(args.STEAM_ID)
+    if args.STEAM64_ID:
+        s_id = int(args.STEAM64_ID)
 
     sys.stdout.write("* Checking internet connectivity ... ")
     sys.stdout.flush()
@@ -778,7 +779,7 @@ if __name__ == "__main__":
             sys.exit(1)
 
     if not s_id:
-        print("* Error: STEAM_ID needs to be defined !")
+        print("* Error: STEAM64_ID needs to be defined !")
         sys.exit(1)
 
     if args.csv_file:
