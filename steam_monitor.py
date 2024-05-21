@@ -316,23 +316,44 @@ def print_cur_ts(ts_str=""):
     print("---------------------------------------------------------------------------------------------------------")
 
 
-# Function to return the timestamp in human readable format (long version); eg. Sun, 21 Apr 2024, 15:08:45
+# Function to return the timestamp/datetime object in human readable format (long version); eg. Sun, 21 Apr 2024, 15:08:45
 def get_date_from_ts(ts):
-    return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts)).weekday()]} {datetime.fromtimestamp(ts).strftime("%d %b %Y, %H:%M:%S")}")
+    if type(ts) is datetime:
+        ts_new = int(round(ts.timestamp()))
+    elif type(ts) is int:
+        ts_new = ts
+    else:
+        return ""
+
+    return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime("%d %b %Y, %H:%M:%S")}")
 
 
-# Function to return the timestamp in human readable format (short version); eg. Sun 21 Apr 15:08
+# Function to return the timestamp/datetime object in human readable format (short version); eg. Sun 21 Apr 15:08
 def get_short_date_from_ts(ts):
-    return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts)).weekday()]} {datetime.fromtimestamp(ts).strftime("%d %b %H:%M")}")
+    if type(ts) is datetime:
+        ts_new = int(round(ts.timestamp()))
+    elif type(ts) is int:
+        ts_new = ts
+    else:
+        return ""
+
+    return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime("%d %b %H:%M")}")
 
 
-# Function to return the timestamp in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
+# Function to return the timestamp/datetime object in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
 def get_hour_min_from_ts(ts, show_seconds=False):
+    if type(ts) is datetime:
+        ts_new = int(round(ts.timestamp()))
+    elif type(ts) is int:
+        ts_new = ts
+    else:
+        return ""
+
     if show_seconds:
         out_strf = "%H:%M:%S"
     else:
         out_strf = "%H:%M"
-    return (str(datetime.fromtimestamp(ts).strftime(out_strf)))
+    return (str(datetime.fromtimestamp(ts_new).strftime(out_strf)))
 
 
 # Function to return the range between two timestamps; eg. Sun 21 Apr 14:09 - 14:15
@@ -415,6 +436,9 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
     game_ts = 0
     game_ts_old = 0
     status = 0
+    game_total_ts = 0
+    games_number = 0
+    game_total_after_offline_counted = False
 
     try:
         if csv_file_name:
@@ -439,7 +463,7 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
     try:
         username = s_user["response"]["players"][0].get("personaname")
     except:
-        print(f"Error: user with Steam ID {steamid} does not exist!")
+        print(f"Error: user with Steam64 ID {steamid} does not exist!")
         sys.exit(1)
 
     status = int(s_user["response"]["players"][0].get("personastate"))
@@ -543,6 +567,7 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
     if gameid:
         print(f"\nUser is currently in-game:\t{gamename}")
         game_ts_old = int(time.time())
+        games_number += 1
 
     if "games" in s_played["response"].keys():
         print(f"\nList of recently played games:")
@@ -594,9 +619,11 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
         change = False
         act_inact_flag = False
 
+        status_ts = int(time.time())
+        game_ts = int(time.time())
+
         # Player status changed
         if status != status_old:
-            status_ts = int(time.time())
 
             last_status_to_save = []
             last_status_to_save.append(status_ts)
@@ -614,15 +641,23 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
             m_subject_after = calculate_timespan(int(status_ts), int(status_ts_old), show_seconds=False)
             m_body_was_since = f" ({get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)})"
 
+            m_body_short_offline_msg = ""
+
             # Player got online
             if status_old == 0 and status > 0:
                 print(f"*** User got ACTIVE ! (was offline since {get_date_from_ts(status_ts_old)})")
-                if (status_ts - status_ts_old) > OFFLINE_INTERRUPT:
+                game_total_after_offline_counted = False
+                if (status_ts - status_ts_old) > OFFLINE_INTERRUPT or not status_online_start_ts_old:
                     status_online_start_ts = status_ts
-                else:
+                    game_total_ts = 0
+                    games_number = 0
+                elif (status_ts - status_ts_old) <= OFFLINE_INTERRUPT and status_online_start_ts_old>0:
                     status_online_start_ts = status_online_start_ts_old
-                    print(f"Short offline interruption, online start timestamp set back to {get_date_from_ts(status_online_start_ts_old)}")
+                    m_body_short_offline_msg=f"\n\nShort offline interruption ({display_time(status_ts - status_ts_old)}), online start timestamp set back to {get_short_date_from_ts(status_online_start_ts_old)}"
+                    print(f"Short offline interruption ({display_time(status_ts - status_ts_old)}), online start timestamp set back to {get_short_date_from_ts(status_online_start_ts_old)}")
                 act_inact_flag = True
+
+            m_body_played_games = ""
 
             # Player got offline
             if status_old > 0 and status == 0:
@@ -633,39 +668,48 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
                     m_body_was_since = f" ({get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)})\n\nUser was available for {calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)} ({get_range_of_dates_from_tss(int(status_online_start_ts), int(status_ts), short=True)})"
                 else:
                     online_since_msg = ""
+                if games_number > 0:
+                    if gameid_old and not gameid:
+                        game_total_ts += (int(time.time()) - int(game_ts_old))
+                        game_total_after_offline_counted = True
+                    m_body_played_games = f"\n\nUser played {games_number} games for total time of {display_time(game_total_ts)}"
+                    print(f"User played {games_number} games for total time of {display_time(game_total_ts)}")
                 print(f"*** User got OFFLINE ! {online_since_msg}")
                 status_online_start_ts_old = status_online_start_ts
                 status_online_start_ts = 0
                 act_inact_flag = True
 
-            user_in_game = ""
+            m_body_user_in_game = ""
             if gameid:
                 print(f"User is currently in-game: {gamename}")
-                user_in_game = f"\n\nUser is currently in-game: {gamename}"
+                m_body_user_in_game = f"\n\nUser is currently in-game: {gamename}"
 
             change = True
 
             m_subject = f"Steam user {username} is now {steam_personastates[status]} (after {m_subject_after}{m_subject_was_since})"
-            m_body = f"Steam user {username} changed status from {steam_personastates[status_old]} to {steam_personastates[status]}\n\nUser was {steam_personastates[status_old]} for {calculate_timespan(int(status_ts), int(status_ts_old))}{m_body_was_since}{user_in_game}{get_cur_ts("\n\nTimestamp: ")}"
+            m_body = f"Steam user {username} changed status from {steam_personastates[status_old]} to {steam_personastates[status]}\n\nUser was {steam_personastates[status_old]} for {calculate_timespan(int(status_ts), int(status_ts_old))}{m_body_was_since}{m_body_short_offline_msg}{m_body_user_in_game}{m_body_played_games}{get_cur_ts("\n\nTimestamp: ")}"
             if status_notification or (active_inactive_notification and act_inact_flag):
                 print(f"Sending email notification to {RECEIVER_EMAIL}")
                 send_email(m_subject, m_body, "", SMTP_SSL)
             status_ts_old = status_ts
+            print_cur_ts("Timestamp:\t\t\t")
 
         # Player started/stopped/changed the game
         if gameid != gameid_old:
-            game_ts = int(time.time())
 
             # User changed the game
             if gameid_old and gameid:
                 print(f"Steam user {username} changed game from '{gamename_old}' to '{gamename}' after {calculate_timespan(int(game_ts), int(game_ts_old))}")
                 print(f"User played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=" to ")}")
+                game_total_ts += (int(game_ts) - int(game_ts_old))
+                games_number += 1
                 m_subject = f"Steam user {username} changed game to '{gamename}' (after {calculate_timespan(int(game_ts), int(game_ts_old), show_seconds=False)}: {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True)})"
                 m_body = f"Steam user {username} changed game from '{gamename_old}' to '{gamename}' after {calculate_timespan(int(game_ts), int(game_ts_old))}\n\nUser played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=" to ")}{get_cur_ts("\n\nTimestamp: ")}"
 
             # User started playing new game
             elif not gameid_old and gameid:
                 print(f"Steam user {username} started playing '{gamename}'")
+                games_number += 1
                 m_subject = f"Steam user {username} now plays '{gamename}'"
                 m_body = f"Steam user {username} now plays '{gamename}'{get_cur_ts("\n\nTimestamp: ")}"
 
@@ -673,6 +717,8 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
             elif gameid_old and not gameid:
                 print(f"Steam user {username} stopped playing '{gamename_old}' after {calculate_timespan(int(game_ts), int(game_ts_old))}")
                 print(f"User played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=" to ")}")
+                if not game_total_after_offline_counted:
+                    game_total_ts += (int(game_ts) - int(game_ts_old))
                 m_subject = f"Steam user {username} stopped playing '{gamename_old}' (after {calculate_timespan(int(game_ts), int(game_ts_old), show_seconds=False)}: {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True)})"
                 m_body = f"Steam user {username} stopped playing '{gamename_old}' after {calculate_timespan(int(game_ts), int(game_ts_old))}\n\nUser played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=" to ")}{get_cur_ts("\n\nTimestamp: ")}"
 
@@ -683,6 +729,7 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
                 send_email(m_subject, m_body, "", SMTP_SSL)
 
             game_ts_old = game_ts
+            print_cur_ts("Timestamp:\t\t\t")
 
         if change:
             alive_counter = 0
@@ -692,8 +739,6 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
                     write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), steam_personastates[status], gamename, gameid)
             except Exception as e:
                 print(f"* Error: cannot write CSV entry - {e}")
-
-            print_cur_ts("Timestamp:\t\t\t")
 
         status_old = status
         gameid_old = gameid
@@ -727,9 +772,9 @@ if __name__ == "__main__":
     print(f"Steam Monitoring Tool v{VERSION}\n")
 
     parser = argparse.ArgumentParser("steam_monitor")
-    parser.add_argument("STEAM64_ID", nargs="?", help="User's Steam ID (steam64)", type=int)
+    parser.add_argument("STEAM64_ID", nargs="?", help="User's Steam64 ID", type=int)
     parser.add_argument("-u", "--steam_api_key", help="Steam Web API key to override the value defined within the script (STEAM_API_KEY)", type=str)
-    parser.add_argument("-r", "--resolve_community_url", help="Use Steam community URL & resolve it to Steam ID (steam64)", type=str)
+    parser.add_argument("-r", "--resolve_community_url", help="Use Steam community URL & resolve it to Steam64 ID (steam64)", type=str)
     parser.add_argument("-a", "--active_inactive_notification", help="Send email notification once user changes status from active to inactive and vice versa (online/offline)", action='store_true')
     parser.add_argument("-g", "--game_change_notification", help="Send email notification once user starts/changes/stops playing the game", action='store_true')
     parser.add_argument("-s", "--status_notification", help="Send email notification for all player status changes (online/away/snooze/offline)", action='store_true')
@@ -768,13 +813,13 @@ if __name__ == "__main__":
     print("")
 
     if args.resolve_community_url:
-        print(f"* Resolving Steam community URL to Steam ID: {args.resolve_community_url}\n")
+        print(f"* Resolving Steam community URL to Steam64 ID: {args.resolve_community_url}\n")
         try:
             s_id = steam.steamid.steam64_from_url(args.resolve_community_url)
             if s_id:
                 s_id = int(s_id)
         except Exception as e:
-            print("* Error: cannot get Steam ID for specified community URL")
+            print("* Error: cannot get Steam64 ID for specified community URL")
             print("*", e)
             sys.exit(1)
 
@@ -812,7 +857,7 @@ if __name__ == "__main__":
     else:
         print(f"* CSV logging enabled:\t\t{csv_enabled}")
 
-    out = f"\nMonitoring user with Steam ID {s_id}"
+    out = f"\nMonitoring user with Steam64 ID {s_id}"
     print(out)
     print("-" * len(out))
 
