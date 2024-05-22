@@ -134,7 +134,7 @@ Make sure you defined your SMTP settings earlier (see [SMTP settings](#smtp-sett
 Example email:
 
 <p align="center">
-   <img src="./assets/steam_monitor_email_notifications.png" alt="steam_monitor_email_notifications" width="80%"/>
+   <img src="./assets/steam_monitor_email_notifications.png" alt="steam_monitor_email_notifications" width="85%"/>
 </p>
 
 If you want to be informed about any user status changes (online/away/snooze/offline) use **-s** parameter:
