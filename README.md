@@ -5,7 +5,7 @@ steam_monitor is a Python script which allows for real-time monitoring of Steam 
 ## Features
 
 - Real-time tracking of Steam users gaming activity (including detection when user gets online/offline or played games)
-- Basics statistics for user activity (how long in different states, how long played game etc.)
+- Basics statistics for user activity (how long in different states, how long played game, overall time and number of played games in the session etc.)
 - Email notifications for different events (player gets online/away/snooze/offline, starts/finishes/changes game, errors)
 - Saving all user activity with timestamps to the CSV file
 - Possibility to control the running copy of the script via signals
@@ -28,9 +28,12 @@ The script requires Python 3.x.
 
 It uses [steam](https://github.com/ValvePython/steam) library, also requests and python-dateutil.
 
-It has been tested succesfully on Linux (Raspberry Pi Bullseye & Bookworm based on Debian) and Mac OS (Ventura & Sonoma). 
+It has been tested succesfully on:
+- macOS (Ventura & Sonoma)
+- Linux (Raspberry Pi Bullseye & Bookworm based on Debian, Ubuntu 24)
+- Windows (10 & 11)
 
-Should work on any other Linux OS and Windows with Python.
+It should work on other versions of macOS, Linux, Unix and Windows as well.
 
 ## Installation
 
@@ -48,7 +51,7 @@ pip3 install -r requirements.txt
 
 Copy the *[steam_monitor.py](steam_monitor.py)* file to the desired location. 
 
-You might want to add executable rights if on Linux or MacOS:
+You might want to add executable rights if on Linux/Unix/macOS:
 
 ```sh
 chmod a+x steam_monitor.py
@@ -62,7 +65,11 @@ Edit the *[steam_monitor.py](steam_monitor.py)* file and change any desired conf
 
 You can get the Steam Web API key here: [http://steamcommunity.com/dev/apikey](http://steamcommunity.com/dev/apikey)
 
-Change the **STEAM_API_KEY** variable to respective value.
+Change the **STEAM_API_KEY** variable to respective value (or use **-u** parameter).
+
+### User privacy settings
+
+In order to monitor Steam user activity proper privacy settings need to be enabled on the monitored user account, i.e. *'My Profile'* and *'Game details'* profile privacy sections should be set to *'Friends Only'* (if you are friends) or to *'Public'*. 
 
 ### SMTP settings
 
@@ -96,7 +103,7 @@ To monitor specific user activity, just type the player's Steam64 ID (**76561198
 ./steam_monitor.py 76561198116287247
 ```
 
-If you do not know the user's Steam64 ID, but you know the Steam profile/community URL, you can also run the tool with **-r** parameter which will automatically resolve it to Steam64 ID: 
+If you do not know the user's Steam64 ID, but you know the Steam profile/community URL (which can be customized by the user), you can also run the tool with **-r** parameter which will automatically resolve it to Steam64 ID: 
 
 ```sh
 ./steam_monitor.py -r "https://steamcommunity.com/id/misiektoja/"
@@ -106,11 +113,11 @@ The tool will run infinitely and monitor the player until the script is interrup
 
 You can monitor multiple Steam players by spawning multiple copies of the script. 
 
-It is suggested to use sth like **tmux** or **screen** to have the script running after you log out from the server.
+It is suggested to use sth like **tmux** or **screen** to have the script running after you log out from the server (unless you are running it on your desktop).
 
-The tool automatically saves its output to *steam_monitor_usersteamid.log* file (can be changed in the settings or disabled with **-d** parameter).
+The tool automatically saves its output to *steam_monitor_{user_steam64_id}.log* file (the log file name suffix can be changed via **-y** parameter or logging can be disabled completely with **-d** parameter).
 
-The tool also saves the timestamp and last status (after every change) to *steam_username_last_status.json* file, so the last status is available after the restart of the tool.
+The tool also saves the timestamp and last status (after every change) to *steam_{user_display_name}_last_status.json* file, so the last status is available after the restart of the tool.
 
 ## How to use other features
 
@@ -144,7 +151,7 @@ If you want to be informed when user starts, stops or changes the played game th
 
 ### Saving gaming activity to the CSV file
 
-If you want to save all activities of the Steam user, use **-b** parameter with the name of the file (it will be automatically created if it does not exist):
+If you want to save all reported activities of the Steam user, use **-b** parameter with the name of the file (it will be automatically created if it does not exist):
 
 ```sh
 ./steam_monitor.py -r "https://steamcommunity.com/id/misiektoja/" -b steam_misiektoja.csv
@@ -158,7 +165,7 @@ If you want to change the check interval when the user is online/away/snooze to 
 ./steam_monitor.py -r "https://steamcommunity.com/id/misiektoja/" -k 15 -c 120
 ```
 
-### Controlling the script via signals
+### Controlling the script via signals (only macOS/Linux/Unix)
 
 The tool has several signal handlers implemented which allow to change behaviour of the tool without a need to restart it with new parameters.
 
@@ -169,8 +176,8 @@ List of supported signals:
 | USR1 | Toggle email notifications when user gets online or offline (-a) |
 | USR2 | Toggle email notifications when user starts/stops/changes the game (-g) |
 | CONT | Toggle email notifications for all user status changes (online/away/snooze/offline) (-s) |
-| TRAP | Increase the check timer for player activity when user is online (by 30 seconds) |
-| ABRT | Decrease check timer for player activity when user is online (by 30 seconds) |
+| TRAP | Increase the check timer for player activity when user is online/away/snooze (by 30 seconds) |
+| ABRT | Decrease check timer for player activity when user is online/away/snooze (by 30 seconds) |
 
 So if you want to change functionality of the running tool, just send the proper signal to the desired copy of the script.
 
@@ -179,6 +186,8 @@ I personally use **pkill** tool, so for example to toggle email notifications wh
 ```sh
 pkill -f -USR1 "python3 ./steam_monitor.py 76561198116287247"
 ```
+
+As Windows supports limited number of signals, this functionality is available only on Linux/Unix/macOS.
 
 ### Other
 
