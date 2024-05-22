@@ -11,7 +11,7 @@ steam_monitor is a Python script which allows for real-time monitoring of Steam 
 - Possibility to control the running copy of the script via signals
 
 <p align="center">
-   <img src="./assets/steam_monitor.png" alt="steam_monitor_screenshot" width="90%"/>
+   <img src="./assets/steam_monitor.png" alt="steam_monitor_screenshot" width="95%"/>
 </p>
 
 ## Change Log
