@@ -2,7 +2,7 @@
 
 This is a high-level summary of the most important changes. 
 
-# Changes in 1.1 (22 May 2024)
+# Changes in 1.1 (23 May 2024)
 
 **Features and Improvements**:
 
