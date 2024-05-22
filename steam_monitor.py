@@ -44,7 +44,7 @@ STEAM_CHECK_INTERVAL = 90  # 1.5 min
 # How often do we perform checks for player activity when user is online/away/snooze, you can also use -k parameter; in seconds
 STEAM_ACTIVE_CHECK_INTERVAL = 30  # 30 sec
 
-# If user gets offline and online again (for example due to rebooting the PC) during the next OFFLINE_INTERRUPT seconds then we set online start timestamp back to the previous one (so called short offline interruption)
+# If user gets offline and online again (for example due to rebooting the PC) during the next OFFLINE_INTERRUPT seconds then we set online start timestamp back to the previous one (so called short offline interruption) + we also keep stats from the previous session (like total time and number of played games)
 OFFLINE_INTERRUPT = 420  # 7 mins
 
 # How often do we perform alive check by printing "alive check" message in the output; in seconds
@@ -684,7 +684,7 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
                     online_since_msg = ""
                 if games_number > 0:
                     if gameid_old and not gameid:
-                        game_total_ts += (int(time.time()) - int(game_ts_old))
+                        game_total_ts += (int(game_ts) - int(game_ts_old))
                         game_total_after_offline_counted = True
                     m_body_played_games = f"\n\nUser played {games_number} games for total time of {display_time(game_total_ts)}"
                     print(f"User played {games_number} games for total time of {display_time(game_total_ts)}")
