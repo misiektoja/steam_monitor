@@ -44,11 +44,11 @@ STEAM_CHECK_INTERVAL = 90  # 1.5 min
 # How often do we perform checks for player activity when user is online/away/snooze, you can also use -k parameter; in seconds
 STEAM_ACTIVE_CHECK_INTERVAL = 30  # 30 sec
 
-# How often do we perform alive check by printing "alive check" message in the output; in seconds
-TOOL_ALIVE_INTERVAL = 21600  # 6 hours
-
 # If user gets offline and online again (for example due to rebooting the PC) during the next OFFLINE_INTERRUPT seconds then we set online start timestamp back to the previous one (so called short offline interruption)
 OFFLINE_INTERRUPT = 420  # 7 mins
+
+# How often do we perform alive check by printing "alive check" message in the output; in seconds
+TOOL_ALIVE_INTERVAL = 21600  # 6 hours
 
 # URL we check in the beginning to make sure we have internet connectivity
 CHECK_INTERNET_URL = 'http://www.google.com/'
@@ -356,21 +356,35 @@ def get_hour_min_from_ts(ts, show_seconds=False):
     return (str(datetime.fromtimestamp(ts_new).strftime(out_strf)))
 
 
-# Function to return the range between two timestamps; eg. Sun 21 Apr 14:09 - 14:15
+# Function to return the range between two timestamps/datetime objects; eg. Sun 21 Apr 14:09 - 14:15
 def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
-    ts1_strf = datetime.fromtimestamp(ts1).strftime("%Y%m%d")
-    ts2_strf = datetime.fromtimestamp(ts2).strftime("%Y%m%d")
+    if type(ts1) is datetime:
+        ts1_new = int(round(ts1.timestamp()))
+    elif type(ts1) is int:
+        ts1_new = ts1
+    else:
+        return ""
+
+    if type(ts2) is datetime:
+        ts2_new = int(round(ts2.timestamp()))
+    elif type(ts2) is int:
+        ts2_new = ts2
+    else:
+        return ""
+
+    ts1_strf = datetime.fromtimestamp(ts1_new).strftime("%Y%m%d")
+    ts2_strf = datetime.fromtimestamp(ts2_new).strftime("%Y%m%d")
 
     if ts1_strf == ts2_strf:
         if short:
-            out_str = f"{get_short_date_from_ts(ts1)}{between_sep}{get_hour_min_from_ts(ts2)}"
+            out_str = f"{get_short_date_from_ts(ts1_new)}{between_sep}{get_hour_min_from_ts(ts2_new)}"
         else:
-            out_str = f"{get_date_from_ts(ts1)}{between_sep}{get_hour_min_from_ts(ts2, show_seconds=True)}"
+            out_str = f"{get_date_from_ts(ts1_new)}{between_sep}{get_hour_min_from_ts(ts2_new, show_seconds=True)}"
     else:
         if short:
-            out_str = f"{get_short_date_from_ts(ts1)}{between_sep}{get_short_date_from_ts(ts2)}"
+            out_str = f"{get_short_date_from_ts(ts1_new)}{between_sep}{get_short_date_from_ts(ts2_new)}"
         else:
-            out_str = f"{get_date_from_ts(ts1)}{between_sep}{get_date_from_ts(ts2)}"
+            out_str = f"{get_date_from_ts(ts1_new)}{between_sep}{get_date_from_ts(ts2_new)}"
     return (str(out_str))
 
 
@@ -651,9 +665,9 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
                     status_online_start_ts = status_ts
                     game_total_ts = 0
                     games_number = 0
-                elif (status_ts - status_ts_old) <= OFFLINE_INTERRUPT and status_online_start_ts_old>0:
+                elif (status_ts - status_ts_old) <= OFFLINE_INTERRUPT and status_online_start_ts_old > 0:
                     status_online_start_ts = status_online_start_ts_old
-                    m_body_short_offline_msg=f"\n\nShort offline interruption ({display_time(status_ts - status_ts_old)}), online start timestamp set back to {get_short_date_from_ts(status_online_start_ts_old)}"
+                    m_body_short_offline_msg = f"\n\nShort offline interruption ({display_time(status_ts - status_ts_old)}), online start timestamp set back to {get_short_date_from_ts(status_online_start_ts_old)}"
                     print(f"Short offline interruption ({display_time(status_ts - status_ts_old)}), online start timestamp set back to {get_short_date_from_ts(status_online_start_ts_old)}")
                 act_inact_flag = True
 
@@ -782,7 +796,8 @@ if __name__ == "__main__":
     parser.add_argument("-c", "--check_interval", help="Time between monitoring checks if user is offline, in seconds", type=int)
     parser.add_argument("-k", "--active_check_interval", help="Time between monitoring checks if user is NOT offline, in seconds", type=int)
     parser.add_argument("-b", "--csv_file", help="Write all status & game changes to CSV file", type=str, metavar="CSV_FILENAME")
-    parser.add_argument("-d", "--disable_logging", help="Disable logging to file 'steam_monitor_user.log' file", action='store_true')
+    parser.add_argument("-d", "--disable_logging", help="Disable output logging to file 'steam_monitor_steam64id.log' file", action='store_true')
+    parser.add_argument("-y", "--log_file_suffix", help="Log file suffix to be used instead of Steam 64 ID, so output will be logged to 'steam_monitor_suffix.log' file", type=str, metavar="LOG_SUFFIX")
     args = parser.parse_args()
 
     if len(sys.argv) == 1:
@@ -841,8 +856,13 @@ if __name__ == "__main__":
         csv_file = None
         csv_exists = False
 
+    if args.log_file_suffix:
+        log_suffix = args.log_file_suffix
+    else:
+        log_suffix = str(s_id)
+
     if not args.disable_logging:
-        ST_LOGFILE = f"{ST_LOGFILE}_{s_id}.log"
+        ST_LOGFILE = f"{ST_LOGFILE}_{log_suffix}.log"
         sys.stdout = Logger(ST_LOGFILE)
 
     active_inactive_notification = args.active_inactive_notification
@@ -851,7 +871,10 @@ if __name__ == "__main__":
 
     print(f"* Steam timers:\t\t\t[check interval: {display_time(STEAM_CHECK_INTERVAL)}] [active check interval: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]")
     print(f"* Email notifications:\t\t[active/inactive status changes = {active_inactive_notification}] [game changes = {game_change_notification}]\n*\t\t\t\t[all status changes = {status_notification}] [errors = {args.error_notification}]")
-    print(f"* Output logging disabled:\t{args.disable_logging}")
+    if not args.disable_logging:
+        print(f"* Output logging enabled:\t{not args.disable_logging} ({ST_LOGFILE})")
+    else:
+        print(f"* Output logging enabled:\t{not args.disable_logging}")
     if csv_enabled:
         print(f"* CSV logging enabled:\t\t{csv_enabled} ({args.csv_file})")
     else:
