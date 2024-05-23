@@ -121,7 +121,7 @@ You can monitor multiple Steam players by spawning multiple copies of the script
 
 It is suggested to use sth like **tmux** or **screen** to have the script running after you log out from the server (unless you are running it on your desktop).
 
-The tool automatically saves its output to *steam_monitor_{user_steam64_id}.log* log file (the file name suffix can be changed via **-y** parameter or logging can be disabled completely with **-d** parameter).
+The tool automatically saves its output to *steam_monitor_{user_steam64_id}.log* file (the log file name suffix can be changed via **-y** parameter or logging can be disabled completely with **-d** parameter).
 
 The tool also saves the timestamp and last status (after every change) to *steam_{user_display_name}_last_status.json* file, so the last status is available after the restart of the tool.
 
