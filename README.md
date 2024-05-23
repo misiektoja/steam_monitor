@@ -69,7 +69,7 @@ Change the **STEAM_API_KEY** variable to respective value (or use **-u** paramet
 
 ### User privacy settings
 
-In order to monitor Steam user activity proper privacy settings need to be enabled on the monitored user account, i.e. *'My Profile'* and *'Game details'* profile privacy sections should be set to *'Friends Only'* (if you are friends) or to *'Public'*. 
+In order to monitor Steam user activity, proper privacy settings need to be enabled on the monitored user account, i.e. in *'Edit Profile'* -> *'Privacy Settings'*, the value in section *'My Profile'* and *'Game details'* should be set to *'Friends Only'* (if you are friends) or to *'Public'*. 
 
 ### SMTP settings
 
