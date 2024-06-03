@@ -7,7 +7,7 @@ This is a high-level summary of the most important changes.
 **Features and Improvements**:
 
 - New feature counting overall time and number of played games in the session
-- Possbility to define STEAM_API_KEY via command line argument (**-u** / **--steam_api_key**)
+- Possibility to define STEAM_API_KEY via command line argument (**-u** / **--steam_api_key**)
 - Improvements for running the code in Python under Windows
 - Possibility to define output log file name suffix (**-y** / **--log_file_suffix**)
 - Information about log file name visible in the start screen
@@ -18,7 +18,7 @@ This is a high-level summary of the most important changes.
 - Help screen reorganization
 - pep8 style convention corrections
 
-**Bugfixes**:
+**Bug fixes**:
 
 - Improved exception handling while processing JSON files
 
@@ -29,6 +29,6 @@ This is a high-level summary of the most important changes.
 - Support for detection of short offline interruptions (and adjustment of online start timestamp)
 - Additional information in the subject of email notifications
 
-**Bugfixes**:
+**Bug fixes**:
 
 - Fixes for handling situations where some profile information is not available
