@@ -28,7 +28,7 @@ The script requires Python 3.x.
 
 It uses [steam](https://github.com/ValvePython/steam) library, also requests and python-dateutil.
 
-It has been tested succesfully on:
+It has been tested successfully on:
 - macOS (Ventura & Sonoma)
 - Linux (Raspberry Pi Bullseye & Bookworm based on Debian, Ubuntu 24)
 - Windows (10 & 11)
@@ -173,7 +173,7 @@ If you want to change the check interval when the user is online/away/snooze to 
 
 ### Controlling the script via signals (only macOS/Linux/Unix)
 
-The tool has several signal handlers implemented which allow to change behaviour of the tool without a need to restart it with new parameters.
+The tool has several signal handlers implemented which allow to change behavior of the tool without a need to restart it with new parameters.
 
 List of supported signals:
 
@@ -201,9 +201,9 @@ Check other supported parameters using **-h**.
 
 You can combine all the parameters mentioned earlier.
 
-## Colouring log output with GRC
+## Coloring log output with GRC
 
-If you use [GRC](https://github.com/garabik/grc) and want to have the output properly coloured you can use the configuration file available [here](grc/conf.monitor_logs)
+If you use [GRC](https://github.com/garabik/grc) and want to have the tool's log output properly colored you can use the configuration file available [here](grc/conf.monitor_logs)
 
 Change your grc configuration (typically *.grc/grc.conf*) and add this part:
 
@@ -213,7 +213,7 @@ Change your grc configuration (typically *.grc/grc.conf*) and add this part:
 conf.monitor_logs
 ```
 
-Now copy the *conf.monitor_logs* to your .grc directory and steam_monitor log files should be nicely coloured.
+Now copy the *conf.monitor_logs* to your *.grc* directory and steam_monitor log files should be nicely colored when using *grc* tool.
 
 ## License
 
