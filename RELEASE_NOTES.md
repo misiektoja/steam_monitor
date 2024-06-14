@@ -1,6 +1,21 @@
 # steam_monitor release notes
 
-This is a high-level summary of the most important changes. 
+This is a high-level summary of the most important changes.
+
+# Changes in 1.2 (14 Jun 2024)
+
+**Features and Improvements**:
+
+- **NEW:** Added new parameter (**-z** / **--send_test_email_notification**) which allows to send test email notification to verify SMTP settings defined in the script
+- **IMPROVE:** Support for float type of timestamps added in date/time related functions
+- **IMPROVE:** Function get_short_date_from_ts() rewritten to display year if show_year == True and current year is different, also can omit displaying hour and minutes if show_hours == False
+- **IMPROVE:** Checking if correct version of Python (>=3.5) is installed
+- **IMPROVE:** Possibility to define email sending timeout (default set to 15 secs)
+
+**Bug fixes**:
+
+- **BUGFIX:** Fixed "SyntaxError: f-string: unmatched (" issue in older Python versions
+- **BUGFIX:** Fixed "SyntaxError: f-string expression part cannot include a backslash" issue in older Python versions
 
 # Changes in 1.1 (23 May 2024)
 
