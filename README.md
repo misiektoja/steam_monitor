@@ -1,13 +1,13 @@
 # steam_monitor
 
-steam_monitor is a Python script which allows for real-time monitoring of Steam players activity. 
+steam_monitor is a Python tool which allows for real-time monitoring of Steam players activities. 
 
 ## Features
 
 - Real-time tracking of Steam users gaming activity (including detection when user gets online/offline or played games)
 - Basics statistics for user activity (how long in different states, how long played game, overall time and number of played games in the session etc.)
 - Email notifications for different events (player gets online/away/snooze/offline, starts/finishes/changes game, errors)
-- Saving all user activity with timestamps to the CSV file
+- Saving all user activities with timestamps to the CSV file
 - Possibility to control the running copy of the script via signals
 
 <p align="center">
@@ -24,13 +24,16 @@ I'm not a dev, project done as a hobby. Code is ugly and as-is, but it works (at
 
 ## Requirements
 
-The script requires Python 3.x.
+The tool requires Python 3.5 or higher.
 
 It uses [steam](https://github.com/ValvePython/steam) library, also requests and python-dateutil.
 
 It has been tested successfully on:
 - macOS (Ventura & Sonoma)
-- Linux (Raspberry Pi Bullseye & Bookworm based on Debian, Ubuntu 24)
+- Linux:
+   - Raspberry Pi Bullseye & Bookworm
+   - Ubuntu 24
+   - Kali Linux 2024
 - Windows (10 & 11)
 
 It should work on other versions of macOS, Linux, Unix and Windows as well.
@@ -73,7 +76,13 @@ In order to monitor Steam user activity, proper privacy settings need to be enab
 
 ### SMTP settings
 
-If you want to use email notifications functionality you need to change the SMTP settings (host, port, user, password, sender, recipient). If you leave the default settings then no notifications will be sent.
+If you want to use email notifications functionality you need to change the SMTP settings (host, port, user, password, sender, recipient) in the *[steam_monitor.py](steam_monitor.py)* file. If you leave the default settings then no notifications will be sent.
+
+You can verify if your SMTP settings are correct by using **-z** parameter (the tool will try to send a test email notification):
+
+```sh
+./steam_monitor.py -z
+```
 
 ### Other settings
 
