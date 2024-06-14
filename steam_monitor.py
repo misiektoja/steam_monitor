@@ -237,7 +237,7 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
 
 
 # Function to send email notification
-def send_email(subject, body, body_html, use_ssl):
+def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
     fqdn_re = re.compile(r'(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)')
     email_re = re.compile(r'[^@]+@[^@]+\.[^@]+')
 
@@ -275,10 +275,10 @@ def send_email(subject, body, body_html, use_ssl):
     try:
         if use_ssl:
             ssl_context = ssl.create_default_context()
-            smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT)
+            smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=smtp_timeout)
             smtpObj.starttls(context=ssl_context)
         else:
-            smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT)
+            smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=smtp_timeout)
         smtpObj.login(SMTP_USER, SMTP_PASSWORD)
         email_msg = MIMEMultipart('alternative')
         email_msg["From"] = SENDER_EMAIL
@@ -832,11 +832,25 @@ if __name__ == "__main__":
     parser.add_argument("-b", "--csv_file", help="Write all status & game changes to CSV file", type=str, metavar="CSV_FILENAME")
     parser.add_argument("-d", "--disable_logging", help="Disable output logging to file 'steam_monitor_steam64id.log' file", action='store_true')
     parser.add_argument("-y", "--log_file_suffix", help="Log file suffix to be used instead of Steam 64 ID, so output will be logged to 'steam_monitor_suffix.log' file", type=str, metavar="LOG_SUFFIX")
+    parser.add_argument("-z", "--send_test_email_notification", help="Send test email notification to verify SMTP settings defined in the script", action='store_true')
     args = parser.parse_args()
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(1)
+
+    sys.stdout.write("* Checking internet connectivity ... ")
+    sys.stdout.flush()
+    check_internet()
+    print("")
+
+    if args.send_test_email_notification:
+        print("* Sending test email notification ...\n")
+        if send_email("steam_monitor: test email", "This is test email - your SMTP settings seems to be correct !", "", SMTP_SSL, smtp_timeout=5) == 0:
+                print("* Email sent successfully !")
+        else:
+            sys.exit(1)
+        sys.exit(0)
 
     if args.steam_api_key:
         STEAM_API_KEY = args.steam_api_key
@@ -855,11 +869,6 @@ if __name__ == "__main__":
     s_id = 0
     if args.STEAM64_ID:
         s_id = int(args.STEAM64_ID)
-
-    sys.stdout.write("* Checking internet connectivity ... ")
-    sys.stdout.flush()
-    check_internet()
-    print("")
 
     if args.resolve_community_url:
         print(f"* Resolving Steam community URL to Steam64 ID: {args.resolve_community_url}\n")
