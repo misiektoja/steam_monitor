@@ -1,13 +1,13 @@
 # steam_monitor
 
-steam_monitor is a Python tool which allows for real-time monitoring of Steam players activities. 
+steam_monitor is a tool that allows for real-time monitoring of Steam players' activities.
 
 ## Features
 
-- Real-time tracking of Steam users gaming activity (including detection when user gets online/offline or played games)
-- Basics statistics for user activity (how long in different states, how long played game, overall time and number of played games in the session etc.)
-- Email notifications for different events (player gets online/away/snooze/offline, starts/finishes/changes game, errors)
-- Saving all user activities with timestamps to the CSV file
+- Real-time tracking of Steam users' gaming activity (including detection when a user gets online/offline or plays games)
+- Basic statistics for user activity (such as how long in different states, how long a game is played, overall time and the number of played games in the session etc.)
+- Email notifications for different events (when a player gets online/away/snooze/offline, starts/finishes/changes a game or errors occur)
+- Saving all user activities with timestamps to a CSV file
 - Possibility to control the running copy of the script via signals
 
 <p align="center">
@@ -18,10 +18,6 @@ steam_monitor is a Python tool which allows for real-time monitoring of Steam pl
 
 Release notes can be found [here](RELEASE_NOTES.md)
 
-## Disclaimer
-
-I'm not a dev, project done as a hobby. Code is ugly and as-is, but it works (at least for me) ;-)
-
 ## Requirements
 
 The tool requires Python 3.5 or higher.
@@ -29,11 +25,12 @@ The tool requires Python 3.5 or higher.
 It uses [steam](https://github.com/ValvePython/steam) library, also requests and python-dateutil.
 
 It has been tested successfully on:
-- macOS (Ventura & Sonoma)
+- macOS (Ventura, Sonoma & Sequoia)
 - Linux:
-   - Raspberry Pi Bullseye & Bookworm
+   - Raspberry Pi OS (Bullseye & Bookworm)
    - Ubuntu 24
-   - Kali Linux 2024
+   - Rocky Linux (8.x, 9.x)
+   - Kali Linux (2024, 2025)
 - Windows (10 & 11)
 
 It should work on other versions of macOS, Linux, Unix and Windows as well.
@@ -68,7 +65,7 @@ Edit the *[steam_monitor.py](steam_monitor.py)* file and change any desired conf
 
 You can get the Steam Web API key here: [http://steamcommunity.com/dev/apikey](http://steamcommunity.com/dev/apikey)
 
-Change the **STEAM_API_KEY** variable to respective value (or use **-u** parameter).
+Change the `STEAM_API_KEY` variable to respective value (or use **-u** parameter).
 
 ### User privacy settings
 
@@ -106,42 +103,54 @@ python3 ./steam_monitor.py -h
 
 ### Monitoring mode
 
-To monitor specific user activity, just type the player's Steam64 ID (**76561198116287247** in the example below):
+To monitor specific user activity, just type the player's Steam64 ID (**12345678901234567** in the example below):
 
 ```sh
-./steam_monitor.py 76561198116287247
+./steam_monitor.py 12345678901234567
 ```
 
-If you have not changed **STEAM_API_KEY** variable in the *[steam_monitor.py](steam_monitor.py)* file, you can use **-u** parameter:
+If you have not changed `STEAM_API_KEY` variable in the *[steam_monitor.py](steam_monitor.py)* file, you can use **-u** parameter:
 
 ```sh
-./steam_monitor.py 76561198116287247 -u "your_steam_web_api_key"
+./steam_monitor.py 12345678901234567 -u "your_steam_web_api_key"
 ```
 
 If you do not know the user's Steam64 ID, but you know the Steam profile/community URL (which can be customized by the user), you can also run the tool with **-r** parameter which will automatically resolve it to Steam64 ID: 
 
 ```sh
-./steam_monitor.py -r "https://steamcommunity.com/id/misiektoja/"
+./steam_monitor.py -r "https://steamcommunity.com/id/steam_username/"
 ```
 
-The tool will run infinitely and monitor the player until the script is interrupted (Ctrl+C) or killed the other way.
+The tool will run indefinitely and monitor the player until the script is interrupted (Ctrl+C) or terminated in another way.
 
-You can monitor multiple Steam players by spawning multiple copies of the script. 
+You can monitor multiple Steam players by running multiple instances of the script.
 
-It is suggested to use sth like **tmux** or **screen** to have the script running after you log out from the server (unless you are running it on your desktop).
+It is recommended to use something like **tmux** or **screen** to keep the script running after you log out from the server (unless you are running it on your desktop).
 
 The tool automatically saves its output to *steam_monitor_{user_steam64_id}.log* file (the log file name suffix can be changed via **-y** parameter or logging can be disabled completely with **-d** parameter).
 
-The tool also saves the timestamp and last status (after every change) to *steam_{user_display_name}_last_status.json* file, so the last status is available after the restart of the tool.
+The tool also saves the timestamp and last status (after every change) to the *steam_{user_display_name}_last_status.json* file, so the last status is available after the restart of the tool.
 
 ## How to use other features
 
 ### Email notifications
 
-If you want to get email notifications once the user gets online or offline use **-a** parameter:
+If you want to receive email notifications when the user comes online or goes offline, use the **-a** parameter:
 
 ```sh
-./steam_monitor.py -r "https://steamcommunity.com/id/misiektoja/" -a
+./steam_monitor.py -r "https://steamcommunity.com/id/steam_username/" -a
+```
+
+If you want to be informed about any user status changes (online/away/snooze/offline), use the **-s** parameter:
+
+```sh
+./steam_monitor.py -r "https://steamcommunity.com/id/steam_username/" -s
+```
+
+If you want to be informed when a user starts, stops or changes the game being played then use the **-g** parameter:
+
+```sh
+./steam_monitor.py -r "https://steamcommunity.com/id/steam_username/" -g
 ```
 
 Make sure you defined your SMTP settings earlier (see [SMTP settings](#smtp-settings)).
@@ -152,32 +161,20 @@ Example email:
    <img src="./assets/steam_monitor_email_notifications.png" alt="steam_monitor_email_notifications" width="85%"/>
 </p>
 
-If you want to be informed about any user status changes (online/away/snooze/offline) use **-s** parameter:
-
-```sh
-./steam_monitor.py -r "https://steamcommunity.com/id/misiektoja/" -s
-```
-
-If you want to be informed when user starts, stops or changes the played game then use **-g** parameter:
-
-```sh
-./steam_monitor.py -r "https://steamcommunity.com/id/misiektoja/" -g
-```
-
 ### Saving gaming activity to the CSV file
 
-If you want to save all reported activities of the Steam user, use **-b** parameter with the name of the file (it will be automatically created if it does not exist):
+If you want to save all reported activities of the Steam user, use the **-b** parameter with the name of the file (it will be automatically created if it does not exist):
 
 ```sh
-./steam_monitor.py -r "https://steamcommunity.com/id/misiektoja/" -b steam_misiektoja.csv
+./steam_monitor.py -r "https://steamcommunity.com/id/steam_username/" -b steam_username.csv
 ```
 
 ### Check intervals
 
-If you want to change the check interval when the user is online/away/snooze to 15 seconds use **-k** parameter and when the user is offline to 2 mins (120 seconds) use **-c** parameter:
+If you want to change the check interval when the user is online/away/snooze to 15 seconds, use the **-k** parameter and when the user is offline to 2 minutes (120 seconds), use the **-c** parameter.
 
 ```sh
-./steam_monitor.py -r "https://steamcommunity.com/id/misiektoja/" -k 15 -c 120
+./steam_monitor.py -r "https://steamcommunity.com/id/steam_username/" -k 15 -c 120
 ```
 
 ### Controlling the script via signals (only macOS/Linux/Unix)
@@ -196,10 +193,10 @@ List of supported signals:
 
 So if you want to change functionality of the running tool, just send the proper signal to the desired copy of the script.
 
-I personally use **pkill** tool, so for example to toggle email notifications when user gets online or offline, for the tool instance monitoring the *76561198116287247* user:
+I personally use the **pkill** tool, so for example, to toggle email notifications when a user gets online or offline for the tool instance monitoring the *12345678901234567* user:
 
 ```sh
-pkill -f -USR1 "python3 ./steam_monitor.py 76561198116287247"
+pkill -f -USR1 "python3 ./steam_monitor.py 12345678901234567"
 ```
 
 As Windows supports limited number of signals, this functionality is available only on Linux/Unix/macOS.
