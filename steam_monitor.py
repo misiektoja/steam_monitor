@@ -19,52 +19,59 @@ VERSION = 1.2
 # CONFIGURATION SECTION START
 # ---------------------------
 
-# Get the Steam Web API key from: http://steamcommunity.com/dev/apikey
-# Put the respective value below (or use -u parameter)
+# Get your Steam Web API key from:
+# http://steamcommunity.com/dev/apikey
+#
+# Provide the value below or use the -u parameter
 STEAM_API_KEY = "your_steam_web_api_key"
 
-# SMTP settings for sending email notifications, you can leave it as it is below and no notifications will be sent
+# SMTP settings for sending email notifications
+# If left as-is, no notifications will be sent
 SMTP_HOST = "your_smtp_server_ssl"
 SMTP_PORT = 587
 SMTP_USER = "your_smtp_user"
 SMTP_PASSWORD = "your_smtp_password"
 SMTP_SSL = True
 SENDER_EMAIL = "your_sender_email"
-# SMTP_HOST = "your_smtp_server_plaintext"
-# SMTP_PORT = 25
-# SMTP_USER = "your_smtp_user"
-# SMTP_PASSWORD = "your_smtp_password"
-# SMTP_SSL = False
-# SENDER_EMAIL = "your_sender_email"
 RECEIVER_EMAIL = "your_receiver_email"
 
-# How often do we perform checks for player activity when user is offline, you can also use -c parameter; in seconds
+# How often to check for player activity when the user is offline; in seconds
+# Can also be set using the -c parameter
 STEAM_CHECK_INTERVAL = 90  # 1.5 min
 
-# How often do we perform checks for player activity when user is online/away/snooze, you can also use -k parameter; in seconds
+# How often to check for player activity when the user is online, away or snoozing; in seconds
+# Can also be set using the -k parameter
 STEAM_ACTIVE_CHECK_INTERVAL = 30  # 30 sec
 
-# If user gets offline and online again (for example due to rebooting the PC) during the next OFFLINE_INTERRUPT seconds then we set online start timestamp back to the previous one (so called short offline interruption) + we also keep stats from the previous session (like total time and number of played games)
+# If the user disconnects (offline) and reconnects (online) within OFFLINE_INTERRUPT seconds,
+# the online session start time will be restored to the previous session’s start time (short offline interruption),
+# and previous session statistics (like total playtime and number of played games) will be preserved
 OFFLINE_INTERRUPT = 420  # 7 mins
 
-# How often do we perform alive check by printing "alive check" message in the output; in seconds
+# How often to print an "alive check" message to the output; in seconds
 TOOL_ALIVE_INTERVAL = 21600  # 6 hours
 
-# URL we check in the beginning to make sure we have internet connectivity
-CHECK_INTERNET_URL = 'http://www.google.com/'
+# URL used to verify internet connectivity at startup
+CHECK_INTERNET_URL = 'https://api.steampowered.com/'
 
-# Default value for initial checking of internet connectivity; in seconds
+# Timeout used when checking initial internet connectivity; in seconds
 CHECK_INTERNET_TIMEOUT = 5
 
-# The name of the .log file; the tool by default will output its messages to steam_monitor_usersteamid.log file
+# Base name of the log file. The tool will save its output to steam_monitor_<usersteamid>.log file
 ST_LOGFILE = "steam_monitor"
 
 # Value used by signal handlers increasing/decreasing the check for player activity when user is online/away/snooze; in seconds
 STEAM_ACTIVE_CHECK_SIGNAL_VALUE = 30  # 30 seconds
 
+# Whether to clear the terminal screen after starting the tool
+CLEAR_SCREEN = True
+
 # -------------------------
 # CONFIGURATION SECTION END
 # -------------------------
+
+# Width of horizontal line (─)
+HORIZONTAL_LINE = 105
 
 TOOL_ALIVE_COUNTER = TOOL_ALIVE_INTERVAL / STEAM_CHECK_INTERVAL
 
@@ -108,7 +115,6 @@ import platform
 import re
 import ipaddress
 import steam.steamid
-import steam.client
 import steam.webapi
 
 
@@ -135,20 +141,30 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
-# Function to check internet connectivity
-def check_internet():
-    url = CHECK_INTERNET_URL
+# Checks internet connectivity
+def check_internet(url=CHECK_INTERNET_URL, timeout=CHECK_INTERNET_TIMEOUT):
     try:
-        _ = req.get(url, timeout=CHECK_INTERNET_TIMEOUT)
-        print("OK")
+        _ = req.get(url, timeout=timeout)
         return True
-    except Exception as e:
-        print(f"No connectivity, please check your network - {e}")
-        sys.exit(1)
-    return False
+    except req.RequestException as e:
+        print(f"* No connectivity, please check your network:\n\n{e}")
+        return False
 
 
-# Function to convert absolute value of seconds to human readable format
+# Clears the terminal screen
+def clear_screen(enabled=True):
+    if not enabled:
+        return
+    try:
+        if platform.system() == 'Windows':
+            os.system('cls')
+        else:
+            os.system('clear')
+    except Exception:
+        print("* Cannot clear the screen contents")
+
+
+# Converts absolute value of seconds to human readable format
 def display_time(seconds, granularity=2):
     intervals = (
         ('years', 31556952),  # approximation
@@ -174,7 +190,7 @@ def display_time(seconds, granularity=2):
         return '0 seconds'
 
 
-# Function to calculate time span between two timestamps in seconds
+# Calculates time span between two timestamps, accepts timestamp integers, floats and datetime objects
 def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True, show_minutes=True, show_seconds=True, granularity=3):
     result = []
     intervals = ['years', 'months', 'weeks', 'days', 'hours', 'minutes', 'seconds']
@@ -241,13 +257,13 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
         return '0 seconds'
 
 
-# Function to send email notification
+# Sends email notification
 def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
     fqdn_re = re.compile(r'(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)')
     email_re = re.compile(r'[^@]+@[^@]+\.[^@]+')
 
     try:
-        is_ip = ipaddress.ip_address(str(SMTP_HOST))
+        ipaddress.ip_address(str(SMTP_HOST))
     except ValueError:
         if not fqdn_re.search(str(SMTP_HOST)):
             print("Error sending email - SMTP settings are incorrect (invalid IP address/FQDN in SMTP_HOST)")
@@ -288,7 +304,7 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
         email_msg = MIMEMultipart('alternative')
         email_msg["From"] = SENDER_EMAIL
         email_msg["To"] = RECEIVER_EMAIL
-        email_msg["Subject"] = Header(subject, 'utf-8')
+        email_msg["Subject"] = str(Header(subject, 'utf-8'))
 
         if body:
             part1 = MIMEText(body, 'plain')
@@ -303,34 +319,46 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
         smtpObj.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, email_msg.as_string())
         smtpObj.quit()
     except Exception as e:
-        print(f"Error sending email - {e}")
+        print(f"Error sending email: {e}")
         return 1
     return 0
 
 
-# Function to write CSV entry
+# Initializes the CSV file
+def init_csv_file(csv_file_name):
+    try:
+        if not os.path.isfile(csv_file_name) or os.path.getsize(csv_file_name) == 0:
+            with open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
+                writer.writeheader()
+    except Exception as e:
+        raise RuntimeError(f"Could not initialize CSV file '{csv_file_name}': {e}")
+
+
+# Writes CSV entry
 def write_csv_entry(csv_file_name, timestamp, status, gamename, gameid):
     try:
-        csv_file = open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8")
-        csvwriter = csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
-        csvwriter.writerow({'Date': timestamp, 'Status': status, 'Game name': gamename, 'Game ID': gameid})
-        csv_file.close()
-    except Exception as e:
-        raise
+
+        with open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8") as csv_file:
+            csvwriter = csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
+            csvwriter.writerow({'Date': timestamp, 'Status': status, 'Game name': gamename, 'Game ID': gameid})
+
+    except Exception:
+        raise RuntimeError(f"Failed to write to CSV file '{csv_file_name}': {e}")
 
 
-# Function to return the timestamp in human readable format; eg. Sun, 21 Apr 2024, 15:08:45
+# Returns the current date/time in human readable format; eg. Sun 21 Apr 2024, 15:08:45
 def get_cur_ts(ts_str=""):
     return (f'{ts_str}{calendar.day_abbr[(datetime.fromtimestamp(int(time.time()))).weekday()]}, {datetime.fromtimestamp(int(time.time())).strftime("%d %b %Y, %H:%M:%S")}')
 
 
-# Function to print the current timestamp in human readable format; eg. Sun, 21 Apr 2024, 15:08:45
+# Prints the current date/time in human readable format with separator; eg. Sun 21 Apr 2024, 15:08:45
 def print_cur_ts(ts_str=""):
     print(get_cur_ts(str(ts_str)))
-    print("---------------------------------------------------------------------------------------------------------")
+    print("─" * HORIZONTAL_LINE)
 
 
-# Function to return the timestamp/datetime object in human readable format (long version); eg. Sun, 21 Apr 2024, 15:08:45
+# Returns the timestamp/datetime object in human readable format (long version); eg. Sun 21 Apr 2024, 15:08:45
 def get_date_from_ts(ts):
     if type(ts) is datetime:
         ts_new = int(round(ts.timestamp()))
@@ -344,7 +372,7 @@ def get_date_from_ts(ts):
     return (f'{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime("%d %b %Y, %H:%M:%S")}')
 
 
-# Function to return the timestamp/datetime object in human readable format (short version); eg.
+# Returns the timestamp/datetime object in human readable format (short version); eg.
 # Sun 21 Apr 15:08
 # Sun 21 Apr 24, 15:08 (if show_year == True and current year is different)
 # Sun 21 Apr (if show_hour == False)
@@ -373,7 +401,7 @@ def get_short_date_from_ts(ts, show_year=False, show_hour=True):
         return (f'{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime(f"%d %b{hour_strftime}")}')
 
 
-# Function to return the timestamp/datetime object in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
+# Returns the timestamp/datetime object in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
 def get_hour_min_from_ts(ts, show_seconds=False):
     if type(ts) is datetime:
         ts_new = int(round(ts.timestamp()))
@@ -391,7 +419,7 @@ def get_hour_min_from_ts(ts, show_seconds=False):
     return (str(datetime.fromtimestamp(ts_new).strftime(out_strf)))
 
 
-# Function to return the range between two timestamps/datetime objects; eg. Sun 21 Apr 14:09 - 14:15
+# Returns the range between two timestamps/datetime objects; eg. Sun 21 Apr 14:09 - 14:15
 def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
     if type(ts1) is datetime:
         ts1_new = int(round(ts1.timestamp()))
@@ -478,8 +506,8 @@ def decrease_active_check_signal_handler(sig, frame):
     print_cur_ts("Timestamp:\t\t\t")
 
 
-# Main function monitoring gaming activity of the specified Steam user
-def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
+# Main function that monitors gaming activity of the specified Steam user
+def steam_monitor_user(steamid, error_notification, csv_file_name):
 
     alive_counter = 0
     status_ts = 0
@@ -495,28 +523,24 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
 
     try:
         if csv_file_name:
-            csv_file = open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8")
-            csvwriter = csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
-            if not csv_exists:
-                csvwriter.writeheader()
-            csv_file.close()
+            init_csv_file(csv_file_name)
     except Exception as e:
-        print(f"* Error - {e}")
+        print(f"* Error: {e}")
 
     try:
         s_api = steam.webapi.WebAPI(key=STEAM_API_KEY)
-        s_api.ISteamUser.GetPlayerSummaries(steamids=str(steamid))
+        s_api.ISteamUser.GetPlayerSummaries(steamids=str(steamid))  # type: ignore[attr-defined]
         s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
-        s_api.IPlayerService.GetRecentlyPlayedGames(steamid=steamid, count=5)
+        s_api.IPlayerService.GetRecentlyPlayedGames(steamid=steamid, count=5)  # type: ignore[attr-defined]
         s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
     except Exception as e:
-        print(f"Error - {e}")
+        print(f"* Error: {e}")
         sys.exit(1)
 
     try:
         username = s_user["response"]["players"][0].get("personaname")
-    except:
-        print(f"Error: user with Steam64 ID {steamid} does not exist!")
+    except Exception:
+        print(f"* Error: user with Steam64 ID {steamid} does not exist!")
         sys.exit(1)
 
     status = int(s_user["response"]["players"][0].get("personastate"))
@@ -545,7 +569,7 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
             with open(steam_last_status_file, 'r', encoding="utf-8") as f:
                 last_status_read = json.load(f)
         except Exception as e:
-            print(f"* Cannot load last status from '{steam_last_status_file}' file - {e}")
+            print(f"* Cannot load last status from '{steam_last_status_file}' file: {e}")
         if last_status_read:
             last_status_ts = last_status_read[0]
             last_status = last_status_read[1]
@@ -578,13 +602,13 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
             with open(steam_last_status_file, 'w', encoding="utf-8") as f:
                 json.dump(last_status_to_save, f, indent=2)
         except Exception as e:
-            print(f"* Cannot save last status to '{steam_last_status_file}' file - {e}")
+            print(f"* Cannot save last status to '{steam_last_status_file}' file: {e}")
 
     try:
         if csv_file_name and (status != last_status):
             write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), steam_personastates[status], gamename, gameid)
     except Exception as e:
-        print(f"* Error: cannot write CSV entry - {e}")
+        print(f"* Error: {e}")
 
     print(f"\nDisplay name:\t\t\t{username}")
 
@@ -607,7 +631,7 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
             with open(steam_last_status_file, 'w', encoding="utf-8") as f:
                 json.dump(last_status_to_save, f, indent=2)
         except Exception as e:
-            print(f"* Cannot save last status to '{steam_last_status_file}' file - {e}")
+            print(f"* Cannot save last status to '{steam_last_status_file}' file: {e}")
 
     if status_ts_old != status_ts_old_bck:
         if status == 0:
@@ -636,13 +660,15 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
     alive_counter = 0
     email_sent = False
 
+    m_subject = m_body = ""
+
     # Main loop
     while True:
         try:
             s_api = steam.webapi.WebAPI(key=STEAM_API_KEY)
-            s_api.ISteamUser.GetPlayerSummaries(steamids=str(steamid))
+            s_api.ISteamUser.GetPlayerSummaries(steamids=str(steamid))  # type: ignore[attr-defined]
             s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
-            s_api.IPlayerService.GetRecentlyPlayedGames(steamid=steamid, count=5)
+            s_api.IPlayerService.GetRecentlyPlayedGames(steamid=steamid, count=5)  # type: ignore[attr-defined]
             s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
             status = int(s_user["response"]["players"][0]["personastate"])
             gameid = s_user["response"]["players"][0].get("gameid")
@@ -653,7 +679,7 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
                 sleep_interval = STEAM_ACTIVE_CHECK_INTERVAL
             else:
                 sleep_interval = STEAM_CHECK_INTERVAL
-            print(f"Error, retrying in {display_time(sleep_interval)} - {e}")
+            print(f"* Error, retrying in {display_time(sleep_interval)}: {e}")
             if 'Forbidden' in str(e):
                 print("* API key might not be valid anymore!")
                 if error_notification and not email_sent:
@@ -685,7 +711,7 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
                 with open(steam_last_status_file, 'w', encoding="utf-8") as f:
                     json.dump(last_status_to_save, f, indent=2)
             except Exception as e:
-                print(f"* Cannot save last status to '{steam_last_status_file}' file - {e}")
+                print(f"* Cannot save last status to '{steam_last_status_file}' file: {e}")
 
             print(f"Steam user {username} changed status from {steam_personastates[status_old]} to {steam_personastates[status]}")
             print(f"User was {steam_personastates[status_old]} for {calculate_timespan(int(status_ts), int(status_ts_old))} ({get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)})")
@@ -777,7 +803,7 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
 
             change = True
 
-            if game_change_notification:
+            if game_change_notification and m_subject and m_body:
                 print(f"Sending email notification to {RECEIVER_EMAIL}")
                 send_email(m_subject, m_body, "", SMTP_SSL)
 
@@ -791,7 +817,7 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
                 if csv_file_name:
                     write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), steam_personastates[status], gamename, gameid)
             except Exception as e:
-                print(f"* Error: cannot write CSV entry - {e}")
+                print(f"* Error: {e}")
 
         status_old = status
         gameid_old = gameid
@@ -807,6 +833,7 @@ def steam_monitor_user(steamid, error_notification, csv_file_name, csv_exists):
         else:
             time.sleep(STEAM_CHECK_INTERVAL)
 
+
 if __name__ == "__main__":
 
     stdout_bck = sys.stdout
@@ -814,45 +841,127 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    try:
-        if platform.system() == 'Windows':
-            os.system('cls')
-        else:
-            os.system('clear')
-    except:
-        print("* Cannot clear the screen contents")
+    clear_screen(CLEAR_SCREEN)
 
     print(f"Steam Monitoring Tool v{VERSION}\n")
 
-    parser = argparse.ArgumentParser("steam_monitor")
-    parser.add_argument("STEAM64_ID", nargs="?", help="User's Steam64 ID", type=int)
-    parser.add_argument("-u", "--steam_api_key", help="Steam Web API key to override the value defined within the script (STEAM_API_KEY)", type=str)
-    parser.add_argument("-r", "--resolve_community_url", help="Use Steam community URL & resolve it to Steam64 ID (steam64)", type=str)
-    parser.add_argument("-a", "--active_inactive_notification", help="Send email notification once user changes status from active to inactive and vice versa (online/offline)", action='store_true')
-    parser.add_argument("-g", "--game_change_notification", help="Send email notification once user starts/changes/stops playing the game", action='store_true')
-    parser.add_argument("-s", "--status_notification", help="Send email notification for all player status changes (online/away/snooze/offline)", action='store_true')
-    parser.add_argument("-e", "--error_notification", help="Disable sending email notifications in case of errors like invalid API key", action='store_false')
-    parser.add_argument("-c", "--check_interval", help="Time between monitoring checks if user is offline, in seconds", type=int)
-    parser.add_argument("-k", "--active_check_interval", help="Time between monitoring checks if user is NOT offline, in seconds", type=int)
-    parser.add_argument("-b", "--csv_file", help="Write all status & game changes to CSV file", type=str, metavar="CSV_FILENAME")
-    parser.add_argument("-d", "--disable_logging", help="Disable output logging to file 'steam_monitor_steam64id.log' file", action='store_true')
-    parser.add_argument("-y", "--log_file_suffix", help="Log file suffix to be used instead of Steam 64 ID, so output will be logged to 'steam_monitor_suffix.log' file", type=str, metavar="LOG_SUFFIX")
-    parser.add_argument("-z", "--send_test_email_notification", help="Send test email notification to verify SMTP settings defined in the script", action='store_true')
+    parser = argparse.ArgumentParser(
+        prog="steam_monitor",
+        description="Monitor a Steam user's playing status and send customizable email alerts [ https://github.com/misiektoja/steam_monitor/ ]"
+    )
+
+    # Positional
+    parser.add_argument(
+        "steam64_id",
+        nargs="?",
+        metavar="STEAM64_ID",
+        help="User's Steam64 ID",
+        type=int
+    )
+
+    # API settings
+    creds = parser.add_argument_group("API settings")
+    creds.add_argument(
+        "-u", "--steam-api-key",
+        dest="steam_api_key",
+        metavar="STEAM_API_KEY",
+        type=str,
+        help="Steam Web API key"
+    )
+    creds.add_argument(
+        "-r", "--resolve-community-url",
+        dest="resolve_community_url",
+        metavar="COMMUNITY_URL",
+        type=str,
+        help="Use Steam community URL & resolve it to Steam64 ID"
+    )
+
+    # Notifications
+    notify = parser.add_argument_group("Notifications")
+    notify.add_argument(
+        "-a", "--notify-active-inactive",
+        dest="notify_active_inactive",
+        action="store_true",
+        help="Email when user goes online/offline"
+    )
+    notify.add_argument(
+        "-g", "--notify-game-change",
+        dest="notify_game_change",
+        action="store_true",
+        help="Email on game start/change/stop"
+    )
+    notify.add_argument(
+        "-s", "--notify-status",
+        dest="notify_status",
+        action="store_true",
+        help="Email on all status changes"
+    )
+    notify.add_argument(
+        "-e", "--no-error-notify",
+        dest="notify_errors",
+        action="store_false",
+        help="Disable email on errors"
+    )
+    notify.add_argument(
+        "-z", "--send-test-email",
+        dest="send_test_email",
+        action="store_true",
+        help="Send test email to verify SMTP settings"
+    )
+
+    # Intervals & timers
+    times = parser.add_argument_group("Intervals & timers")
+    times.add_argument(
+        "-c", "--check-interval",
+        dest="check_interval",
+        metavar="SECONDS",
+        type=int,
+        help="Polling interval when user is offline"
+    )
+    times.add_argument(
+        "-k", "--active-interval",
+        dest="active_interval",
+        metavar="SECONDS",
+        type=int,
+        help="Polling interval when user is in game"
+    )
+
+    # Features & Output
+    opts = parser.add_argument_group("Features & output")
+    opts.add_argument(
+        "-b", "--csv-file",
+        dest="csv_file",
+        metavar="CSV_FILENAME",
+        type=str,
+        help="Write status & game changes to CSV"
+    )
+    opts.add_argument(
+        "-y", "--log-file-suffix",
+        dest="log_suffix",
+        metavar="SUFFIX",
+        type=str,
+        help="Log file suffix instead of Steam64 ID"
+    )
+    opts.add_argument(
+        "-d", "--disable-logging",
+        dest="disable_logging",
+        action="store_true",
+        help="Disable logging to steam_monitor_<suffix>.log"
+    )
+
     args = parser.parse_args()
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(1)
 
-    sys.stdout.write("* Checking internet connectivity ... ")
-    sys.stdout.flush()
-    check_internet()
-    print("")
+    if not check_internet():
+        sys.exit(1)
 
-    if args.send_test_email_notification:
+    if args.send_test_email:
         print("* Sending test email notification ...\n")
         if send_email("steam_monitor: test email", "This is test email - your SMTP settings seems to be correct !", "", SMTP_SSL, smtp_timeout=5) == 0:
-                print("* Email sent successfully !")
+            print("* Email sent successfully !")
         else:
             sys.exit(1)
         sys.exit(0)
@@ -868,12 +977,12 @@ if __name__ == "__main__":
         STEAM_CHECK_INTERVAL = args.check_interval
         TOOL_ALIVE_COUNTER = TOOL_ALIVE_INTERVAL / STEAM_CHECK_INTERVAL
 
-    if args.active_check_interval:
-        STEAM_ACTIVE_CHECK_INTERVAL = args.active_check_interval
+    if args.active_interval:
+        STEAM_ACTIVE_CHECK_INTERVAL = args.active_interval
 
     s_id = 0
-    if args.STEAM64_ID:
-        s_id = int(args.STEAM64_ID)
+    if args.steam64_id:
+        s_id = int(args.steam64_id)
 
     if args.resolve_community_url:
         print(f"* Resolving Steam community URL to Steam64 ID: {args.resolve_community_url}\n")
@@ -891,21 +1000,15 @@ if __name__ == "__main__":
         sys.exit(1)
 
     if args.csv_file:
-        csv_enabled = True
-        csv_exists = os.path.isfile(args.csv_file)
         try:
-            csv_file = open(args.csv_file, 'a', newline='', buffering=1, encoding="utf-8")
+            with open(args.csv_file, 'a', newline='', buffering=1, encoding="utf-8") as _:
+                pass
         except Exception as e:
-            print(f"* Error: CSV file cannot be opened for writing - {e}")
+            print(f"* Error, CSV file cannot be opened for writing: {e}")
             sys.exit(1)
-        csv_file.close()
-    else:
-        csv_enabled = False
-        csv_file = None
-        csv_exists = False
 
-    if args.log_file_suffix:
-        log_suffix = args.log_file_suffix
+    if args.log_suffix:
+        log_suffix = args.log_suffix
     else:
         log_suffix = str(s_id)
 
@@ -913,20 +1016,15 @@ if __name__ == "__main__":
         ST_LOGFILE = f"{ST_LOGFILE}_{log_suffix}.log"
         sys.stdout = Logger(ST_LOGFILE)
 
-    active_inactive_notification = args.active_inactive_notification
-    game_change_notification = args.game_change_notification
-    status_notification = args.status_notification
+    active_inactive_notification = args.notify_active_inactive
+    game_change_notification = args.notify_game_change
+    status_notification = args.notify_status
+    error_notification = args.notify_errors
 
     print(f"* Steam timers:\t\t\t[check interval: {display_time(STEAM_CHECK_INTERVAL)}] [active check interval: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]")
-    print(f"* Email notifications:\t\t[active/inactive status changes = {active_inactive_notification}] [game changes = {game_change_notification}]\n*\t\t\t\t[all status changes = {status_notification}] [errors = {args.error_notification}]")
-    if not args.disable_logging:
-        print(f"* Output logging enabled:\t{not args.disable_logging} ({ST_LOGFILE})")
-    else:
-        print(f"* Output logging enabled:\t{not args.disable_logging}")
-    if csv_enabled:
-        print(f"* CSV logging enabled:\t\t{csv_enabled} ({args.csv_file})")
-    else:
-        print(f"* CSV logging enabled:\t\t{csv_enabled}")
+    print(f"* Email notifications:\t\t[active/inactive status changes = {active_inactive_notification}] [game changes = {game_change_notification}]\n*\t\t\t\t[all status changes = {status_notification}] [errors = {error_notification}]")
+    print(f"* Output logging enabled:\t{not args.disable_logging}" + (f" ({ST_LOGFILE})" if not args.disable_logging else ""))
+    print(f"* CSV logging enabled:\t\t{bool(args.csv_file)}" + (f" ({args.csv_file})" if args.csv_file else ""))
 
     out = f"\nMonitoring user with Steam64 ID {s_id}"
     print(out)
@@ -940,7 +1038,7 @@ if __name__ == "__main__":
         signal.signal(signal.SIGTRAP, increase_active_check_signal_handler)
         signal.signal(signal.SIGABRT, decrease_active_check_signal_handler)
 
-    steam_monitor_user(s_id, args.error_notification, args.csv_file, csv_exists)
+    steam_monitor_user(s_id, args.notify_errors, args.csv_file)
 
     sys.stdout = stdout_bck
     sys.exit(0)
