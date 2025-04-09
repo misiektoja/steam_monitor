@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.2
+v1.3
 
 Tool implementing real-time tracking of Steam players activities:
 https://github.com/misiektoja/steam_monitor/
@@ -13,7 +13,7 @@ python-dateutil
 requests
 """
 
-VERSION = 1.2
+VERSION = 1.3
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -529,9 +529,7 @@ def steam_monitor_user(steamid, error_notification, csv_file_name):
 
     try:
         s_api = steam.webapi.WebAPI(key=STEAM_API_KEY)
-        s_api.ISteamUser.GetPlayerSummaries(steamids=str(steamid))  # type: ignore[attr-defined]
         s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
-        s_api.IPlayerService.GetRecentlyPlayedGames(steamid=steamid, count=5)  # type: ignore[attr-defined]
         s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
     except Exception as e:
         print(f"* Error: {e}")
@@ -662,13 +660,18 @@ def steam_monitor_user(steamid, error_notification, csv_file_name):
 
     m_subject = m_body = ""
 
+    if status > 0:
+        sleep_interval = STEAM_ACTIVE_CHECK_INTERVAL
+    else:
+        sleep_interval = STEAM_CHECK_INTERVAL
+
+    time.sleep(sleep_interval)
+
     # Main loop
     while True:
         try:
             s_api = steam.webapi.WebAPI(key=STEAM_API_KEY)
-            s_api.ISteamUser.GetPlayerSummaries(steamids=str(steamid))  # type: ignore[attr-defined]
             s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
-            s_api.IPlayerService.GetRecentlyPlayedGames(steamid=steamid, count=5)  # type: ignore[attr-defined]
             s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
             status = int(s_user["response"]["players"][0]["personastate"])
             gameid = s_user["response"]["players"][0].get("gameid")
