@@ -1,4 +1,4 @@
-python_dateutil
-Requests
 steam[client]
+requests
+python-dateutil
 python-dotenv
