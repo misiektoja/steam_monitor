@@ -1,6 +1,6 @@
 # steam_monitor
 
-steam_monitor is a tool that allows for real-time monitoring of Steam players' activities.
+steam_monitor is a tool for real-time monitoring of Steam players' activities.
 
 ## Features
 
@@ -11,146 +11,246 @@ steam_monitor is a tool that allows for real-time monitoring of Steam players' a
 - Possibility to control the running copy of the script via signals
 
 <p align="center">
-   <img src="./assets/steam_monitor.png" alt="steam_monitor_screenshot" width="95%"/>
+   <img src="./assets/steam_monitor.png" alt="steam_monitor_screenshot" width="85%"/>
 </p>
 
-## Change Log
+## Table of Contents
 
-Release notes can be found [here](RELEASE_NOTES.md)
+1. [Requirements](#requirements)
+2. [Installation](#installation)
+   * [Install from PyPI](#install-from-pypi)
+   * [Manual Installation](#manual-installation)
+3. [Quick Start](#quick-start)
+4. [Configuration](#configuration)
+   * [Configuration File](#configuration-file)
+   * [Steam Web API key](#steam-web-api-key)
+   * [User Privacy Settings](#user-privacy-settings)
+   * [SMTP Settings](#smtp-settings)
+   * [Storing Secrets](#storing-secrets)
+5. [Usage](#usage)
+   * [Monitoring Mode](#monitoring-mode)
+   * [Email Notifications](#email-notifications)
+   * [CSV Export](#csv-export)
+   * [Check Intervals](#check-intervals)
+   * [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix)
+   * [Coloring Log Output with GRC](#coloring-log-output-with-grc)
+6. [Change Log](#change-log)
+7. [License](#license)
 
 ## Requirements
 
-The tool requires Python 3.5 or higher.
+* Python 3.6 or higher
+* Libraries: [steam](https://github.com/ValvePython/steam), `requests`, `python-dateutil`, `python-dotenv`
 
-It uses [steam](https://github.com/ValvePython/steam) library, also requests and python-dateutil.
+Tested on:
 
-It has been tested successfully on:
-- macOS (Ventura, Sonoma & Sequoia)
-- Linux:
-   - Raspberry Pi OS (Bullseye & Bookworm)
-   - Ubuntu 24
-   - Rocky Linux (8.x, 9.x)
-   - Kali Linux (2024, 2025)
-- Windows (10 & 11)
+* **macOS**: Ventura, Sonoma, Sequoia
+* **Linux**: Raspberry Pi OS (Bullseye, Bookworm), Ubuntu 24, Rocky Linux 8.x/9.x, Kali Linux 2024/2025
+* **Windows**: 10, 11
 
 It should work on other versions of macOS, Linux, Unix and Windows as well.
 
 ## Installation
 
-Install the required Python packages:
+### Install from PyPI
 
 ```sh
-python3 -m pip install requests python-dateutil "steam[client]"
+pip install steam_monitor
 ```
 
-Or from requirements.txt:
+### Manual Installation
+
+Download the *[steam_monitor.py](steam_monitor.py)* file to the desired location.
+
+Install dependencies via pip:
 
 ```sh
-pip3 install -r requirements.txt
+pip install "steam[client]" requests python-dateutil python-dotenv
 ```
 
-Copy the *[steam_monitor.py](steam_monitor.py)* file to the desired location. 
-
-You might want to add executable rights if on Linux/Unix/macOS:
+Alternatively, from the downloaded *[requirements.txt](requirements.txt)*:
 
 ```sh
-chmod a+x steam_monitor.py
+pip install -r requirements.txt
+```
+
+## Quick Start
+
+- Grab your [Steam Web API key](#steam-web-api-key) and track the `steam_user_id` gaming activities:
+
+```sh
+steam_monitor <steam_user_id> -u "your_steam_web_api_key"
+```
+
+Or if you installed [manually](#manual-installation):
+
+```sh
+python3 steam_monitor.py <steam_user_id> -u "your_steam_web_api_key"
+```
+
+To get the list of all supported command-line arguments / flags:
+
+```sh
+steam_monitor --help
 ```
 
 ## Configuration
 
-Edit the *[steam_monitor.py](steam_monitor.py)* file and change any desired configuration variables in the marked **CONFIGURATION SECTION** (all parameters have detailed description in the comments).
+### Configuration File
+
+Most settings can be configured via command-line arguments.
+
+If you want to have it stored persistently, generate a default config template and save it to a file named `steam_monitor.conf`:
+
+```sh
+steam_monitor --generate-config > steam_monitor.conf
+
+```
+
+Edit the `steam_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
 
 ### Steam Web API key
 
 You can get the Steam Web API key here: [http://steamcommunity.com/dev/apikey](http://steamcommunity.com/dev/apikey)
 
-Change the `STEAM_API_KEY` variable to respective value (or use **-u** parameter).
+Provide the `STEAM_API_KEY` secret using one of the following methods:
+ - Pass it at runtime with `-u` / `--steam-api-key`
+ - Set it as an [environment variable](#storing-secrets) (e.g. `export STEAM_API_KEY=...`)
+ - Add it to [.env file](#storing-secrets) (`STEAM_API_KEY=...`) for persistent use
 
-### User privacy settings
+Fallback:
+ - Hard-code it in the code or config file
 
-In order to monitor Steam user activity, proper privacy settings need to be enabled on the monitored user account, i.e. in *'Edit Profile'* -> *'Privacy Settings'*, the value in section *'My Profile'* and *'Game details'* should be set to *'Friends Only'* (if you are friends) or to *'Public'*. 
+If you store the `STEAM_API_KEY` in a dotenv file you can update its value and send a `SIGHUP` signal to the process to reload the file with the new API key without restarting the tool. More info in [Storing Secrets](#storing-secrets) and [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix).
 
-### SMTP settings
+### User Privacy Settings
 
-If you want to use email notifications functionality you need to change the SMTP settings (host, port, user, password, sender, recipient) in the *[steam_monitor.py](steam_monitor.py)* file. If you leave the default settings then no notifications will be sent.
+In order to monitor Steam user activity, proper privacy settings need to be enabled on the monitored user account.
 
-You can verify if your SMTP settings are correct by using **-z** parameter (the tool will try to send a test email notification):
+The user should go to [Steam Privacy Settings](https://steamcommunity.com/my/edit/settings).
 
-```sh
-./steam_monitor.py -z
-```
+The value in **My Profile → Game details** should be set to **Friends Only** or **Public**. 
 
-### Other settings
+### SMTP Settings
 
-All other variables can be left at their defaults, but feel free to experiment with it.
+If you want to use email notifications functionality, configure SMTP settings in the `steam_monitor.conf` file. 
 
-## Getting started
-
-### List of supported parameters
-
-To get the list of all supported parameters:
+Verify your SMTP settings by using `--send-test-email` flag (the tool will try to send a test email notification):
 
 ```sh
-./steam_monitor.py -h
+steam_monitor --send-test-email
 ```
 
-or 
+### Storing Secrets
+
+It is recommended to store secrets like `STEAM_API_KEY` or `SMTP_PASSWORD` as either an environment variable or in a dotenv file.
+
+Set environment variables using `export` on **Linux/Unix/macOS/WSL** systems:
 
 ```sh
-python3 ./steam_monitor.py -h
+export STEAM_API_KEY="your_steam_web_api_key"
+export SMTP_PASSWORD="your_smtp_password"
 ```
 
-### Monitoring mode
+On **Windows Command Prompt** use `set` instead of `export` and on **Windows PowerShell** use `$env`.
 
-To monitor specific user activity, just type the player's Steam64 ID (**12345678901234567** in the example below):
+Alternatively store them persistently in a dotenv file (recommended):
+
+```ini
+STEAM_API_KEY="your_steam_web_api_key"
+SMTP_PASSWORD="your_smtp_password"
+```
+
+By default the tool will auto-search for dotenv file named `.env` in current directory and then upward from it. 
+
+You can specify a custom file with `DOTENV_FILE` or `--env-file` flag:
 
 ```sh
-./steam_monitor.py 12345678901234567
+steam_monitor <steam_user_id> --env-file /path/.env-steam_monitor
 ```
 
-If you have not changed `STEAM_API_KEY` variable in the *[steam_monitor.py](steam_monitor.py)* file, you can use **-u** parameter:
+ You can also disable `.env` auto-search with `DOTENV_FILE = "none"` or `--env-file none`:
 
 ```sh
-./steam_monitor.py 12345678901234567 -u "your_steam_web_api_key"
+steam_monitor <steam_user_id> --env-file none
 ```
 
-If you do not know the user's Steam64 ID, but you know the Steam profile/community URL (which can be customized by the user), you can also run the tool with **-r** parameter which will automatically resolve it to Steam64 ID: 
+As a fallback, you can also store secrets in the configuration file or source code.
+
+## Usage
+
+### Monitoring Mode
+
+To monitor specific user activity, just type the player's Steam64 ID (`steam_user_id` in the example below):
 
 ```sh
-./steam_monitor.py -r "https://steamcommunity.com/id/steam_username/"
+steam_monitor <steam_user_id>
 ```
 
-The tool will run indefinitely and monitor the player until the script is interrupted (Ctrl+C) or terminated in another way.
+If you have not set `STEAM_API_KEY` secret, you can use `-u` flag:
+
+```sh
+steam_monitor <steam_user_id> -u "your_steam_web_api_key"
+```
+
+If you do not know the user's Steam64 ID, but you know the Steam profile/community URL (which can be customized by the user), you can also run the tool with `-r` flag which will automatically resolve it to Steam64 ID: 
+
+```sh
+steam_monitor -r "https://steamcommunity.com/id/steam_username/"
+```
+
+By default, the tool looks for a configuration file named `steam_monitor.conf` in:
+ - current directory 
+ - home directory (`~`)
+ - script directory 
+
+ If you generated a configuration file as described in [Configuration](#configuration), but saved it under a different name or in a different directory, you can specify its location using the `--config-file` flag:
+
+
+```sh
+steam_monitor <steam_user_id> --config-file /path/steam_monitor_new.conf
+```
+
+The tool runs until interrupted (`Ctrl+C`). Use `tmux` or `screen` for persistence.
 
 You can monitor multiple Steam players by running multiple instances of the script.
 
-It is recommended to use something like **tmux** or **screen** to keep the script running after you log out from the server (unless you are running it on your desktop).
+The tool automatically saves its output to `steam_monitor_<user_steam_id/file_suffix>.log` file. The log file name can be changed via `ST_LOGFILE` configuration option and its suffix via `FILE_SUFFIX` / `-y` flag. Logging can be disabled completely via `DISABLE_LOGGING` / `-d` flag.
 
-The tool automatically saves its output to *steam_monitor_{user_steam64_id}.log* file (the log file name suffix can be changed via **-y** parameter or logging can be disabled completely with **-d** parameter).
+The tool also saves the timestamp and last status (after every change) to the `steam_<user_display_name>_last_status.json` file, so the last status is available after the restart of the tool.
 
-The tool also saves the timestamp and last status (after every change) to the *steam_{user_display_name}_last_status.json* file, so the last status is available after the restart of the tool.
+### Email Notifications
 
-## How to use other features
-
-### Email notifications
-
-If you want to receive email notifications when the user comes online or goes offline, use the **-a** parameter:
+To enable email notifications when a user gets online or offline:
+- set `ACTIVE_INACTIVE_NOTIFICATION` to `True`
+- or use the `-a` flag
 
 ```sh
-./steam_monitor.py -r "https://steamcommunity.com/id/steam_username/" -a
+steam_monitor <steam_user_id> -a
 ```
 
-If you want to be informed about any user status changes (online/away/snooze/offline), use the **-s** parameter:
+To be informed when a user starts, stops or changes the played game:
+- set `GAME_CHANGE_NOTIFICATION` to `True`
+- or use the `-g` flag
 
 ```sh
-./steam_monitor.py -r "https://steamcommunity.com/id/steam_username/" -s
+steam_monitor <steam_user_id> -g
 ```
 
-If you want to be informed when a user starts, stops or changes the game being played then use the **-g** parameter:
+To get email notifications about any changes in user status (online/away/snooze/offline):
+- set `STATUS_NOTIFICATION` to `True`
+- or use the `-s` flag
 
 ```sh
-./steam_monitor.py -r "https://steamcommunity.com/id/steam_username/" -g
+steam_monitor <steam_user_id> -s
+```
+
+To disable sending an email on errors (enabled by default):
+- set `ERROR_NOTIFICATION` to `False`
+- or use the `-e` flag
+
+```sh
+steam_monitor <steam_user_id> -e
 ```
 
 Make sure you defined your SMTP settings earlier (see [SMTP settings](#smtp-settings)).
@@ -161,25 +261,30 @@ Example email:
    <img src="./assets/steam_monitor_email_notifications.png" alt="steam_monitor_email_notifications" width="85%"/>
 </p>
 
-### Saving gaming activity to the CSV file
+### CSV Export
 
-If you want to save all reported activities of the Steam user, use the **-b** parameter with the name of the file (it will be automatically created if it does not exist):
-
-```sh
-./steam_monitor.py -r "https://steamcommunity.com/id/steam_username/" -b steam_username.csv
-```
-
-### Check intervals
-
-If you want to change the check interval when the user is online/away/snooze to 15 seconds, use the **-k** parameter and when the user is offline to 2 minutes (120 seconds), use the **-c** parameter.
+If you want to save all reported activities of the Steam user to a CSV file, set `CSV_FILE` or use `-b` flag:
 
 ```sh
-./steam_monitor.py -r "https://steamcommunity.com/id/steam_username/" -k 15 -c 120
+steam_monitor <steam_user_id> -b steam_user_id.csv
 ```
 
-### Controlling the script via signals (only macOS/Linux/Unix)
+The file will be automatically created if it does not exist.
 
-The tool has several signal handlers implemented which allow to change behavior of the tool without a need to restart it with new parameters.
+### Check Intervals
+
+If you want to customize polling intervals, use `-k` and `-c` flags (or corresponding configuration options):
+
+```sh
+steam_monitor <steam_user_id> -k 30 -c 120
+```
+
+* `STEAM_ACTIVE_CHECK_INTERVAL`, `-k`: check interval when the user is online, away or snooze (seconds)
+* `STEAM_CHECK_INTERVAL`, `-c`: check interval when the user is offline (seconds)
+
+### Signal Controls (macOS/Linux/Unix)
+
+The tool has several signal handlers implemented which allow to change behavior of the tool without a need to restart it with new configuration options / flags.
 
 List of supported signals:
 
@@ -190,28 +295,21 @@ List of supported signals:
 | CONT | Toggle email notifications for all user status changes (online/away/snooze/offline) (-s) |
 | TRAP | Increase the check timer for player activity when user is online/away/snooze (by 30 seconds) |
 | ABRT | Decrease check timer for player activity when user is online/away/snooze (by 30 seconds) |
+| HUP | Reload secrets from .env file |
 
-So if you want to change functionality of the running tool, just send the proper signal to the desired copy of the script.
-
-I personally use the **pkill** tool, so for example, to toggle email notifications when a user gets online or offline for the tool instance monitoring the *12345678901234567* user:
+Send signals with `kill` or `pkill`, e.g.:
 
 ```sh
-pkill -f -USR1 "python3 ./steam_monitor.py 12345678901234567"
+pkill -USR1 -f "steam_monitor <steam_user_id>"
 ```
 
 As Windows supports limited number of signals, this functionality is available only on Linux/Unix/macOS.
 
-### Other
+### Coloring Log Output with GRC
 
-Check other supported parameters using **-h**.
+You can use [GRC](https://github.com/garabik/grc) to color logs.
 
-You can combine all the parameters mentioned earlier.
-
-## Coloring log output with GRC
-
-If you use [GRC](https://github.com/garabik/grc) and want to have the tool's log output properly colored you can use the configuration file available [here](grc/conf.monitor_logs)
-
-Change your grc configuration (typically *.grc/grc.conf*) and add this part:
+Add to your GRC config (`~/.grc/grc.conf`):
 
 ```
 # monitoring log file
@@ -219,8 +317,18 @@ Change your grc configuration (typically *.grc/grc.conf*) and add this part:
 conf.monitor_logs
 ```
 
-Now copy the *conf.monitor_logs* to your *.grc* directory and steam_monitor log files should be nicely colored when using *grc* tool.
+Now copy the [conf.monitor_logs](grc/conf.monitor_logs) to your `~/.grc/` and log files should be nicely colored when using `grc` tool.
+
+Example:
+
+```sh
+grc tail -F -n 100 steam_monitor_<user_steam_id/file_suffix>.log
+```
+
+## Change Log
+
+See [RELEASE_NOTES.md](RELEASE_NOTES.md) for details.
 
 ## License
 
-This project is licensed under the GPLv3 - see the [LICENSE](LICENSE) file for details
+Licensed under GPLv3. See [LICENSE](LICENSE).
