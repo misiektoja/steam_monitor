@@ -9,8 +9,8 @@ https://github.com/misiektoja/steam_monitor/
 Python pip3 requirements:
 
 steam[client]
-python-dateutil
 requests
+python-dateutil
 python-dotenv (optional)
 """
 
@@ -49,36 +49,37 @@ SENDER_EMAIL = "your_sender_email"
 RECEIVER_EMAIL = "your_receiver_email"
 
 # Whether to send an email when user goes online/offline
-# Can also be enabled via the -a parameter
+# Can also be enabled via the -a flag
 ACTIVE_INACTIVE_NOTIFICATION = False
 
 # Whether to send an email on game start/change/stop
-# Can also be enabled via the -g parameter
+# Can also be enabled via the -g flag
 GAME_CHANGE_NOTIFICATION = False
 
-# Whether to send an email on all status changes
-# Can also be enabled via the -s parameter
+# Whether to send an email on all status changes (online/away/snooze/offline)
+# Can also be enabled via the -s flag
 STATUS_NOTIFICATION = False
 
 # Whether to send an email on errors
-# Can also be disabled via the -e parameter
+# Can also be disabled via the -e flag
 ERROR_NOTIFICATION = True
 
 # How often to check for player activity when the user is offline; in seconds
-# Can also be set using the -c parameter
+# Can also be set using the -c flag
 STEAM_CHECK_INTERVAL = 120  # 2 min
 
 # How often to check for player activity when the user is online, away or snoozing; in seconds
-# Can also be set using the -k parameter
+# Can also be set using the -k flag
 STEAM_ACTIVE_CHECK_INTERVAL = 60  # 1 min
 
 # If the user disconnects (offline) and reconnects (online) within OFFLINE_INTERRUPT seconds,
-# the online session start time will be restored to the previous session’s start time (short offline interruption),
+# the online session start time will be restored to the previous session's start time (short offline interruption),
 # and previous session statistics (like total playtime and number of played games) will be preserved
 OFFLINE_INTERRUPT = 420  # 7 mins
 
-# How often to print an "alive check" message to the output; in seconds
-TOOL_ALIVE_INTERVAL = 21600  # 6 hours
+# How often to print a "liveness check" message to the output; in seconds
+# Set to 0 to disable
+LIVENESS_CHECK_INTERVAL = 43200  # 12 hours
 
 # URL used to verify internet connectivity at startup
 CHECK_INTERNET_URL = 'https://api.steampowered.com/'
@@ -87,26 +88,27 @@ CHECK_INTERNET_URL = 'https://api.steampowered.com/'
 CHECK_INTERNET_TIMEOUT = 5
 
 # CSV file to write all status & game changes
-# Can also be set using the -b parameter
+# Can also be set using the -b flag
 CSV_FILE = ""
 
 # Location of the optional dotenv file which can keep secrets
 # If not specified it will try to auto-search for .env files
 # To disable auto-search, set this to the literal string "none"
-# Can also be set using the --env-file parameter
+# Can also be set using the --env-file flag
 DOTENV_FILE = ""
 
 # Suffix to append to the output filenames instead of default user Steam ID
-# Can also be set using the -y parameter
+# Can also be set using the -y flag
 FILE_SUFFIX = ""
 
 # Path or base name of the log file
-# If a directory or base name is provided, the final log file will be named 'steam_monitor_<user_steam_id/file_suffix>.log'
+# If a directory or base name is provided, the final log file will be named:
+# steam_monitor_<user_steam_id/file_suffix>.log
 # Absolute paths and custom filenames are supported. Use '~' for home directory if needed
 ST_LOGFILE = "steam_monitor"
 
 # Whether to disable logging to steam_monitor_<user_steam_id/file_suffix>.log
-# Can also be disabled via the -d parameter
+# Can also be disabled via the -d flag
 DISABLE_LOGGING = False
 
 # Width of horizontal line (─)
@@ -115,7 +117,8 @@ HORIZONTAL_LINE = 113
 # Whether to clear the terminal screen after starting the tool
 CLEAR_SCREEN = True
 
-# Value used by signal handlers increasing/decreasing the check for player activity when user is online/away/snooze; in seconds
+# Value used by signal handlers increasing/decreasing the check for player activity
+# when user is online/away/snooze (STEAM_ACTIVE_CHECK_INTERVAL); in seconds
 STEAM_ACTIVE_CHECK_SIGNAL_VALUE = 30  # 30 seconds
 """
 
@@ -124,7 +127,7 @@ STEAM_ACTIVE_CHECK_SIGNAL_VALUE = 30  # 30 seconds
 # -------------------------
 
 # Default dummy values so linters shut up
-# Do not change values below — modify them in the configuration section or config file instead
+# Do not change values below - modify them in the configuration section or config file instead
 STEAM_API_KEY = ""
 SMTP_HOST = ""
 SMTP_PORT = 0
@@ -140,7 +143,7 @@ ERROR_NOTIFICATION = False
 STEAM_CHECK_INTERVAL = 0
 STEAM_ACTIVE_CHECK_INTERVAL = 0
 OFFLINE_INTERRUPT = 0
-TOOL_ALIVE_INTERVAL = 0
+LIVENESS_CHECK_INTERVAL = 0
 CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
 CSV_FILE = ""
@@ -160,7 +163,7 @@ DEFAULT_CONFIG_FILENAME = "steam_monitor.conf"
 # List of secret keys to load from env/config
 SECRET_KEYS = ("STEAM_API_KEY", "SMTP_PASSWORD")
 
-TOOL_ALIVE_COUNTER = TOOL_ALIVE_INTERVAL / STEAM_CHECK_INTERVAL
+LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / STEAM_CHECK_INTERVAL
 
 stdout_bck = None
 csvfieldnames = ['Date', 'Status', 'Game name', 'Game ID']
@@ -203,7 +206,7 @@ try:
     import steam.steamid
     import steam.webapi
 except ModuleNotFoundError:
-    raise SystemExit("Error: Couldn’t find the Steam library !\n\nTo install it, run:\n    pip3 install \"steam[client]\"\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://github.com/ValvePython/steam/")
+    raise SystemExit("Error: Couldn't find the Steam library !\n\nTo install it, run:\n    pip3 install \"steam[client]\"\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://github.com/ValvePython/steam/")
 import shutil
 from pathlib import Path
 
@@ -852,7 +855,7 @@ def steam_monitor_user(steamid, csv_file_name):
                 time.sleep(retry_after)
                 continue
             else:
-                print(f"* Error, retrying in {display_time(sleep_interval)}: {e}")
+                print(f"* Error, retrying in {display_time(sleep_interval)}{': ' + str(e) if e else ''}")
                 if 'Forbidden' in str(e):
                     print("* API key might not be valid anymore!")
                     if ERROR_NOTIFICATION and not email_sent:
@@ -997,8 +1000,8 @@ def steam_monitor_user(steamid, csv_file_name):
         gamename_old = gamename
         alive_counter += 1
 
-        if alive_counter >= TOOL_ALIVE_COUNTER and status == 0:
-            print_cur_ts("Alive check, timestamp:\t\t")
+        if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER and status == 0:
+            print_cur_ts("Liveness check, timestamp:\t")
             alive_counter = 0
 
         if status > 0:
@@ -1008,7 +1011,7 @@ def steam_monitor_user(steamid, csv_file_name):
 
 
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, TOOL_ALIVE_COUNTER, STEAM_API_KEY, CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck
+    global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, STEAM_API_KEY, CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck
 
     if "--generate-config" in sys.argv:
         print(CONFIG_BLOCK.strip("\n"))
@@ -1136,7 +1139,7 @@ def main():
         dest="active_interval",
         metavar="SECONDS",
         type=int,
-        help="Polling interval when user is in game"
+        help="Polling interval when user is online"
     )
 
     # Features & Output
@@ -1239,7 +1242,7 @@ def main():
 
     if args.check_interval:
         STEAM_CHECK_INTERVAL = args.check_interval
-        TOOL_ALIVE_COUNTER = TOOL_ALIVE_INTERVAL / STEAM_CHECK_INTERVAL
+        LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / STEAM_CHECK_INTERVAL
 
     if args.active_interval:
         STEAM_ACTIVE_CHECK_INTERVAL = args.active_interval
@@ -1315,8 +1318,9 @@ def main():
         STATUS_NOTIFICATION = False
         ERROR_NOTIFICATION = False
 
-    print(f"* Steam timers:\t\t\t[check interval: {display_time(STEAM_CHECK_INTERVAL)}] [active check interval: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]")
-    print(f"* Email notifications:\t\t[active/inactive status changes = {ACTIVE_INACTIVE_NOTIFICATION}] [game changes = {GAME_CHANGE_NOTIFICATION}]\n*\t\t\t\t[all status changes = {STATUS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
+    print(f"* Steam polling intervals:\t[offline: {display_time(STEAM_CHECK_INTERVAL)}] [online: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]")
+    print(f"* Email notifications:\t\t[online/offline status changes = {ACTIVE_INACTIVE_NOTIFICATION}] [game changes = {GAME_CHANGE_NOTIFICATION}]\n*\t\t\t\t[all status changes = {STATUS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
+    print(f"* Liveness check:\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
     print(f"* CSV logging enabled:\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
     print(f"* Output logging enabled:\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
     print(f"* Configuration file:\t\t{cfg_path}")
