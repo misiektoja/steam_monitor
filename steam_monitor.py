@@ -11,6 +11,7 @@ Python pip3 requirements:
 steam[client]
 python-dateutil
 requests
+python-dotenv (optional)
 """
 
 VERSION = 1.3
@@ -19,14 +20,26 @@ VERSION = 1.3
 # CONFIGURATION SECTION START
 # ---------------------------
 
+CONFIG_BLOCK = """
 # Get your Steam Web API key from:
 # http://steamcommunity.com/dev/apikey
 #
-# Provide the value below or use the -u parameter
+# Provide the STEAM_API_KEY secret using one of the following methods:
+#   - Pass it at runtime with -u / --steam-api-key
+#   - Set it as an environment variable (e.g. export STEAM_API_KEY=...)
+#   - Add it to ".env" file (STEAM_API_KEY=...) for persistent use
+# Fallback:
+#   - Hard-code it in the code or config file
 STEAM_API_KEY = "your_steam_web_api_key"
 
 # SMTP settings for sending email notifications
 # If left as-is, no notifications will be sent
+#
+# Provide the SMTP_PASSWORD secret using one of the following methods:
+#   - Set it as an environment variable (e.g. export SMTP_PASSWORD=...)
+#   - Add it to ".env" file (SMTP_PASSWORD=...) for persistent use
+# Fallback:
+#   - Hard-code it in the code or config file
 SMTP_HOST = "your_smtp_server_ssl"
 SMTP_PORT = 587
 SMTP_USER = "your_smtp_user"
@@ -35,13 +48,29 @@ SMTP_SSL = True
 SENDER_EMAIL = "your_sender_email"
 RECEIVER_EMAIL = "your_receiver_email"
 
+# Whether to send an email when user goes online/offline
+# Can also be enabled via the -a parameter
+ACTIVE_INACTIVE_NOTIFICATION = False
+
+# Whether to send an email on game start/change/stop
+# Can also be enabled via the -g parameter
+GAME_CHANGE_NOTIFICATION = False
+
+# Whether to send an email on all status changes
+# Can also be enabled via the -s parameter
+STATUS_NOTIFICATION = False
+
+# Whether to send an email on errors
+# Can also be disabled via the -e parameter
+ERROR_NOTIFICATION = True
+
 # How often to check for player activity when the user is offline; in seconds
 # Can also be set using the -c parameter
-STEAM_CHECK_INTERVAL = 90  # 1.5 min
+STEAM_CHECK_INTERVAL = 120  # 2 min
 
 # How often to check for player activity when the user is online, away or snoozing; in seconds
 # Can also be set using the -k parameter
-STEAM_ACTIVE_CHECK_INTERVAL = 30  # 30 sec
+STEAM_ACTIVE_CHECK_INTERVAL = 60  # 1 min
 
 # If the user disconnects (offline) and reconnects (online) within OFFLINE_INTERRUPT seconds,
 # the online session start time will be restored to the previous session’s start time (short offline interruption),
@@ -57,21 +86,79 @@ CHECK_INTERNET_URL = 'https://api.steampowered.com/'
 # Timeout used when checking initial internet connectivity; in seconds
 CHECK_INTERNET_TIMEOUT = 5
 
-# Base name of the log file. The tool will save its output to steam_monitor_<usersteamid>.log file
+# CSV file to write all status & game changes
+# Can also be set using the -b parameter
+CSV_FILE = ""
+
+# Location of the optional dotenv file which can keep secrets
+# If not specified it will try to auto-search for .env files
+# To disable auto-search, set this to the literal string "none"
+# Can also be set using the --env-file parameter
+DOTENV_FILE = ""
+
+# Suffix to append to the output filenames instead of default user Steam ID
+# Can also be set using the -y parameter
+FILE_SUFFIX = ""
+
+# Path or base name of the log file
+# If a directory or base name is provided, the final log file will be named 'steam_monitor_<user_steam_id/file_suffix>.log'
+# Absolute paths and custom filenames are supported. Use '~' for home directory if needed
 ST_LOGFILE = "steam_monitor"
 
-# Value used by signal handlers increasing/decreasing the check for player activity when user is online/away/snooze; in seconds
-STEAM_ACTIVE_CHECK_SIGNAL_VALUE = 30  # 30 seconds
+# Whether to disable logging to steam_monitor_<user_steam_id/file_suffix>.log
+# Can also be disabled via the -d parameter
+DISABLE_LOGGING = False
+
+# Width of horizontal line (─)
+HORIZONTAL_LINE = 113
 
 # Whether to clear the terminal screen after starting the tool
 CLEAR_SCREEN = True
+
+# Value used by signal handlers increasing/decreasing the check for player activity when user is online/away/snooze; in seconds
+STEAM_ACTIVE_CHECK_SIGNAL_VALUE = 30  # 30 seconds
+"""
 
 # -------------------------
 # CONFIGURATION SECTION END
 # -------------------------
 
-# Width of horizontal line (─)
-HORIZONTAL_LINE = 105
+# Default dummy values so linters shut up
+# Do not change values below — modify them in the configuration section or config file instead
+STEAM_API_KEY = ""
+SMTP_HOST = ""
+SMTP_PORT = 0
+SMTP_USER = ""
+SMTP_PASSWORD = ""
+SMTP_SSL = False
+SENDER_EMAIL = ""
+RECEIVER_EMAIL = ""
+ACTIVE_INACTIVE_NOTIFICATION = False
+GAME_CHANGE_NOTIFICATION = False
+STATUS_NOTIFICATION = False
+ERROR_NOTIFICATION = False
+STEAM_CHECK_INTERVAL = 0
+STEAM_ACTIVE_CHECK_INTERVAL = 0
+OFFLINE_INTERRUPT = 0
+TOOL_ALIVE_INTERVAL = 0
+CHECK_INTERNET_URL = ""
+CHECK_INTERNET_TIMEOUT = 0
+CSV_FILE = ""
+DOTENV_FILE = ""
+FILE_SUFFIX = ""
+ST_LOGFILE = ""
+DISABLE_LOGGING = False
+HORIZONTAL_LINE = 0
+CLEAR_SCREEN = False
+STEAM_ACTIVE_CHECK_SIGNAL_VALUE = 0
+
+exec(CONFIG_BLOCK, globals())
+
+# Default name for the optional config file
+DEFAULT_CONFIG_FILENAME = "steam_monitor.conf"
+
+# List of secret keys to load from env/config
+SECRET_KEYS = ("STEAM_API_KEY", "SMTP_PASSWORD")
 
 TOOL_ALIVE_COUNTER = TOOL_ALIVE_INTERVAL / STEAM_CHECK_INTERVAL
 
@@ -81,9 +168,7 @@ csvfieldnames = ['Date', 'Status', 'Game name', 'Game ID']
 steam_personastates = ["offline", "online", "busy", "away", "snooze", "looking to trade", "looking to play"]
 steam_visibilitystates = ["private", "private", "private", "public"]
 
-active_inactive_notification = False
-game_change_notification = False
-status_notification = False
+CLI_CONFIG_PATH = None
 
 # to solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
 nl_ch = "\n"
@@ -91,8 +176,8 @@ nl_ch = "\n"
 
 import sys
 
-if sys.version_info < (3, 5):
-    print("* Error: Python version 3.5 or higher required !")
+if sys.version_info < (3, 6):
+    print("* Error: Python version 3.6 or higher required !")
     sys.exit(1)
 
 import time
@@ -114,8 +199,13 @@ import csv
 import platform
 import re
 import ipaddress
-import steam.steamid
-import steam.webapi
+try:
+    import steam.steamid
+    import steam.webapi
+except ModuleNotFoundError:
+    raise SystemExit("Error: Couldn’t find the Steam library !\n\nTo install it, run:\n    pip3 install \"steam[client]\"\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://github.com/ValvePython/steam/")
+import shutil
+from pathlib import Path
 
 
 # Logger class to output messages to stdout and log file
@@ -343,7 +433,7 @@ def write_csv_entry(csv_file_name, timestamp, status, gamename, gameid):
             csvwriter = csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
             csvwriter.writerow({'Date': timestamp, 'Status': status, 'Game name': gamename, 'Game ID': gameid})
 
-    except Exception:
+    except Exception as e:
         raise RuntimeError(f"Failed to write to CSV file '{csv_file_name}': {e}")
 
 
@@ -457,31 +547,31 @@ def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
 
 # Signal handler for SIGUSR1 allowing to switch active/inactive email notifications
 def toggle_active_inactive_notifications_signal_handler(sig, frame):
-    global active_inactive_notification
-    active_inactive_notification = not active_inactive_notification
+    global ACTIVE_INACTIVE_NOTIFICATION
+    ACTIVE_INACTIVE_NOTIFICATION = not ACTIVE_INACTIVE_NOTIFICATION
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
-    print(f"* Email notifications: [active/inactive status changes = {active_inactive_notification}]")
+    print(f"* Email notifications: [active/inactive status changes = {ACTIVE_INACTIVE_NOTIFICATION}]")
     print_cur_ts("Timestamp:\t\t\t")
 
 
 # Signal handler for SIGUSR2 allowing to switch played game changes notifications
 def toggle_game_change_notifications_signal_handler(sig, frame):
-    global game_change_notification
-    game_change_notification = not game_change_notification
+    global GAME_CHANGE_NOTIFICATION
+    GAME_CHANGE_NOTIFICATION = not GAME_CHANGE_NOTIFICATION
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
-    print(f"* Email notifications: [game changes = {game_change_notification}]")
+    print(f"* Email notifications: [game changes = {GAME_CHANGE_NOTIFICATION}]")
     print_cur_ts("Timestamp:\t\t\t")
 
 
 # Signal handler for SIGCONT allowing to switch all status changes notifications
 def toggle_all_status_changes_notifications_signal_handler(sig, frame):
-    global status_notification
-    status_notification = not status_notification
+    global STATUS_NOTIFICATION
+    STATUS_NOTIFICATION = not STATUS_NOTIFICATION
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
-    print(f"* Email notifications: [all status changes = {status_notification}]")
+    print(f"* Email notifications: [all status changes = {STATUS_NOTIFICATION}]")
     print_cur_ts("Timestamp:\t\t\t")
 
 
@@ -506,8 +596,81 @@ def decrease_active_check_signal_handler(sig, frame):
     print_cur_ts("Timestamp:\t\t\t")
 
 
+# Signal handler for SIGHUP allowing to reload secrets from .env
+def reload_secrets_signal_handler(sig, frame):
+    sig_name = signal.Signals(sig).name
+    print(f"* Signal {sig_name} received")
+
+    # disable autoscan if DOTENV_FILE set to none
+    if DOTENV_FILE and DOTENV_FILE.lower() == 'none':
+        env_path = None
+    else:
+        # reload .env if python-dotenv is installed
+        try:
+            from dotenv import load_dotenv, find_dotenv
+            if DOTENV_FILE:
+                env_path = DOTENV_FILE
+            else:
+                env_path = find_dotenv()
+            if env_path:
+                load_dotenv(env_path, override=True)
+            else:
+                print("* No .env file found, skipping env-var reload")
+        except ImportError:
+            env_path = None
+            print("* python-dotenv not installed, skipping env-var reload")
+
+    if env_path:
+        for secret in SECRET_KEYS:
+            old_val = globals().get(secret)
+            val = os.getenv(secret)
+            if val is not None and val != old_val:
+                globals()[secret] = val
+                print(f"* Reloaded {secret} from {env_path}")
+
+    print_cur_ts("Timestamp:\t\t\t")
+
+
+# Finds an optional config file
+def find_config_file(cli_path=None):
+    """
+    Search for an optional config file in:
+      1) CLI-provided path (must exist if given)
+      2) ./{DEFAULT_CONFIG_FILENAME}
+      3) ~/.{DEFAULT_CONFIG_FILENAME}
+      4) script-directory/{DEFAULT_CONFIG_FILENAME}
+    """
+
+    if cli_path:
+        p = Path(os.path.expanduser(cli_path))
+        return str(p) if p.is_file() else None
+
+    candidates = [
+        Path.cwd() / DEFAULT_CONFIG_FILENAME,
+        Path.home() / f".{DEFAULT_CONFIG_FILENAME}",
+        Path(__file__).parent / DEFAULT_CONFIG_FILENAME,
+    ]
+
+    for p in candidates:
+        if p.is_file():
+            return str(p)
+    return None
+
+
+# Resolves an executable path by checking if it's a valid file or searching in $PATH
+def resolve_executable(path):
+    if os.path.isfile(path) and os.access(path, os.X_OK):
+        return path
+
+    found = shutil.which(path)
+    if found:
+        return found
+
+    raise FileNotFoundError(f"Could not find executable '{path}'")
+
+
 # Main function that monitors gaming activity of the specified Steam user
-def steam_monitor_user(steamid, error_notification, csv_file_name):
+def steam_monitor_user(steamid, csv_file_name):
 
     alive_counter = 0
     status_ts = 0
@@ -538,7 +701,7 @@ def steam_monitor_user(steamid, error_notification, csv_file_name):
     try:
         username = s_user["response"]["players"][0].get("personaname")
     except Exception:
-        print(f"* Error: user with Steam64 ID {steamid} does not exist!")
+        print(f"* Error: User with Steam64 ID {steamid} does not exist!")
         sys.exit(1)
 
     status = int(s_user["response"]["players"][0].get("personastate"))
@@ -685,7 +848,7 @@ def steam_monitor_user(steamid, error_notification, csv_file_name):
             print(f"* Error, retrying in {display_time(sleep_interval)}: {e}")
             if 'Forbidden' in str(e):
                 print("* API key might not be valid anymore!")
-                if error_notification and not email_sent:
+                if ERROR_NOTIFICATION and not email_sent:
                     m_subject = f"steam_monitor: API key error! (user: {username})"
                     m_body = f"API key might not be valid anymore: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
@@ -770,7 +933,7 @@ def steam_monitor_user(steamid, error_notification, csv_file_name):
 
             m_subject = f"Steam user {username} is now {steam_personastates[status]} (after {m_subject_after}{m_subject_was_since})"
             m_body = f"Steam user {username} changed status from {steam_personastates[status_old]} to {steam_personastates[status]}\n\nUser was {steam_personastates[status_old]} for {calculate_timespan(int(status_ts), int(status_ts_old))}{m_body_was_since}{m_body_short_offline_msg}{m_body_user_in_game}{m_body_played_games}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-            if status_notification or (active_inactive_notification and act_inact_flag):
+            if STATUS_NOTIFICATION or (ACTIVE_INACTIVE_NOTIFICATION and act_inact_flag):
                 print(f"Sending email notification to {RECEIVER_EMAIL}")
                 send_email(m_subject, m_body, "", SMTP_SSL)
             status_ts_old = status_ts
@@ -806,7 +969,7 @@ def steam_monitor_user(steamid, error_notification, csv_file_name):
 
             change = True
 
-            if game_change_notification and m_subject and m_body:
+            if GAME_CHANGE_NOTIFICATION and m_subject and m_body:
                 print(f"Sending email notification to {RECEIVER_EMAIL}")
                 send_email(m_subject, m_body, "", SMTP_SSL)
 
@@ -837,7 +1000,16 @@ def steam_monitor_user(steamid, error_notification, csv_file_name):
             time.sleep(STEAM_CHECK_INTERVAL)
 
 
-if __name__ == "__main__":
+def main():
+    global CLI_CONFIG_PATH, DOTENV_FILE, TOOL_ALIVE_COUNTER, STEAM_API_KEY, CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck
+
+    if "--generate-config" in sys.argv:
+        print(CONFIG_BLOCK.strip("\n"))
+        sys.exit(0)
+
+    if "--version" in sys.argv:
+        print(f"{os.path.basename(sys.argv[0])} v{VERSION}")
+        sys.exit(0)
 
     stdout_bck = sys.stdout
 
@@ -850,7 +1022,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
         prog="steam_monitor",
-        description="Monitor a Steam user's playing status and send customizable email alerts [ https://github.com/misiektoja/steam_monitor/ ]"
+        description=("Monitor a Steam user's playing status and send customizable email alerts [ https://github.com/misiektoja/steam_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter
     )
 
     # Positional
@@ -860,6 +1032,33 @@ if __name__ == "__main__":
         metavar="STEAM64_ID",
         help="User's Steam64 ID",
         type=int
+    )
+
+    # Version, just to list in help, it is handled earlier
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s v{VERSION}"
+    )
+
+    # Configuration & dotenv files
+    conf = parser.add_argument_group("Configuration & dotenv files")
+    conf.add_argument(
+        "--config-file",
+        dest="config_file",
+        metavar="PATH",
+        help="Location of the optional config file",
+    )
+    conf.add_argument(
+        "--generate-config",
+        action="store_true",
+        help="Print default config template and exit",
+    )
+    conf.add_argument(
+        "--env-file",
+        dest="env_file",
+        metavar="PATH",
+        help="Path to optional dotenv file (auto-search if not set, disable with 'none')",
     )
 
     # API settings
@@ -885,24 +1084,28 @@ if __name__ == "__main__":
         "-a", "--notify-active-inactive",
         dest="notify_active_inactive",
         action="store_true",
+        default=None,
         help="Email when user goes online/offline"
     )
     notify.add_argument(
         "-g", "--notify-game-change",
         dest="notify_game_change",
         action="store_true",
+        default=None,
         help="Email on game start/change/stop"
     )
     notify.add_argument(
         "-s", "--notify-status",
         dest="notify_status",
         action="store_true",
+        default=None,
         help="Email on all status changes"
     )
     notify.add_argument(
         "-e", "--no-error-notify",
         dest="notify_errors",
         action="store_false",
+        default=None,
         help="Disable email on errors"
     )
     notify.add_argument(
@@ -939,8 +1142,8 @@ if __name__ == "__main__":
         help="Write status & game changes to CSV"
     )
     opts.add_argument(
-        "-y", "--log-file-suffix",
-        dest="log_suffix",
+        "-y", "--file-suffix",
+        dest="file_suffix",
         metavar="SUFFIX",
         type=str,
         help="Log file suffix instead of Steam64 ID"
@@ -949,7 +1152,8 @@ if __name__ == "__main__":
         "-d", "--disable-logging",
         dest="disable_logging",
         action="store_true",
-        help="Disable logging to steam_monitor_<suffix>.log"
+        default=None,
+        help="Disable logging to steam_monitor_<user_steam_id/file_suffix>.log"
     )
 
     args = parser.parse_args()
@@ -957,6 +1161,56 @@ if __name__ == "__main__":
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(1)
+
+    if args.config_file:
+        CLI_CONFIG_PATH = os.path.expanduser(args.config_file)
+
+    cfg_path = find_config_file(CLI_CONFIG_PATH)
+
+    if not cfg_path and CLI_CONFIG_PATH:
+        print(f"* Error: Config file '{CLI_CONFIG_PATH}' does not exist")
+        sys.exit(1)
+
+    if cfg_path:
+        try:
+            with open(cfg_path, "r") as cf:
+                exec(cf.read(), globals())
+        except Exception as e:
+            print(f"* Error loading config file '{cfg_path}': {e}")
+            sys.exit(1)
+
+    if args.env_file:
+        DOTENV_FILE = os.path.expanduser(args.env_file)
+    else:
+        if DOTENV_FILE:
+            DOTENV_FILE = os.path.expanduser(DOTENV_FILE)
+
+    if DOTENV_FILE and DOTENV_FILE.lower() == 'none':
+        env_path = None
+    else:
+        try:
+            from dotenv import load_dotenv, find_dotenv
+
+            if DOTENV_FILE:
+                env_path = DOTENV_FILE
+                if not os.path.isfile(env_path):
+                    print(f"* Warning: dotenv file '{env_path}' does not exist\n")
+                else:
+                    load_dotenv(env_path, override=True)
+            else:
+                env_path = find_dotenv() or None
+                if env_path:
+                    load_dotenv(env_path, override=True)
+        except ImportError:
+            env_path = DOTENV_FILE if DOTENV_FILE else None
+            if env_path:
+                print(f"* Warning: Cannot load dotenv file '{env_path}' because 'python-dotenv' is not installed\n\nTo install it, run:\n    pip3 install python-dotenv\n\nOnce installed, re-run this tool\n")
+
+    if env_path:
+        for secret in SECRET_KEYS:
+            val = os.getenv(secret)
+            if val is not None:
+                globals()[secret] = val
 
     if not check_internet():
         sys.exit(1)
@@ -994,7 +1248,7 @@ if __name__ == "__main__":
             if s_id:
                 s_id = int(s_id)
         except Exception as e:
-            print("* Error: cannot get Steam64 ID for specified community URL")
+            print("* Error: Cannot get Steam64 ID for specified community URL")
             print("*", e)
             sys.exit(1)
 
@@ -1003,31 +1257,63 @@ if __name__ == "__main__":
         sys.exit(1)
 
     if args.csv_file:
+        CSV_FILE = os.path.expanduser(args.csv_file)
+    else:
+        if CSV_FILE:
+            CSV_FILE = os.path.expanduser(CSV_FILE)
+
+    if CSV_FILE:
         try:
-            with open(args.csv_file, 'a', newline='', buffering=1, encoding="utf-8") as _:
+            with open(CSV_FILE, 'a', newline='', buffering=1, encoding="utf-8") as _:
                 pass
         except Exception as e:
-            print(f"* Error, CSV file cannot be opened for writing: {e}")
+            print(f"* Error: CSV file cannot be opened for writing: {e}")
             sys.exit(1)
 
-    if args.log_suffix:
-        log_suffix = args.log_suffix
+    if args.file_suffix:
+        FILE_SUFFIX = args.file_suffix
     else:
-        log_suffix = str(s_id)
+        FILE_SUFFIX = str(s_id)
 
-    if not args.disable_logging:
-        ST_LOGFILE = f"{ST_LOGFILE}_{log_suffix}.log"
-        sys.stdout = Logger(ST_LOGFILE)
+    if args.disable_logging is True:
+        DISABLE_LOGGING = True
 
-    active_inactive_notification = args.notify_active_inactive
-    game_change_notification = args.notify_game_change
-    status_notification = args.notify_status
-    error_notification = args.notify_errors
+    if not DISABLE_LOGGING:
+        log_path = Path(os.path.expanduser(ST_LOGFILE))
+        if log_path.is_dir():
+            raise SystemExit(f"* Error: ST_LOGFILE '{log_path}' is a directory, expected a filename")
+        if log_path.suffix == "":
+            log_path = log_path.with_name(f"{log_path.name}_{FILE_SUFFIX}.log")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        FINAL_LOG_PATH = str(log_path)
+        sys.stdout = Logger(FINAL_LOG_PATH)
+    else:
+        FINAL_LOG_PATH = None
+
+    if args.notify_active_inactive is True:
+        ACTIVE_INACTIVE_NOTIFICATION = True
+
+    if args.notify_game_change is True:
+        GAME_CHANGE_NOTIFICATION = True
+
+    if args.notify_status is True:
+        STATUS_NOTIFICATION = True
+
+    if args.notify_errors is False:
+        ERROR_NOTIFICATION = False
+
+    if SMTP_HOST.startswith("your_smtp_server_"):
+        ACTIVE_INACTIVE_NOTIFICATION = False
+        GAME_CHANGE_NOTIFICATION = False
+        STATUS_NOTIFICATION = False
+        ERROR_NOTIFICATION = False
 
     print(f"* Steam timers:\t\t\t[check interval: {display_time(STEAM_CHECK_INTERVAL)}] [active check interval: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]")
-    print(f"* Email notifications:\t\t[active/inactive status changes = {active_inactive_notification}] [game changes = {game_change_notification}]\n*\t\t\t\t[all status changes = {status_notification}] [errors = {error_notification}]")
-    print(f"* Output logging enabled:\t{not args.disable_logging}" + (f" ({ST_LOGFILE})" if not args.disable_logging else ""))
-    print(f"* CSV logging enabled:\t\t{bool(args.csv_file)}" + (f" ({args.csv_file})" if args.csv_file else ""))
+    print(f"* Email notifications:\t\t[active/inactive status changes = {ACTIVE_INACTIVE_NOTIFICATION}] [game changes = {GAME_CHANGE_NOTIFICATION}]\n*\t\t\t\t[all status changes = {STATUS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
+    print(f"* CSV logging enabled:\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
+    print(f"* Output logging enabled:\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
+    print(f"* Configuration file:\t\t{cfg_path}")
+    print(f"* Dotenv file:\t\t\t{env_path or 'None'}")
 
     out = f"\nMonitoring user with Steam64 ID {s_id}"
     print(out)
@@ -1040,8 +1326,13 @@ if __name__ == "__main__":
         signal.signal(signal.SIGCONT, toggle_all_status_changes_notifications_signal_handler)
         signal.signal(signal.SIGTRAP, increase_active_check_signal_handler)
         signal.signal(signal.SIGABRT, decrease_active_check_signal_handler)
+        signal.signal(signal.SIGHUP, reload_secrets_signal_handler)
 
-    steam_monitor_user(s_id, args.notify_errors, args.csv_file)
+    steam_monitor_user(s_id, CSV_FILE)
 
     sys.stdout = stdout_bck
     sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
