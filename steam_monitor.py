@@ -841,19 +841,26 @@ def steam_monitor_user(steamid, csv_file_name):
             gamename = s_user["response"]["players"][0].get("gameextrainfo", "")
             email_sent = False
         except Exception as e:
+
             if status > 0:
                 sleep_interval = STEAM_ACTIVE_CHECK_INTERVAL
             else:
                 sleep_interval = STEAM_CHECK_INTERVAL
-            print(f"* Error, retrying in {display_time(sleep_interval)}: {e}")
-            if 'Forbidden' in str(e):
-                print("* API key might not be valid anymore!")
-                if ERROR_NOTIFICATION and not email_sent:
-                    m_subject = f"steam_monitor: API key error! (user: {username})"
-                    m_body = f"API key might not be valid anymore: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, "", SMTP_SSL)
-                    email_sent = True
+
+            if isinstance(e, req.exceptions.HTTPError) and e.response.status_code == 429:
+                retry_after = int(e.response.headers.get('Retry-After') or sleep_interval)
+                time.sleep(retry_after)
+                continue
+            else:
+                print(f"* Error, retrying in {display_time(sleep_interval)}: {e}")
+                if 'Forbidden' in str(e):
+                    print("* API key might not be valid anymore!")
+                    if ERROR_NOTIFICATION and not email_sent:
+                        m_subject = f"steam_monitor: API key error! (user: {username})"
+                        m_body = f"API key might not be valid anymore: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                        print(f"Sending email notification to {RECEIVER_EMAIL}")
+                        send_email(m_subject, m_body, "", SMTP_SSL)
+                        email_sent = True
 
             print_cur_ts("Timestamp:\t\t\t")
 
