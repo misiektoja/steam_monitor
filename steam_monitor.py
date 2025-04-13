@@ -1116,7 +1116,7 @@ def main():
         help="Disable email on errors"
     )
     notify.add_argument(
-        "-z", "--send-test-email",
+        "--send-test-email",
         dest="send_test_email",
         action="store_true",
         help="Send test email to verify SMTP settings"
