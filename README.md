@@ -2,6 +2,7 @@
 
 steam_monitor is a tool for real-time monitoring of Steam players' activities.
 
+<a id="features"></a>
 ## Features
 
 - Real-time tracking of Steam users' gaming activity (including detection when a user gets online/offline or plays games)
@@ -11,9 +12,10 @@ steam_monitor is a tool for real-time monitoring of Steam players' activities.
 - Possibility to control the running copy of the script via signals
 
 <p align="center">
-   <img src="./assets/steam_monitor.png" alt="steam_monitor_screenshot" width="85%"/>
+   <img src="https://raw.githubusercontent.com/misiektoja/steam_monitor/refs/heads/main/assets/steam_monitor.png" alt="steam_monitor_screenshot" width="85%"/>
 </p>
 
+<a id="table-of-contents"></a>
 ## Table of Contents
 
 1. [Requirements](#requirements)
@@ -37,6 +39,7 @@ steam_monitor is a tool for real-time monitoring of Steam players' activities.
 6. [Change Log](#change-log)
 7. [License](#license)
 
+<a id="requirements"></a>
 ## Requirements
 
 * Python 3.6 or higher
@@ -50,17 +53,20 @@ Tested on:
 
 It should work on other versions of macOS, Linux, Unix and Windows as well.
 
+<a id="installation"></a>
 ## Installation
 
+<a id="install-from-pypi"></a>
 ### Install from PyPI
 
 ```sh
 pip install steam_monitor
 ```
 
+<a id="manual-installation"></a>
 ### Manual Installation
 
-Download the *[steam_monitor.py](steam_monitor.py)* file to the desired location.
+Download the *[steam_monitor.py](https://raw.githubusercontent.com/misiektoja/steam_monitor/refs/heads/main/steam_monitor.py)* file to the desired location.
 
 Install dependencies via pip:
 
@@ -68,12 +74,13 @@ Install dependencies via pip:
 pip install "steam[client]" requests python-dateutil python-dotenv
 ```
 
-Alternatively, from the downloaded *[requirements.txt](requirements.txt)*:
+Alternatively, from the downloaded *[requirements.txt](https://raw.githubusercontent.com/misiektoja/steam_monitor/refs/heads/main/requirements.txt)*:
 
 ```sh
 pip install -r requirements.txt
 ```
 
+<a id="quick-start"></a>
 ## Quick Start
 
 - Grab your [Steam Web API key](#steam-web-api-key) and track the `steam_user_id` gaming activities:
@@ -94,8 +101,10 @@ To get the list of all supported command-line arguments / flags:
 steam_monitor --help
 ```
 
+<a id="configuration"></a>
 ## Configuration
 
+<a id="configuration-file"></a>
 ### Configuration File
 
 Most settings can be configured via command-line arguments.
@@ -109,6 +118,7 @@ steam_monitor --generate-config > steam_monitor.conf
 
 Edit the `steam_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
 
+<a id="steam-web-api-key"></a>
 ### Steam Web API key
 
 You can get the Steam Web API key here: [http://steamcommunity.com/dev/apikey](http://steamcommunity.com/dev/apikey)
@@ -123,6 +133,7 @@ Fallback:
 
 If you store the `STEAM_API_KEY` in a dotenv file you can update its value and send a `SIGHUP` signal to the process to reload the file with the new API key without restarting the tool. More info in [Storing Secrets](#storing-secrets) and [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix).
 
+<a id="user-privacy-settings"></a>
 ### User Privacy Settings
 
 In order to monitor Steam user activity, proper privacy settings need to be enabled on the monitored user account.
@@ -131,6 +142,7 @@ The user should go to [Steam Privacy Settings](https://steamcommunity.com/my/edi
 
 The value in **My Profile → Game details** should be set to **Friends Only** or **Public**. 
 
+<a id="smtp-settings"></a>
 ### SMTP Settings
 
 If you want to use email notifications functionality, configure SMTP settings in the `steam_monitor.conf` file. 
@@ -141,6 +153,7 @@ Verify your SMTP settings by using `--send-test-email` flag (the tool will try t
 steam_monitor --send-test-email
 ```
 
+<a id="storing-secrets"></a>
 ### Storing Secrets
 
 It is recommended to store secrets like `STEAM_API_KEY` or `SMTP_PASSWORD` as either an environment variable or in a dotenv file.
@@ -177,8 +190,10 @@ steam_monitor <steam_user_id> --env-file none
 
 As a fallback, you can also store secrets in the configuration file or source code.
 
+<a id="usage"></a>
 ## Usage
 
+<a id="monitoring-mode"></a>
 ### Monitoring Mode
 
 To monitor specific user activity, just type the player's Steam64 ID (`steam_user_id` in the example below):
@@ -219,6 +234,7 @@ The tool automatically saves its output to `steam_monitor_<user_steam_id/file_su
 
 The tool also saves the timestamp and last status (after every change) to the `steam_<user_display_name>_last_status.json` file, so the last status is available after the restart of the tool.
 
+<a id="email-notifications"></a>
 ### Email Notifications
 
 To enable email notifications when a user gets online or offline:
@@ -258,9 +274,10 @@ Make sure you defined your SMTP settings earlier (see [SMTP settings](#smtp-sett
 Example email:
 
 <p align="center">
-   <img src="./assets/steam_monitor_email_notifications.png" alt="steam_monitor_email_notifications" width="85%"/>
+   <img src="https://raw.githubusercontent.com/misiektoja/steam_monitor/refs/heads/main/assets/steam_monitor_email_notifications.png" alt="steam_monitor_email_notifications" width="85%"/>
 </p>
 
+<a id="csv-export"></a>
 ### CSV Export
 
 If you want to save all reported activities of the Steam user to a CSV file, set `CSV_FILE` or use `-b` flag:
@@ -271,6 +288,7 @@ steam_monitor <steam_user_id> -b steam_user_id.csv
 
 The file will be automatically created if it does not exist.
 
+<a id="check-intervals"></a>
 ### Check Intervals
 
 If you want to customize polling intervals, use `-k` and `-c` flags (or corresponding configuration options):
@@ -282,6 +300,7 @@ steam_monitor <steam_user_id> -k 30 -c 120
 * `STEAM_ACTIVE_CHECK_INTERVAL`, `-k`: check interval when the user is online, away or snooze (seconds)
 * `STEAM_CHECK_INTERVAL`, `-c`: check interval when the user is offline (seconds)
 
+<a id="signal-controls-macoslinuxunix"></a>
 ### Signal Controls (macOS/Linux/Unix)
 
 The tool has several signal handlers implemented which allow to change behavior of the tool without a need to restart it with new configuration options / flags.
@@ -305,6 +324,7 @@ pkill -USR1 -f "steam_monitor <steam_user_id>"
 
 As Windows supports limited number of signals, this functionality is available only on Linux/Unix/macOS.
 
+<a id="coloring-log-output-with-grc"></a>
 ### Coloring Log Output with GRC
 
 You can use [GRC](https://github.com/garabik/grc) to color logs.
@@ -317,7 +337,7 @@ Add to your GRC config (`~/.grc/grc.conf`):
 conf.monitor_logs
 ```
 
-Now copy the [conf.monitor_logs](grc/conf.monitor_logs) to your `~/.grc/` and log files should be nicely colored when using `grc` tool.
+Now copy the [conf.monitor_logs](https://raw.githubusercontent.com/misiektoja/steam_monitor/refs/heads/main/grc/conf.monitor_logs) to your `~/.grc/` and log files should be nicely colored when using `grc` tool.
 
 Example:
 
@@ -325,10 +345,12 @@ Example:
 grc tail -F -n 100 steam_monitor_<user_steam_id/file_suffix>.log
 ```
 
+<a id="change-log"></a>
 ## Change Log
 
-See [RELEASE_NOTES.md](RELEASE_NOTES.md) for details.
+See [RELEASE_NOTES.md](https://github.com/misiektoja/steam_monitor/blob/main/RELEASE_NOTES.md) for details.
 
+<a id="license"></a>
 ## License
 
-Licensed under GPLv3. See [LICENSE](LICENSE).
+Licensed under GPLv3. See [LICENSE](https://github.com/misiektoja/steam_monitor/blob/main/LICENSE).
