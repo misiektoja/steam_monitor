@@ -2,6 +2,33 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 1.3 (22 May 2025)
+
+**Features and Improvements**:
+
+- **NEW:** The tool can now be installed via pip: `pip install steam_monitor`
+- **NEW:** Added support for external config files, environment-based secrets and dotenv integration with auto-discovery
+- **IMPROVE:** Enhanced startup summary to show loaded config and dotenv file paths
+- **IMPROVE:** Simplified and renamed command-line arguments for improved usability
+- **NEW:** Implemented SIGHUP handler for dynamic reload of secrets from dotenv files
+- **IMPROVE:** Added configuration option to control clearing the terminal screen at startup
+- **IMPROVE:** Changed connectivity check to use Steam API endpoint for reliability
+- **IMPROVE:** Added check for missing pip dependencies with install guidance
+- **IMPROVE:** Allow disabling liveness check by setting interval to 0 (default changed to 12h)
+- **IMPROVE:** Improved handling of log file creation
+- **IMPROVE:** Refactored CSV file initialization and processing
+- **IMPROVE:** Added support for `~` path expansion across all file paths
+- **IMPROVE:** Refactored code structure to support packaging for PyPI
+- **IMPROVE:** Enforced configuration option precedence: code defaults < config file < env vars < CLI flags
+- **IMPROVE:** Updated horizontal line for improved output aesthetics
+- **IMPROVE:** Email notifications now auto-disable if SMTP config is invalid
+- **IMPROVE:** Removed short option for `--send-test-email` to avoid ambiguity
+
+**Bug fixes**:
+
+- **BUGFIX:** Eliminated duplicate Steam API calls
+- **BUGFIX:** Correctly handle 429 errors by respecting Retry-After headers and suppressing log noise
+
 # Changes in 1.2 (14 Jun 2024)
 
 **Features and Improvements**:
