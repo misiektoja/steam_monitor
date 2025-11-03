@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.3.1
+v1.4
 
 Tool implementing real-time tracking of Steam players activities:
 https://github.com/misiektoja/steam_monitor/
@@ -14,7 +14,7 @@ python-dateutil
 python-dotenv (optional)
 """
 
-VERSION = "1.3.1"
+VERSION = "1.4"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -670,6 +670,79 @@ def resolve_executable(path):
     raise FileNotFoundError(f"Could not find executable '{path}'")
 
 
+# Gets detailed user information and displays it (for -i/--info mode)
+def display_user_info(steamid):
+    print(f"* Fetching details for Steam user with '{steamid}' ID...\n")
+
+    try:
+        s_api = steam.webapi.WebAPI(key=STEAM_API_KEY)
+        s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
+        s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
+    except Exception as e:
+        print(f"* Error: {e}")
+        sys.exit(1)
+
+    try:
+        username = s_user["response"]["players"][0].get("personaname")
+    except Exception:
+        print(f"* Error: User with Steam64 ID {steamid} does not exist!")
+        sys.exit(1)
+
+    status = int(s_user["response"]["players"][0].get("personastate"))
+    visibilitystate = int(s_user["response"]["players"][0].get("communityvisibilitystate"))
+    timecreated = s_user["response"]["players"][0].get("timecreated")
+    lastlogoff = s_user["response"]["players"][0].get("lastlogoff")
+    gameid = s_user["response"]["players"][0].get("gameid")
+    gamename = s_user["response"]["players"][0].get("gameextrainfo", "")
+
+    status_ts_old = int(time.time())
+    status_ts_old_bck = status_ts_old
+    last_status_ts = 0
+    last_status = -1
+
+    if status == 0:
+        steam_last_status_file = f"steam_{username}_last_status.json"
+
+        if os.path.isfile(steam_last_status_file):
+            try:
+                with open(steam_last_status_file, 'r', encoding="utf-8") as f:
+                    last_status_read = json.load(f)
+                if last_status_read:
+                    last_status_ts = last_status_read[0]
+                    last_status = last_status_read[1]
+                    if lastlogoff and lastlogoff > last_status_ts:
+                        status_ts_old = lastlogoff
+                    else:
+                        status_ts_old = last_status_ts
+            except Exception:
+                pass
+
+        if status_ts_old == status_ts_old_bck and lastlogoff:
+            status_ts_old = lastlogoff
+
+    print(f"Steam64 ID:\t\t\t{steamid}")
+    print(f"Display name:\t\t\t{username}")
+    print(f"Status:\t\t\t\t{str(steam_personastates[status]).upper()}")
+    print(f"Profile visibility:\t\t{steam_visibilitystates[visibilitystate]}")
+
+    if timecreated:
+        print(f"Account creation date:\t\t{get_date_from_ts(timecreated)}")
+
+    if status == 0 and status_ts_old != status_ts_old_bck:
+        last_status_dt_str = datetime.fromtimestamp(status_ts_old).strftime("%d %b %Y, %H:%M:%S")
+        last_status_ts_weekday = str(calendar.day_abbr[(datetime.fromtimestamp(status_ts_old)).weekday()])
+        print(f"\n* Last time user was available:\t{last_status_ts_weekday} {last_status_dt_str}")
+        print(f"* User is OFFLINE for:\t\t{calculate_timespan(int(time.time()), int(status_ts_old), show_seconds=False)}")
+
+    if gameid:
+        print(f"\nUser is currently in-game:\t{gamename}")
+
+    if "games" in s_played["response"].keys() and s_played["response"]["games"]:
+        print(f"\nList of recently played games:")
+        for i, game in enumerate(s_played["response"]["games"]):
+            print(f"{i + 1} {game.get('name')}")
+
+
 # Main function that monitors gaming activity of the specified Steam user
 def steam_monitor_user(steamid, csv_file_name):
 
@@ -1123,6 +1196,15 @@ def main():
         help="Send test email to verify SMTP settings"
     )
 
+    # User information
+    info = parser.add_argument_group("User information")
+    info.add_argument(
+        "-i", "--info",
+        dest="info",
+        action="store_true",
+        help="Get detailed user information and display it, then exit"
+    )
+
     # Intervals & timers
     times = parser.add_argument_group("Intervals & timers")
     times.add_argument(
@@ -1263,6 +1345,12 @@ def main():
     if not s_id:
         print("* Error: STEAM64_ID needs to be defined !")
         sys.exit(1)
+
+    # Handle info mode - display user information once and exit
+    if args.info:
+        display_user_info(s_id)
+        sys.stdout = stdout_bck
+        sys.exit(0)
 
     if args.csv_file:
         CSV_FILE = os.path.expanduser(args.csv_file)
