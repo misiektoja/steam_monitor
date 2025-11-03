@@ -670,9 +670,23 @@ def resolve_executable(path):
     raise FileNotFoundError(f"Could not find executable '{path}'")
 
 
+# Prints country/region using raw Steam fields
+def print_country_region(player):
+    country_code = player.get('loccountrycode')
+    state_code = player.get('locstatecode')
+    city_id = player.get('loccityid')
+
+    if country_code:
+        print(f"Country code:\t\t\t{country_code}")
+    if state_code:
+        print(f"State/Region code:\t\t{state_code}")
+    if city_id:
+        print(f"City ID (Steam):\t\t{city_id}")
+
+
 # Gets detailed user information and displays it (for -i/--info mode)
 def display_user_info(steamid):
-    print(f"* Fetching details for Steam user with '{steamid}' ID...\n")
+    print(f"* Fetching details for Steam user with ID '{steamid}'...\n")
 
     try:
         s_api = steam.webapi.WebAPI(key=STEAM_API_KEY)
@@ -690,6 +704,8 @@ def display_user_info(steamid):
 
     status = int(s_user["response"]["players"][0].get("personastate"))
     visibilitystate = int(s_user["response"]["players"][0].get("communityvisibilitystate"))
+    realname = s_user["response"]["players"][0].get("realname", "")
+    profile_url = s_user["response"]["players"][0].get("profileurl")
     timecreated = s_user["response"]["players"][0].get("timecreated")
     lastlogoff = s_user["response"]["players"][0].get("lastlogoff")
     gameid = s_user["response"]["players"][0].get("gameid")
@@ -722,17 +738,84 @@ def display_user_info(steamid):
 
     print(f"Steam64 ID:\t\t\t{steamid}")
     print(f"Display name:\t\t\t{username}")
-    print(f"Status:\t\t\t\t{str(steam_personastates[status]).upper()}")
+    if realname:
+        print(f"Real name:\t\t\t{realname}")
+    try:
+        player_obj = s_user["response"]["players"][0]
+        print_country_region(player_obj)
+    except Exception:
+        pass
+
+    print(f"\nStatus:\t\t\t\t{str(steam_personastates[status]).upper()}")
     print(f"Profile visibility:\t\t{steam_visibilitystates[visibilitystate]}")
 
     if timecreated:
-        print(f"Account creation date:\t\t{get_date_from_ts(timecreated)}")
+        print(f"\nAccount creation date:\t\t{get_date_from_ts(timecreated)}")
+
+    if profile_url:
+        print(f"\nProfile URL:\t\t\t{profile_url}")
+
+    s_level_displayed = False
+    try:
+        s_level = s_api.call('IPlayerService.GetSteamLevel', steamid=steamid)
+        print(f"\nSteam level:\t\t\t{s_level['response'].get('player_level', 'n/a')}")
+        s_level_displayed = True
+    except Exception:
+        pass
+
+    try:
+        badges = s_api.call('IPlayerService.GetBadges', steamid=steamid)
+        player_xp = badges['response'].get('player_xp', 0)
+        xp_to_level = badges['response'].get('player_xp_needed_to_level_up', 0)
+        xp_current_level = badges['response'].get('player_xp_needed_current_level', 0)
+        badge_count = len(badges['response'].get('badges', []))
+
+        if not s_level_displayed:
+            print()
+        print(f"Badges earned:\t\t\t{badge_count}")
+        print(f"Total XP:\t\t\t{player_xp}")
+        print(f"XP to next level:\t\t{xp_to_level}")
+        print(f"XP in current level:\t\t{xp_current_level}")
+    except Exception:
+        pass
+
+    try:
+        bans = s_api.call('ISteamUser.GetPlayerBans', steamids=str(steamid))
+        if bans['players']:
+            b = bans['players'][0]
+            print(f"\nVAC banned:\t\t\t{b.get('VACBanned')} ({b.get('NumberOfVACBans', 0)})")
+            print(f"Community banned:\t\t{b.get('CommunityBanned')}")
+            econ_ban_map = {"none": "False", "banned": "True", "probation": "Probation"}
+            econ_ban = b.get('EconomyBan', 'none')
+            print(f"Economy ban:\t\t\t{econ_ban_map.get(econ_ban, econ_ban)}")
+            print(f"Days since last ban:\t\t{b.get('DaysSinceLastBan')}")
+    except Exception:
+        pass
+
+    try:
+        friends = s_api.call('ISteamUser.GetFriendList', steamid=steamid, relationship='friend')
+        n_friends = len(friends.get('friendslist', {}).get('friends', []))
+        print(f"\nFriends:\t\t\t{n_friends}")
+    except Exception:
+        pass
 
     if status == 0 and status_ts_old != status_ts_old_bck:
         last_status_dt_str = datetime.fromtimestamp(status_ts_old).strftime("%d %b %Y, %H:%M:%S")
         last_status_ts_weekday = str(calendar.day_abbr[(datetime.fromtimestamp(status_ts_old)).weekday()])
         print(f"\n* Last time user was available:\t{last_status_ts_weekday} {last_status_dt_str}")
         print(f"* User is OFFLINE for:\t\t{calculate_timespan(int(time.time()), int(status_ts_old), show_seconds=False)}")
+
+    try:
+        owned = s_api.call('IPlayerService.GetOwnedGames', steamid=steamid, include_appinfo=1, include_played_free_games=1)
+        games = owned.get('response', {}).get('games', [])
+        if games:
+            top = sorted(games, key=lambda g: g.get('playtime_forever', 0), reverse=True)[:5]
+            print("\nTop games by lifetime hours:")
+            for i, g in enumerate(top, 1):
+                hours = int(g.get('playtime_forever', 0) / 60)
+                print(f"{i} {g.get('name')} - {hours}h")
+    except Exception:
+        pass
 
     if gameid:
         print(f"\nUser is currently in-game:\t{gamename}")
@@ -741,6 +824,10 @@ def display_user_info(steamid):
         print(f"\nList of recently played games:")
         for i, game in enumerate(s_played["response"]["games"]):
             print(f"{i + 1} {game.get('name')}")
+
+    if "games" in s_played["response"]:
+        total_2w = sum(g.get('playtime_2weeks', 0) for g in s_played["response"]["games"]) // 60
+        print(f"Hours played last 2 weeks:\t{total_2w}h")
 
 
 # Main function that monitors gaming activity of the specified Steam user
@@ -782,6 +869,7 @@ def steam_monitor_user(steamid, csv_file_name):
     visibilitystate = int(s_user["response"]["players"][0].get("communityvisibilitystate"))
 
     realname = s_user["response"]["players"][0].get("realname", "")
+    profile_url = s_user["response"]["players"][0].get("profileurl")
     timecreated = s_user["response"]["players"][0].get("timecreated")
     lastlogoff = s_user["response"]["players"][0].get("lastlogoff")
     gameid = s_user["response"]["players"][0].get("gameid")
@@ -845,16 +933,24 @@ def steam_monitor_user(steamid, csv_file_name):
     except Exception as e:
         print(f"* Error: {e}")
 
-    print(f"\nDisplay name:\t\t\t{username}")
-
+    print(f"\nSteam64 ID:\t\t\t{steamid}")
+    print(f"Display name:\t\t\t{username}")
     if realname:
         print(f"Real name:\t\t\t{realname}")
+    try:
+        player_obj = s_user["response"]["players"][0]
+        print_country_region(player_obj)
+    except Exception:
+        pass
 
     print(f"\nStatus:\t\t\t\t{str(steam_personastates[status]).upper()}")
     print(f"Profile visibility:\t\t{steam_visibilitystates[visibilitystate]}")
 
     if timecreated:
-        print(f"Account creation date:\t\t{get_date_from_ts(timecreated)}")
+        print(f"\nAccount creation date:\t\t{get_date_from_ts(timecreated)}")
+
+    if profile_url:
+        print(f"\nProfile URL:\t\t\t{profile_url}")
 
     if last_status_ts == 0:
         if lastlogoff and status == 0:
