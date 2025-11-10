@@ -10,6 +10,7 @@ steam_monitor is a tool for real-time monitoring of Steam players' activities.
 - Email notifications for different events (when a player gets online/away/snooze/offline, starts/finishes/changes a game or errors occur)
 - Saving all user activities with timestamps to a CSV file
 - Possibility to control the running copy of the script via signals
+- Functional, procedural Python (minimal OOP)
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/steam_monitor/refs/heads/main/assets/steam_monitor.png" alt="steam_monitor_screenshot" width="85%"/>
@@ -47,8 +48,8 @@ steam_monitor is a tool for real-time monitoring of Steam players' activities.
 
 Tested on:
 
-* **macOS**: Ventura, Sonoma, Sequoia
-* **Linux**: Raspberry Pi OS (Bullseye, Bookworm), Ubuntu 24, Rocky Linux 8.x/9.x, Kali Linux 2024/2025
+* **macOS**: Ventura, Sonoma, Sequoia, Tahoe
+* **Linux**: Raspberry Pi OS (Bullseye, Bookworm, Trixie), Ubuntu 24/25, Rocky Linux 8.x/9.x, Kali Linux 2024/2025
 * **Windows**: 10, 11
 
 It should work on other versions of macOS, Linux, Unix and Windows as well.
