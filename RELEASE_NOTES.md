@@ -6,7 +6,7 @@ This is a high-level summary of the most important changes.
 
 **Features and Improvements**:
 
-- **NEW:** Added detailed user information display mode (**-i** / **--info** flag), providing comprehensive Steam profile insights including Steam level, badges and XP statistics, country/region, ban status (VAC, Community, Economy), profile URL, friends list/count, top games and recently played games with playtime statistics
+- **NEW:** Added detailed user information display mode (`-i` / `--info` flag), providing comprehensive Steam profile insights including Steam level, badges and XP statistics, country/region, ban status (VAC, Community, Economy), profile URL, friends list/count, top games and recently played games with playtime statistics
 - **IMPROVE:** Enhanced user information display in monitoring mode to include country/region details and profile URL
 
 # Changes in 1.3.1 (13 Jun 2025)
