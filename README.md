@@ -7,6 +7,7 @@ steam_monitor is a tool for real-time monitoring of Steam players' activities.
 
 - Real-time tracking of Steam users' gaming activity (including detection when a user gets online/offline or plays games)
 - Basic statistics for user activity (such as how long in different states, how long a game is played, overall time and the number of played games in the session etc.)
+- Detailed user information display mode providing comprehensive Steam profile insights
 - Email notifications for different events (when a player gets online/away/snooze/offline, starts/finishes/changes a game or errors occur)
 - Saving all user activities with timestamps to a CSV file
 - Possibility to control the running copy of the script via signals
@@ -32,6 +33,7 @@ steam_monitor is a tool for real-time monitoring of Steam players' activities.
    * [SMTP Settings](#smtp-settings)
    * [Storing Secrets](#storing-secrets)
 5. [Usage](#usage)
+   * [Detailed User Information Display Mode](#detailed-user-information-display-mode)
    * [Monitoring Mode](#monitoring-mode)
    * [Email Notifications](#email-notifications)
    * [CSV Export](#csv-export)
@@ -206,6 +208,36 @@ As a fallback, you can also store secrets in the configuration file or source co
 <a id="usage"></a>
 ## Usage
 
+<a id="detailed-user-information-display-mode"></a>
+### Detailed User Information Display Mode
+
+To display comprehensive Steam profile information for a user without starting monitoring, type the player's Steam64 ID (`steam_user_id` in the example below) and use the `-i` / `--info` flag:
+
+```sh
+steam_monitor <steam_user_id> -i
+```
+
+Or with a Steam community URL:
+
+```sh
+steam_monitor -r "https://steamcommunity.com/id/steam_username/" -i
+```
+
+This mode displays detailed information including:
+- Steam64 ID, display name, real name
+- Country/region
+- Current status and profile visibility
+- Account creation date
+- Profile URL
+- Steam level, badges earned and XP statistics
+- Ban status (VAC, Community, Economy)
+- Friends count
+- Top games by lifetime hours
+- Recently played games with playtime statistics
+- Hours played in the last 2 weeks
+
+The tool displays this information and then exits (does not start monitoring).
+
 <a id="monitoring-mode"></a>
 ### Monitoring Mode
 
@@ -226,6 +258,8 @@ If you do not know the user's Steam64 ID, but you know the Steam profile/communi
 ```sh
 steam_monitor -r "https://steamcommunity.com/id/steam_username/"
 ```
+
+When monitoring starts, the tool displays user information including Steam64 ID, display name, real name (if available), country/region, current status, profile visibility, account creation date and profile URL.
 
 By default, the tool looks for a configuration file named `steam_monitor.conf` in:
  - current directory 
