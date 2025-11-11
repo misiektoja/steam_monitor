@@ -1,6 +1,6 @@
 # steam_monitor
 
-steam_monitor is a tool for real-time monitoring of Steam players' activities.
+steam_monitor is a tool for real-time monitoring of **Steam players' activities**.
 
 <a id="features"></a>
 ## Features
