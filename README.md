@@ -223,6 +223,14 @@ Or with a Steam community URL:
 steam_monitor -r "https://steamcommunity.com/id/steam_username/" -i
 ```
 
+If you have not set `STEAM_API_KEY` secret, you can use `-u` flag:
+
+```sh
+steam_monitor <steam_user_id> -i -u "your_steam_web_api_key"
+# or
+steam_monitor -r "https://steamcommunity.com/id/steam_username/" -i -u "your_steam_web_api_key"
+```
+
 This mode displays detailed information including:
 - Steam64 ID, display name, real name
 - Country/region
