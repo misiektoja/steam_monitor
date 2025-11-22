@@ -2,3 +2,4 @@ steam[client]
 requests
 python-dateutil
 python-dotenv
+colorama; platform_system == "Windows"
