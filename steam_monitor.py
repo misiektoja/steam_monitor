@@ -333,7 +333,7 @@ _STEAM_USER_LINE_RE = re.compile(
 _USER_IN_GAME_RE = re.compile(r"^(User is currently in-game:\s+)(.*)$")
 # Long date in format returned by get_date_from_ts, e.g. 'Sun 21 Apr 2024, 15:08:45'
 _LONG_DATE_RE = re.compile(r"\b\w{3}\s+\d{1,2}\s+\w{3}\s+\d{4},\s+\d{2}:\d{2}:\d{2}\b")
-    # Short range date in parentheses, e.g. '(Sat 22 Nov 16:54 - 17:58)'
+# Short range date in parentheses, e.g. '(Sat 22 Nov 16:54 - 17:58)'
 _SHORT_RANGE_DATE_RE = re.compile(
     r"\(\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\)"
 )
@@ -1048,14 +1048,18 @@ def print_country_region(player):
 
 
 # Fetches recent achievements for the user
-def fetch_recent_achievements(steamid, s_api, s_played, max_games=15, max_achievements=10):
+def fetch_recent_achievements(steamid, s_api, s_played, max_games=15, max_achievements=10, force_use_owned_games=False):
     achievements = []
 
     games_from_owned = False
-    games = s_played.get("response", {}).get("games", []) if isinstance(s_played, dict) else []
+    games = []
 
-    # Fallback: if recently played games are hidden or empty, try owned games
-    if not games:
+    # If force_use_owned_games is True, skip GetRecentlyPlayedGames and go straight to owned games
+    if not force_use_owned_games:
+        games = s_played.get("response", {}).get("games", []) if isinstance(s_played, dict) else []
+
+    # Fallback: if recently played games are hidden or empty, or if force_use_owned_games is True, try owned games
+    if not games or force_use_owned_games:
         try:
             # Call GetOwnedGames with all parameters that the steam.webapi wrapper
             # considers required, to avoid local validation errors before the HTTP call.
@@ -1135,9 +1139,9 @@ def fetch_recent_achievements(steamid, s_api, s_played, max_games=15, max_achiev
 
 
 # Fetches and displays recent achievements for a Steam user
-def display_recent_achievements(steamid, s_api, s_played, max_games=15, max_achievements=10):
+def display_recent_achievements(steamid, s_api, s_played, max_games=15, max_achievements=10, force_use_owned_games=False):
     print(f"\n* Fetching recent achievements...")
-    achievements = fetch_recent_achievements(steamid, s_api, s_played, max_games=max_games, max_achievements=max_achievements)
+    achievements = fetch_recent_achievements(steamid, s_api, s_played, max_games=max_games, max_achievements=max_achievements, force_use_owned_games=force_use_owned_games)
 
     if not achievements:
         print("* No recent achievements found or access is restricted by the user's privacy settings.")
@@ -1165,7 +1169,7 @@ def display_recent_achievements(steamid, s_api, s_played, max_games=15, max_achi
 
 
 # Gets detailed user information and displays it (for -i/--info mode)
-def display_user_info(steamid, list_friends=False, show_achievements=False, achievements_count=None):
+def display_user_info(steamid, list_friends=False, show_achievements=False, achievements_count=None, achievements_use_owned_games=False):
     steamid_coloured = colorize("steam_id", str(steamid))
     print(f"* Fetching details for Steam user with ID '{steamid_coloured}'...\n")
 
@@ -1344,7 +1348,7 @@ def display_user_info(steamid, list_friends=False, show_achievements=False, achi
 
     if show_achievements:
         max_ach = achievements_count if isinstance(achievements_count, int) and achievements_count > 0 else 10
-        display_recent_achievements(steamid, s_api, s_played, max_games=15, max_achievements=max_ach)
+        display_recent_achievements(steamid, s_api, s_played, max_games=15, max_achievements=max_ach, force_use_owned_games=achievements_use_owned_games)
 
 
 # Main function that monitors gaming activity of the specified Steam user
@@ -1907,6 +1911,13 @@ def main():
         type=int,
         help="When used with --achievements, limit number of recent achievements to display (default: 10)"
     )
+    info.add_argument(
+        "--achievements-all-games",
+        dest="achievements_use_owned_games",
+        action="store_true",
+        help="When used with --achievements, check all owned games instead of only recently played games. "
+             "Useful for users who haven't played recently, as their recently played list may be limited."
+    )
 
     # Intervals & timers
     times = parser.add_argument_group("Intervals & timers")
@@ -2089,7 +2100,7 @@ def main():
 
     # Handle info mode - display user information once and exit
     if args.info:
-        display_user_info(s_id, list_friends=getattr(args, "list_friends", False), show_achievements=getattr(args, "show_achievements", False), achievements_count=getattr(args, "achievements_count", None))
+        display_user_info(s_id, list_friends=getattr(args, "list_friends", False), show_achievements=getattr(args, "show_achievements", False), achievements_count=getattr(args, "achievements_count", None), achievements_use_owned_games=getattr(args, "achievements_use_owned_games", False))
         sys.stdout = stdout_bck
         sys.exit(0)
 
