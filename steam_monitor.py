@@ -12,6 +12,7 @@ steam[client]
 requests
 python-dateutil
 python-dotenv (optional)
+colorama (optional, for better colours on Windows terminals)
 """
 
 VERSION = "1.5"
@@ -121,6 +122,42 @@ HORIZONTAL_LINE = 113
 # Whether to clear the terminal screen after starting the tool
 CLEAR_SCREEN = True
 
+# Whether to use coloured output in the terminal (auto-disabled if the terminal
+# does not appear to support colours or when output is redirected to a file)
+COLORED_OUTPUT = True
+
+# Colour theme used for different parts of the output.
+# Keys are logical names used by the tool, values are colour/style strings.
+# You can combine multiple attributes with spaces or '+', for example:
+#   "bright_cyan bold", "yellow", "red underline", "bright_magenta bold underline"
+# Valid colour names: black, red, green, yellow, blue, magenta, cyan, white,
+# and their bright_ variants (bright_red, bright_green, ...).
+COLOR_THEME = {
+    # General sections
+    "header": "bright_cyan",
+    "section": "bright_white",
+    # Identity
+    "username": "blue underline",
+    "steam_id": "bright_magenta",
+    # Status values
+    "status_online": "green",
+    "status_offline": "red",
+    "status_away": "yellow",
+    "status_snooze": "magenta",
+    "status_other": "white",
+    # Activity / game info
+    "status_change": "yellow",
+    "game": "magenta",
+    "duration": "green",
+    # Misc
+    "timestamp_label": "",
+    "timestamp_value": "cyan",
+    "info": "cyan",
+    "warning": "yellow",
+    "error": "red",
+    "signal": "yellow",
+}
+
 # Value used by signal handlers increasing/decreasing the check for player activity
 # when user is online/away/snooze (STEAM_ACTIVE_CHECK_INTERVAL); in seconds
 STEAM_ACTIVE_CHECK_SIGNAL_VALUE = 30  # 30 seconds
@@ -160,6 +197,8 @@ DISABLE_LOGGING = False
 HORIZONTAL_LINE = 0
 CLEAR_SCREEN = False
 STEAM_ACTIVE_CHECK_SIGNAL_VALUE = 0
+COLORED_OUTPUT = False
+COLOR_THEME = {}
 
 exec(CONFIG_BLOCK, globals())
 
@@ -217,20 +256,321 @@ import shutil
 from pathlib import Path
 
 
+# ANSI escape sequence helper used for colouring and stripping colour codes
+ANSI_ESCAPE_RE = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
+
+# Internal flag & style map for colour handling
+COLOR_ENABLED = False
+_COLOR_STYLES = {}
+
+# Default built-in colour theme. Values can be overridden via COLOR_THEME in config
+DEFAULT_COLOR_THEME = {
+    "header": "bright_cyan bold",
+    "section": "bright_white bold",
+    "username": "blue underline",
+    "steam_id": "bright_magenta",
+    "status_online": "green bold",
+    "status_offline": "red bold",
+    "status_away": "yellow bold",
+    "status_snooze": "magenta bold",
+    "status_other": "white bold",
+    "status_change": "yellow bold",
+    "game": "magenta",
+    "duration": "green",
+    "timestamp_label": "",
+    "timestamp_value": "bright_cyan",
+    "info": "cyan",
+    "warning": "yellow",
+    "error": "red bold",
+    "signal": "yellow",
+    # Dates
+    "date": "magenta",
+    "date_range": "magenta",
+}
+
+ANSI_RESET = "\033[0m"
+
+# Mapping of style names to ANSI SGR codes
+_STYLE_CODES = {
+    "bold": "1",
+    "dim": "2",
+    "underline": "4",
+    "blink": "5",
+    "black": "30",
+    "red": "31",
+    "green": "32",
+    "yellow": "33",
+    "blue": "34",
+    "magenta": "35",
+    "cyan": "36",
+    "white": "37",
+    "bright_black": "90",
+    "bright_red": "91",
+    "bright_green": "92",
+    "bright_yellow": "93",
+    "bright_blue": "94",
+    "bright_magenta": "95",
+    "bright_cyan": "96",
+    "bright_white": "97",
+}
+
+# Pre-compiled regexes used for line-level colourisation
+_TIMESTAMP_LINE_RE = re.compile(r"^(Timestamp:\s+)(.*)$")
+_STATUS_LINE_RE = re.compile(r"^(Status:\s+)([A-Za-z ]+)$")
+_DISPLAY_NAME_RE = re.compile(r"^(Display name:\s+)(.*)$")
+# 'Steam user <display name> ...' where name can contain spaces
+_STEAM_USER_LINE_RE = re.compile(
+    r"^(Steam user )(.+?)( (?:changed status|started playing|stopped playing|changed game from|now plays).*)$"
+)
+_USER_IN_GAME_RE = re.compile(r"^(User is currently in-game:\s+)(.*)$")
+# Long date in format returned by get_date_from_ts, e.g. 'Sun 21 Apr 2024, 15:08:45'
+_LONG_DATE_RE = re.compile(r"\b\w{3}\s+\d{1,2}\s+\w{3}\s+\d{4},\s+\d{2}:\d{2}:\d{2}\b")
+    # Short range date in parentheses, e.g. '(Sat 22 Nov 16:54 - 17:58)'
+_SHORT_RANGE_DATE_RE = re.compile(
+    r"\(\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\)"
+)
+# Date range without year, e.g. 'Sat 22 Nov 03:24 - 08:28'
+_DATE_RANGE_RE = re.compile(
+    r"\b\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\b"
+)
+_STATUS_CHANGE_RE = re.compile(
+    r"^(Steam user .+? changed status from\s+)([a-zA-Z ]+)(\s+to\s+)([a-zA-Z ]+)(.*)$"
+)
+_GAME_CHANGE_RE = re.compile(
+    r"^(Steam user .+? )(started playing|stopped playing|changed game from)(.*)$"
+)
+_DURATION_RE = re.compile(
+    r"(\d+\s+(seconds?|minutes?|hours?|days?|weeks?|months?|years?))", re.IGNORECASE
+)
+_ONLINE_WORD_RE = re.compile(r"(?i)( online| appeared |\bYes\b|\bTrue\b)")
+_OFFLINE_WORD_RE = re.compile(r"(?i)( offline| away| snooze|\bNo\b|\bFalse\b)")
+
+
+# Builds ANSI escape sequence from a style description string
+def _build_ansi_sequence(style_str):
+    if not style_str:
+        return ""
+    parts = re.split(r"[+ ]+", style_str.strip().lower())
+    codes = []
+    for p in parts:
+        code = _STYLE_CODES.get(p)
+        if code:
+            codes.append(code)
+    if not codes:
+        return ""
+    return f"\033[{';'.join(codes)}m"
+
+
+# Detects whether the given output stream likely supports ANSI colours
+def _stream_supports_color(stream):
+    if not hasattr(stream, "isatty") or not stream.isatty():
+        return False
+    if os.getenv("NO_COLOR"):
+        return False
+    term = os.getenv("TERM", "")
+    if term.lower() in ("", "dumb", "unknown"):
+        return False
+    return True
+
+
+# Initializes colour handling based on config and terminal capabilities
+def init_color_output(stream):
+    global COLOR_ENABLED, _COLOR_STYLES
+
+    COLOR_ENABLED = bool(globals().get("COLORED_OUTPUT", False)) and _stream_supports_color(stream)
+
+    if not COLOR_ENABLED:
+        _COLOR_STYLES = {}
+        return
+
+    # Best effort: on Windows, enable ANSI support if colorama is installed
+    try:
+        from colorama import init as colorama_init  # type: ignore[import]
+
+        colorama_init(autoreset=False)
+    except Exception:
+        pass
+
+    user_theme = globals().get("COLOR_THEME") if isinstance(globals().get("COLOR_THEME"), dict) else {}
+    theme = {**DEFAULT_COLOR_THEME, **(user_theme or {})}
+
+    styles = {}
+    for name, style_str in theme.items():
+        seq = _build_ansi_sequence(style_str)
+        if seq:
+            styles[name] = seq
+    _COLOR_STYLES = styles
+
+
+# Applies a configured colour style (by logical part name) to the given text
+def colorize(part, text):
+    if not COLOR_ENABLED:
+        return text
+    start = _COLOR_STYLES.get(part)
+    if not start:
+        return text
+    return f"{start}{text}{ANSI_RESET}"
+
+
+# Returns coloured representation of a textual Steam status string
+def colorize_status(status_text):
+    status = (status_text or "").strip().lower()
+    if status in ("online", "available", "active"):
+        key = "status_online"
+    elif status in ("offline", "invisible", "inactive"):
+        key = "status_offline"
+    elif status == "away":
+        key = "status_away"
+    elif status == "snooze":
+        key = "status_snooze"
+    else:
+        key = "status_other"
+    return colorize(key, status_text)
+
+
+# Applies colour rules to a single output line
+def _colorize_line(line):
+    original = line
+
+    # Timestamp lines
+    m = _TIMESTAMP_LINE_RE.match(line.strip("\n"))
+    if m:
+        label, rest = m.groups()
+        colored = f"{colorize('timestamp_label', label)}{colorize('timestamp_value', rest)}"
+        return colored + ("\n" if line.endswith("\n") else "")
+
+    # Status: ONLINE / OFFLINE ...
+    m = _STATUS_LINE_RE.match(line.strip("\n"))
+    if m:
+        label, status = m.groups()
+        colored = f"{label}{colorize_status(status)}"
+        return colored + ("\n" if line.endswith("\n") else "")
+
+    # Display name: <username>
+    m = _DISPLAY_NAME_RE.match(line.strip("\n"))
+    if m:
+        label, name = m.groups()
+        colored = f"{label}{colorize('username', name)}"
+        return colored + ("\n" if line.endswith("\n") else "")
+
+    # Steam user <name> ... lines (apply username colour but continue for further rules)
+    m = _STEAM_USER_LINE_RE.match(line)
+    if m:
+        prefix, user, rest = m.groups()
+        line = f"{prefix}{colorize('username', user)}{rest}"
+
+    # "User is currently in-game: <name>"
+    m = _USER_IN_GAME_RE.match(line)
+    if m:
+        prefix, game = m.groups()
+        return f"{colorize('game', prefix)}{colorize('game', game)}"
+
+    # Status change long line
+    m = _STATUS_CHANGE_RE.match(line)
+    if m:
+        pfx, old_s, mid, new_s, tail = m.groups()
+        # Colour only the status words; keep the surrounding text in default colour
+        return f"{pfx}{colorize_status(old_s)}{mid}{colorize_status(new_s)}{tail}"
+
+    # Game change lines
+    m = _GAME_CHANGE_RE.match(line)
+    if m:
+        pfx, verb, tail = m.groups()
+        return f"{pfx}{colorize('status_change', verb)}{tail}"
+
+    # Highlight durations
+    def _dur_repl(mo):
+        return colorize("duration", mo.group(0))
+
+    line = _DURATION_RE.sub(_dur_repl, line)
+
+    # Highlight long date strings (info mode, account creation date, etc.)
+    line = _LONG_DATE_RE.sub(lambda mo: colorize("date", mo.group(0)), line)
+    # Highlight short date ranges in parentheses, e.g. '(Sat 22 Nov 16:54 - 17:58)'
+    line = _SHORT_RANGE_DATE_RE.sub(lambda mo: colorize("date_range", mo.group(0)), line)
+    # Highlight date ranges without year, e.g. 'Sat 22 Nov 03:24 - 08:28'
+    line = _DATE_RANGE_RE.sub(lambda mo: colorize("date_range", mo.group(0)), line)
+
+    # Highlight online/offline keywords
+    line = _ONLINE_WORD_RE.sub(lambda mo: colorize("status_online", mo.group(0)), line)
+
+    def _offline_repl(mo):
+        text = mo.group(0)
+        lower = text.lower()
+        if "away" in lower:
+            return colorize("status_away", text)
+        if "snooze" in lower:
+            return colorize("status_snooze", text)
+        return colorize("status_offline", text)
+
+    line = _OFFLINE_WORD_RE.sub(_offline_repl, line)
+
+    # Errors / warnings (avoid colouring summary lines like 'errors = False')
+    lowered = original.lower()
+    if any(w in lowered for w in ("failure", "forbidden", "timeout")) or (
+        "error" in lowered and "[errors =" not in lowered
+    ):
+        return colorize("error", line)
+    if "warning" in lowered and "[warnings =" not in lowered:
+        return colorize("warning", line)
+    if "signal" in lowered and "received" in lowered:
+        return colorize("signal", line)
+
+    return line
+
+
+# Applies colourisation to multi-line text, preserving line breaks
+def apply_color_to_text(text):
+    if not COLOR_ENABLED:
+        return text
+
+    parts = []
+    for chunk in text.splitlines(keepends=True):
+        if chunk.endswith(("\n", "\r")):
+            stripped = chunk.rstrip("\r\n")
+            newline = chunk[len(stripped):]
+            parts.append(_colorize_line(stripped) + newline)
+        else:
+            parts.append(_colorize_line(chunk))
+    return "".join(parts)
+
+
 # Logger class to output messages to stdout and log file
 class Logger(object):
-    def __init__(self, filename):
+    def __init__(self, filename, strip_ansi=True):
         self.terminal = sys.stdout
         self.logfile = open(filename, "a", buffering=1, encoding="utf-8")
+        self.strip_ansi = strip_ansi
 
     def write(self, message):
-        self.terminal.write(message)
-        self.logfile.write(message)
+        coloured = apply_color_to_text(message)
+        self.terminal.write(coloured)
+        if self.strip_ansi:
+            clean = ANSI_ESCAPE_RE.sub("", coloured)
+            self.logfile.write(clean)
+        else:
+            self.logfile.write(coloured)
         self.terminal.flush()
         self.logfile.flush()
 
     def flush(self):
-        pass
+        self.terminal.flush()
+        self.logfile.flush()
+
+
+# Simple colour-aware stdout wrapper used when logging is disabled
+# Applies the same line-based colouring rules as Logger, but does not write anything to a log file
+class ColorStream(object):
+    def __init__(self, stream):
+        self.terminal = stream
+
+    def write(self, message):
+        coloured = apply_color_to_text(message)
+        self.terminal.write(coloured)
+        self.terminal.flush()
+
+    def flush(self):
+        self.terminal.flush()
 
 
 # Signal handler when user presses Ctrl+C
@@ -694,7 +1034,8 @@ def print_country_region(player):
 
 # Gets detailed user information and displays it (for -i/--info mode)
 def display_user_info(steamid, list_friends=False):
-    print(f"* Fetching details for Steam user with ID '{steamid}'...\n")
+    steamid_coloured = colorize("steam_id", str(steamid))
+    print(f"* Fetching details for Steam user with ID '{steamid_coloured}'...\n")
 
     try:
         s_api = steam.webapi.WebAPI(key=STEAM_API_KEY)
@@ -1298,12 +1639,15 @@ def main():
 
     stdout_bck = sys.stdout
 
+    # Initialise colour handling based on config and terminal capabilities
+    init_color_output(stdout_bck)
+
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
     clear_screen(CLEAR_SCREEN)
 
-    print(f"Steam Monitoring Tool v{VERSION}\n")
+    print(colorize("header", f"Steam Monitoring Tool v{VERSION}\n"))
 
     parser = argparse.ArgumentParser(
         prog="steam_monitor",
@@ -1556,12 +1900,6 @@ def main():
         print("* Error: STEAM64_ID needs to be defined !")
         sys.exit(1)
 
-    # Handle info mode - display user information once and exit
-    if args.info:
-        display_user_info(s_id, list_friends=getattr(args, "list_friends", False))
-        sys.stdout = stdout_bck
-        sys.exit(0)
-
     if args.csv_file:
         CSV_FILE = os.path.expanduser(args.csv_file)
     else:
@@ -1594,9 +1932,17 @@ def main():
                 log_path = Path(f"{log_path.name}_{FILE_SUFFIX}.log")
         log_path.parent.mkdir(parents=True, exist_ok=True)
         FINAL_LOG_PATH = str(log_path)
-        sys.stdout = Logger(FINAL_LOG_PATH)
+        sys.stdout = Logger(FINAL_LOG_PATH, strip_ansi=True)
     else:
         FINAL_LOG_PATH = None
+        # Even when logging is disabled, keep coloured output on the terminal.
+        sys.stdout = ColorStream(stdout_bck)
+
+    # Handle info mode - display user information once and exit
+    if args.info:
+        display_user_info(s_id, list_friends=getattr(args, "list_friends", False))
+        sys.stdout = stdout_bck
+        sys.exit(0)
 
     if args.notify_active_inactive is True:
         ACTIVE_INACTIVE_NOTIFICATION = True
@@ -1624,8 +1970,8 @@ def main():
     print(f"* Configuration file:\t\t{cfg_path}")
     print(f"* Dotenv file:\t\t\t{env_path or 'None'}")
 
-    out = f"\nMonitoring user with Steam64 ID {s_id}"
-    print(out)
+    out = f"\nMonitoring user with Steam64 ID {colorize('steam_id', str(s_id))}"
+    print(colorize("header", out))
     print("-" * len(out))
 
     # We define signal handlers only for Linux, Unix & MacOS since Windows has limited number of signals supported
