@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.4
+v1.5
 
 Tool implementing real-time tracking of Steam players activities:
 https://github.com/misiektoja/steam_monitor/
@@ -14,7 +14,7 @@ python-dateutil
 python-dotenv (optional)
 """
 
-VERSION = "1.4"
+VERSION = "1.5"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -851,11 +851,15 @@ def display_user_info(steamid, list_friends=False):
     if "games" in s_played["response"].keys() and s_played["response"]["games"]:
         print(f"\nList of recently played games:")
         for i, game in enumerate(s_played["response"]["games"]):
-            print(f"{i + 1} {game.get('name')}")
+            name = game.get('name')
+            mins_2w = game.get('playtime_2weeks', 0) or 0
+            mins_total = game.get('playtime_forever', 0) or 0
+            hrs_2w = mins_2w // 60
+            hrs_total = mins_total // 60
+            print(f"{i + 1} {name} (last 2w: {hrs_2w}h, total: {hrs_total}h)")
 
-    if "games" in s_played["response"]:
-        total_2w = sum(g.get('playtime_2weeks', 0) for g in s_played["response"]["games"]) // 60
-        print(f"Hours played last 2 weeks:\t{total_2w}h")
+        total_2w = sum(g.get('playtime_2weeks', 0) or 0 for g in s_played["response"]["games"]) // 60
+        print(f"\nHours played last 2 weeks:\t{total_2w}h")
 
 
 # Main function that monitors gaming activity of the specified Steam user
@@ -1005,10 +1009,15 @@ def steam_monitor_user(steamid, csv_file_name):
         game_ts_old = int(time.time())
         games_number += 1
 
-    if "games" in s_played["response"].keys():
+    if "games" in s_played["response"].keys() and s_played["response"]["games"]:
         print(f"\nList of recently played games:")
         for i, game in enumerate(s_played["response"]["games"]):
-            print(f"{i + 1} {game.get('name')}")
+            name = game.get('name')
+            mins_2w = game.get('playtime_2weeks', 0) or 0
+            mins_total = game.get('playtime_forever', 0) or 0
+            hrs_2w = mins_2w // 60
+            hrs_total = mins_total // 60
+            print(f"{i + 1} {name} (last 2w: {hrs_2w}h, total: {hrs_total}h)")
 
     status_old = status
     gameid_old = gameid
