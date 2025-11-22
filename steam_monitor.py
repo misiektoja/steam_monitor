@@ -378,6 +378,10 @@ def _stream_supports_color(stream):
     term = os.getenv("TERM", "")
     if term.lower() in ("", "dumb", "unknown"):
         return False
+    # If stdin is a pipe, we're likely being piped (e.g., via tee), so disable colors
+    # to avoid writing ANSI codes to files
+    if hasattr(sys.stdin, "isatty") and not sys.stdin.isatty():
+        return False
     return True
 
 
@@ -601,6 +605,9 @@ def check_internet(url=CHECK_INTERNET_URL, timeout=CHECK_INTERNET_TIMEOUT):
 # Clears the terminal screen
 def clear_screen(enabled=True):
     if not enabled:
+        return
+    # Don't clear screen if stdout is redirected (not a TTY)
+    if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
         return
     try:
         if platform.system() == 'Windows':
