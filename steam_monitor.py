@@ -1044,12 +1044,45 @@ def print_country_region(player):
 def fetch_recent_achievements(steamid, s_api, s_played, max_games=15, max_achievements=10):
     achievements = []
 
+    games_from_owned = False
     games = s_played.get("response", {}).get("games", []) if isinstance(s_played, dict) else []
+
+    # Fallback: if recently played games are hidden or empty, try owned games
+    if not games:
+        try:
+            # Call GetOwnedGames with all parameters that the steam.webapi wrapper
+            # considers required, to avoid local validation errors before the HTTP call.
+            owned = s_api.call(
+                "IPlayerService.GetOwnedGames",
+                steamid=steamid,
+                include_appinfo=1,
+                include_played_free_games=1,
+                appids_filter=[],          # empty list → no filtering, all games
+                include_free_sub=0,        # 0 = do not include free subscriptions
+                include_extended_appinfo=0,  # keep response small, we only need playtime/name
+                language="en",
+            )
+            owned_games = owned.get("response", {}).get("games", []) if isinstance(owned, dict) else []
+            if owned_games:
+                # Sort by total playtime (most played first) as a heuristic for relevance
+                games = sorted(
+                    owned_games,
+                    key=lambda g: g.get("playtime_forever", 0),
+                    reverse=True,
+                )
+                games_from_owned = True
+        except Exception:
+            games = []
+
     if not games:
         return achievements
 
-    # Limit to most recent games to avoid too many API calls
-    for game in games[:max_games]:
+    # Limit number of API calls only when we truly have a "recently played" list.
+    # For owned-games fallback, consider all games so that low-playtime fresh games
+    # (with new achievements) are not missed.
+    for idx, game in enumerate(games):
+        if not games_from_owned and idx >= max_games:
+            break
         appid = game.get("appid")
         game_name = game.get("name") or f"AppID {appid}"
         if not appid:
@@ -1097,7 +1130,6 @@ def fetch_recent_achievements(steamid, s_api, s_played, max_games=15, max_achiev
 # Fetches and displays recent achievements for a Steam user
 def display_recent_achievements(steamid, s_api, s_played, max_games=15, max_achievements=10):
     print(f"\n* Fetching recent achievements...")
-
     achievements = fetch_recent_achievements(steamid, s_api, s_played, max_games=max_games, max_achievements=max_achievements)
 
     if not achievements:
