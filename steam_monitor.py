@@ -685,7 +685,7 @@ def print_country_region(player):
 
 
 # Gets detailed user information and displays it (for -i/--info mode)
-def display_user_info(steamid):
+def display_user_info(steamid, list_friends=False):
     print(f"* Fetching details for Steam user with ID '{steamid}'...\n")
 
     try:
@@ -794,8 +794,36 @@ def display_user_info(steamid):
 
     try:
         friends = s_api.call('ISteamUser.GetFriendList', steamid=steamid, relationship='friend')
-        n_friends = len(friends.get('friendslist', {}).get('friends', []))
+        friend_entries = friends.get('friendslist', {}).get('friends', [])
+        n_friends = len(friend_entries)
         print(f"\nFriends:\t\t\t{n_friends}")
+
+        if list_friends and friend_entries:
+            friend_ids = [f.get('steamid') for f in friend_entries if f.get('steamid')]
+            print("\nFriends list:")
+
+            # Steam Web API allows up to 100 steamids per GetPlayerSummaries call, so chunk the requests
+            chunk_size = 100
+            for i in range(0, len(friend_ids), chunk_size):
+                chunk = friend_ids[i:i + chunk_size]
+                try:
+                    summaries = s_api.call(
+                        'ISteamUser.GetPlayerSummaries',
+                        steamids=",".join(chunk),
+                    )
+                except Exception as e:
+                    print(f"* Warning: Cannot fetch friend details: {e}")
+                    break
+
+                players = summaries.get("response", {}).get("players", [])
+                for p in players:
+                    persona = p.get("personaname", "")
+                    real_name = p.get("realname") or ""
+                    sid = p.get("steamid", "")
+                    if real_name:
+                        print(f"- {persona} ({real_name}) [{sid}]")
+                    else:
+                        print(f"- {persona} [{sid}]")
     except Exception:
         pass
 
@@ -1300,6 +1328,12 @@ def main():
         action="store_true",
         help="Get detailed user information and display it, then exit"
     )
+    info.add_argument(
+        "--list-friends",
+        dest="list_friends",
+        action="store_true",
+        help="When used with -i/--info, also list all friends instead of only the count"
+    )
 
     # Intervals & timers
     times = parser.add_argument_group("Intervals & timers")
@@ -1444,7 +1478,7 @@ def main():
 
     # Handle info mode - display user information once and exit
     if args.info:
-        display_user_info(s_id)
+        display_user_info(s_id, list_friends=getattr(args, "list_friends", False))
         sys.stdout = stdout_bck
         sys.exit(0)
 
