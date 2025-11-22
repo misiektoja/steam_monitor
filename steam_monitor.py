@@ -77,6 +77,12 @@ STEAM_ACTIVE_CHECK_INTERVAL = 60  # 1 min
 # and previous session statistics (like total playtime and number of played games) will be preserved
 OFFLINE_INTERRUPT = 420  # 7 mins
 
+# Steam's inactivity thresholds (approximate, in seconds)
+# User status changes to "away" after ~5 minutes of inactivity while showing "online"
+STEAM_AWAY_INACTIVITY_THRESHOLD = 300  # 5 minutes
+# User status changes to "snooze" after ~2 hours of being in "away" status
+STEAM_SNOOZE_INACTIVITY_THRESHOLD = 7200  # 2 hours
+
 # How often to print a "liveness check" message to the output; in seconds
 # Set to 0 to disable
 LIVENESS_CHECK_INTERVAL = 43200  # 12 hours
@@ -141,6 +147,8 @@ ERROR_NOTIFICATION = False
 STEAM_CHECK_INTERVAL = 0
 STEAM_ACTIVE_CHECK_INTERVAL = 0
 OFFLINE_INTERRUPT = 0
+STEAM_AWAY_INACTIVITY_THRESHOLD = 0
+STEAM_SNOOZE_INACTIVITY_THRESHOLD = 0
 LIVENESS_CHECK_INTERVAL = 0
 CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
@@ -440,7 +448,7 @@ def write_csv_entry(csv_file_name, timestamp, status, gamename, gameid):
 
 # Returns the current date/time in human readable format; eg. Sun 21 Apr 2024, 15:08:45
 def get_cur_ts(ts_str=""):
-    return (f'{ts_str}{calendar.day_abbr[(datetime.fromtimestamp(int(time.time()))).weekday()]}, {datetime.fromtimestamp(int(time.time())).strftime("%d %b %Y, %H:%M:%S")}')
+    return (f'{ts_str}{calendar.day_abbr[(datetime.fromtimestamp(int(time.time()))).weekday()]} {datetime.fromtimestamp(int(time.time())).strftime("%d %b %Y, %H:%M:%S")}')
 
 
 # Prints the current date/time in human readable format with separator; eg. Sun 21 Apr 2024, 15:08:45
@@ -876,6 +884,7 @@ def steam_monitor_user(steamid, csv_file_name):
     game_total_ts = 0
     games_number = 0
     game_total_after_offline_counted = False
+    estimated_last_activity_ts = 0  # Estimated timestamp when user was last active (used for away/snooze calculations)
 
     try:
         if csv_file_name:
@@ -928,6 +937,9 @@ def steam_monitor_user(steamid, csv_file_name):
         if last_status_read:
             last_status_ts = last_status_read[0]
             last_status = last_status_read[1]
+            # Backward compatibility: check if estimated_last_activity_ts exists (new format has 3 elements)
+            if len(last_status_read) >= 3 and last_status_read[2] is not None:
+                estimated_last_activity_ts = last_status_read[2]
             steam_last_status_file_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(steam_last_status_file)))
             steam_last_status_file_mdate = steam_last_status_file_mdate_dt.strftime("%d %b %Y, %H:%M:%S")
             steam_last_status_file_mdate_weekday = str(calendar.day_abbr[(steam_last_status_file_mdate_dt).weekday()])
@@ -953,6 +965,14 @@ def steam_monitor_user(steamid, csv_file_name):
         last_status_to_save = []
         last_status_to_save.append(status_ts_old)
         last_status_to_save.append(status)
+        # Save estimated_last_activity_ts if status is away or snooze, otherwise save None
+        if status == 3 or status == 4:  # away (3) or snooze (4)
+            if estimated_last_activity_ts > 0:
+                last_status_to_save.append(estimated_last_activity_ts)
+            else:
+                last_status_to_save.append(None)
+        else:
+            last_status_to_save.append(None)
         try:
             with open(steam_last_status_file, 'w', encoding="utf-8") as f:
                 json.dump(last_status_to_save, f, indent=2)
@@ -990,6 +1010,14 @@ def steam_monitor_user(steamid, csv_file_name):
         last_status_to_save = []
         last_status_to_save.append(status_ts_old)
         last_status_to_save.append(status)
+        # Save estimated_last_activity_ts if status is away or snooze, otherwise save None
+        if status == 3 or status == 4:  # away (3) or snooze (4)
+            if estimated_last_activity_ts > 0:
+                last_status_to_save.append(estimated_last_activity_ts)
+            else:
+                last_status_to_save.append(None)
+        else:
+            last_status_to_save.append(None)
         try:
             with open(steam_last_status_file, 'w', encoding="utf-8") as f:
                 json.dump(last_status_to_save, f, indent=2)
@@ -1087,6 +1115,11 @@ def steam_monitor_user(steamid, csv_file_name):
             last_status_to_save = []
             last_status_to_save.append(status_ts)
             last_status_to_save.append(status)
+            # Save estimated_last_activity_ts if status is away or snooze, otherwise save None
+            if status == 3 or status == 4:  # away (3) or snooze (4)
+                last_status_to_save.append(estimated_last_activity_ts)
+            else:
+                last_status_to_save.append(None)
             try:
                 with open(steam_last_status_file, 'w', encoding="utf-8") as f:
                     json.dump(last_status_to_save, f, indent=2)
@@ -1101,11 +1134,47 @@ def steam_monitor_user(steamid, csv_file_name):
             m_body_was_since = f" ({get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)})"
 
             m_body_short_offline_msg = ""
+            m_body_inactivity_info = ""
 
-            # Player got online
+            # Track inactivity for away/snooze status changes
+            # User changed from "online" to "away" - estimate last activity as ~5 minutes before status change
+            if status_old == 1 and status == 3:  # online (1) to away (3)
+                estimated_last_activity_ts = status_ts - STEAM_AWAY_INACTIVITY_THRESHOLD
+                online_duration = status_ts - status_ts_old
+                estimated_active_duration = max(0, online_duration - STEAM_AWAY_INACTIVITY_THRESHOLD)
+                estimated_inactive_duration = min(STEAM_AWAY_INACTIVITY_THRESHOLD, online_duration)
+
+                inactivity_msg = f"User was likely active for ~{display_time(estimated_active_duration)}, then inactive for ~{display_time(estimated_inactive_duration)} before status changed to away"
+                inactivity_msg_email = f"\n\n{inactivity_msg}\n\nEstimated last activity: {get_date_from_ts(estimated_last_activity_ts)}"
+                print(inactivity_msg)
+                print(f"Estimated last activity:\t{get_date_from_ts(estimated_last_activity_ts)}")
+                m_body_inactivity_info = inactivity_msg_email
+
+            # User changed from "away" to "snooze" - total inactivity is ~5 minutes (before away) + away duration
+            elif status_old == 3 and status == 4:  # away (3) to snooze (4)
+                away_duration = status_ts - status_ts_old
+                # If we have estimated_last_activity_ts from when user went to away, use it
+                # Otherwise estimate it as away_timestamp - 5 minutes
+                if estimated_last_activity_ts > 0:
+                    total_inactivity = status_ts - estimated_last_activity_ts
+                    estimated_last_activity_display = get_date_from_ts(estimated_last_activity_ts)
+                else:
+                    # Fallback: estimate last activity as away_timestamp - 5 minutes
+                    estimated_last_activity_ts = status_ts_old - STEAM_AWAY_INACTIVITY_THRESHOLD
+                    total_inactivity = away_duration + STEAM_AWAY_INACTIVITY_THRESHOLD
+                    estimated_last_activity_display = get_date_from_ts(estimated_last_activity_ts)
+
+                inactivity_msg = f"User was likely inactive for ~{display_time(total_inactivity)} total before status changed to snooze (including ~{display_time(STEAM_AWAY_INACTIVITY_THRESHOLD)} before away status + {display_time(away_duration)} away)"
+                inactivity_msg_email = f"\n\n{inactivity_msg}\n\nEstimated last activity: {estimated_last_activity_display}"
+                print(inactivity_msg)
+                print(f"Estimated last activity:\t{estimated_last_activity_display}")
+                m_body_inactivity_info = inactivity_msg_email
+
+            # Player got online (from offline, away, or snooze)
             if status_old == 0 and status > 0:
                 print(f"*** User got ACTIVE ! (was offline since {get_date_from_ts(status_ts_old)})")
                 game_total_after_offline_counted = False
+                estimated_last_activity_ts = 0  # Reset when user goes back online
                 if (status_ts - status_ts_old) > OFFLINE_INTERRUPT or not status_online_start_ts_old:
                     status_online_start_ts = status_ts
                     game_total_ts = 0
@@ -1115,6 +1184,8 @@ def steam_monitor_user(steamid, csv_file_name):
                     m_body_short_offline_msg = f"\n\nShort offline interruption ({display_time(status_ts - status_ts_old)}), online start timestamp set back to {get_short_date_from_ts(status_online_start_ts_old)}"
                     print(f"Short offline interruption ({display_time(status_ts - status_ts_old)}), online start timestamp set back to {get_short_date_from_ts(status_online_start_ts_old)}")
                 act_inact_flag = True
+            elif (status_old == 3 or status_old == 4) and status == 1:  # away (3) or snooze (4) to online (1)
+                estimated_last_activity_ts = 0  # Reset when user becomes active again
 
             m_body_played_games = ""
 
@@ -1146,7 +1217,7 @@ def steam_monitor_user(steamid, csv_file_name):
             change = True
 
             m_subject = f"Steam user {username} is now {steam_personastates[status]} (after {m_subject_after}{m_subject_was_since})"
-            m_body = f"Steam user {username} changed status from {steam_personastates[status_old]} to {steam_personastates[status]}\n\nUser was {steam_personastates[status_old]} for {calculate_timespan(int(status_ts), int(status_ts_old))}{m_body_was_since}{m_body_short_offline_msg}{m_body_user_in_game}{m_body_played_games}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+            m_body = f"Steam user {username} changed status from {steam_personastates[status_old]} to {steam_personastates[status]}\n\nUser was {steam_personastates[status_old]} for {calculate_timespan(int(status_ts), int(status_ts_old))}{m_body_was_since}{m_body_inactivity_info}{m_body_short_offline_msg}{m_body_user_in_game}{m_body_played_games}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
             if STATUS_NOTIFICATION or (ACTIVE_INACTIVE_NOTIFICATION and act_inact_flag):
                 print(f"Sending email notification to {RECEIVER_EMAIL}")
                 send_email(m_subject, m_body, "", SMTP_SSL)
