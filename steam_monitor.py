@@ -129,7 +129,7 @@ COLORED_OUTPUT = True
 # Colour theme used for different parts of the output.
 # Keys are logical names used by the tool, values are colour/style strings.
 # You can combine multiple attributes with spaces or '+', for example:
-#   "bright_cyan bold", "yellow", "red underline", "bright_magenta bold underline"
+#   "bright_cyan bold", "yellow", "red underline", "bright_magenta bold underline", "red bold blink"
 # Valid colour names: black, red, green, yellow, blue, magenta, cyan, white,
 # and their bright_ variants (bright_red, bright_green, ...).
 COLOR_THEME = {
@@ -140,14 +140,14 @@ COLOR_THEME = {
     "username": "blue underline",
     "steam_id": "bright_magenta",
     # Status values
-    "status_online": "green",
+    "status_online": "green blink",
     "status_offline": "red",
     "status_away": "yellow",
     "status_snooze": "magenta",
     "status_other": "white",
     # Activity / game info
     "status_change": "yellow",
-    "game": "magenta",
+    "game": "bright_yellow",
     "duration": "green",
     # Misc
     "timestamp_label": "",
@@ -156,6 +156,9 @@ COLOR_THEME = {
     "warning": "yellow",
     "error": "red",
     "signal": "yellow",
+    # Dates
+    "date": "magenta",
+    "date_range": "magenta",
 }
 
 # Value used by signal handlers increasing/decreasing the check for player activity
@@ -265,23 +268,28 @@ _COLOR_STYLES = {}
 
 # Default built-in colour theme. Values can be overridden via COLOR_THEME in config
 DEFAULT_COLOR_THEME = {
-    "header": "bright_cyan bold",
-    "section": "bright_white bold",
+    # General sections
+    "header": "bright_cyan",
+    "section": "bright_white",
+    # Identity
     "username": "blue underline",
     "steam_id": "bright_magenta",
-    "status_online": "green bold",
-    "status_offline": "red bold",
-    "status_away": "yellow bold",
-    "status_snooze": "magenta bold",
-    "status_other": "white bold",
-    "status_change": "yellow bold",
-    "game": "magenta",
+    # Status values
+    "status_online": "green blink",
+    "status_offline": "red",
+    "status_away": "yellow",
+    "status_snooze": "magenta",
+    "status_other": "white",
+    # Activity / game info
+    "status_change": "yellow",
+    "game": "bright_yellow",
     "duration": "green",
+    # Misc
     "timestamp_label": "",
-    "timestamp_value": "bright_cyan",
+    "timestamp_value": "cyan",
     "info": "cyan",
     "warning": "yellow",
-    "error": "red bold",
+    "error": "red",
     "signal": "yellow",
     # Dates
     "date": "magenta",
@@ -1032,8 +1040,93 @@ def print_country_region(player):
         print(f"City ID (Steam):\t\t{city_id}")
 
 
+# Fetches recent achievements for the user
+def fetch_recent_achievements(steamid, s_api, s_played, max_games=15, max_achievements=10):
+    achievements = []
+
+    games = s_played.get("response", {}).get("games", []) if isinstance(s_played, dict) else []
+    if not games:
+        return achievements
+
+    # Limit to most recent games to avoid too many API calls
+    for game in games[:max_games]:
+        appid = game.get("appid")
+        game_name = game.get("name") or f"AppID {appid}"
+        if not appid:
+            continue
+
+        try:
+            stats = s_api.call(
+                "ISteamUserStats.GetPlayerAchievements",
+                steamid=steamid,
+                appid=appid,
+            )
+        except Exception:
+            # Game may not have achievements or the API might not support it
+            continue
+
+        playerstats = stats.get("playerstats", {}) if isinstance(stats, dict) else {}
+        ach_list = playerstats.get("achievements", []) if isinstance(playerstats, dict) else []
+
+        for ach in ach_list:
+            try:
+                if not isinstance(ach, dict):
+                    continue
+                if ach.get("achieved") not in (1, True):
+                    continue
+                unlock_ts = ach.get("unlocktime") or ach.get("unlock_time") or 0
+                if not unlock_ts:
+                    continue
+
+                achievements.append(
+                    {
+                        "game": game_name,
+                        "name": ach.get("name") or ach.get("apiname") or "",
+                        "description": ach.get("description") or "",
+                        "unlocktime": int(unlock_ts),
+                    }
+                )
+            except Exception:
+                continue
+
+    # Sort by unlock time (most recent first) and limit to requested number
+    achievements.sort(key=lambda a: a.get("unlocktime", 0), reverse=True)
+    return achievements[:max_achievements]
+
+
+# Fetches and displays recent achievements for a Steam user
+def display_recent_achievements(steamid, s_api, s_played, max_games=15, max_achievements=10):
+    print(f"\n* Fetching recent achievements...")
+
+    achievements = fetch_recent_achievements(steamid, s_api, s_played, max_games=max_games, max_achievements=max_achievements)
+
+    if not achievements:
+        print("* No recent achievements found or access is restricted by the user's privacy settings.")
+        print("* Note: 'Game details' privacy must allow the API to see play data and achievements.")
+        return
+
+    print(f"\nRecent achievements ({len(achievements)}):")
+    print("─" * HORIZONTAL_LINE)
+
+    for i, ach in enumerate(achievements, 1):
+        game_name = ach.get("game", "Unknown Game")
+        ach_name = ach.get("name", "Unknown Achievement")
+        description = ach.get("description", "")
+        unlock_ts = ach.get("unlocktime", 0)
+
+        print(f"\n{i}. {colorize('game', game_name)}")
+        print(f"   Achievement: {colorize('section', ach_name)}")
+        if description:
+            print(f"   Description: {description}")
+        if unlock_ts:
+            date_str = get_date_from_ts(int(unlock_ts))
+            print(f"   Earned: {colorize('date', date_str)}")
+        else:
+            print(f"   Earned: {colorize('warning', 'Date not available')}")
+
+
 # Gets detailed user information and displays it (for -i/--info mode)
-def display_user_info(steamid, list_friends=False):
+def display_user_info(steamid, list_friends=False, show_achievements=False, achievements_count=None):
     steamid_coloured = colorize("steam_id", str(steamid))
     print(f"* Fetching details for Steam user with ID '{steamid_coloured}'...\n")
 
@@ -1209,6 +1302,10 @@ def display_user_info(steamid, list_friends=False):
 
         total_2w = sum(g.get('playtime_2weeks', 0) or 0 for g in s_played["response"]["games"]) // 60
         print(f"\nHours played last 2 weeks:\t{total_2w}h")
+
+    if show_achievements:
+        max_ach = achievements_count if isinstance(achievements_count, int) and achievements_count > 0 else 10
+        display_recent_achievements(steamid, s_api, s_played, max_games=15, max_achievements=max_ach)
 
 
 # Main function that monitors gaming activity of the specified Steam user
@@ -1758,6 +1855,19 @@ def main():
         action="store_true",
         help="When used with -i/--info, also list all friends instead of only the count"
     )
+    info.add_argument(
+        "--achievements",
+        dest="show_achievements",
+        action="store_true",
+        help="When used with -i/--info, also display recent achievements (via Steam Web API)"
+    )
+    info.add_argument(
+        "-n", "--achievements-count",
+        dest="achievements_count",
+        metavar="NUMBER",
+        type=int,
+        help="When used with --achievements, limit number of recent achievements to display (default: 10)"
+    )
 
     # Intervals & timers
     times = parser.add_argument_group("Intervals & timers")
@@ -1940,7 +2050,7 @@ def main():
 
     # Handle info mode - display user information once and exit
     if args.info:
-        display_user_info(s_id, list_friends=getattr(args, "list_friends", False))
+        display_user_info(s_id, list_friends=getattr(args, "list_friends", False), show_achievements=getattr(args, "show_achievements", False), achievements_count=getattr(args, "achievements_count", None))
         sys.stdout = stdout_bck
         sys.exit(0)
 
