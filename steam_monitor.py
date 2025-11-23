@@ -389,6 +389,8 @@ _ONLINE_WORD_RE = re.compile(r"(?i)( online| appeared |\bYes\b)")
 _OFFLINE_WORD_RE = re.compile(r"(?i)( offline| away| snooze|\bNo\b)")
 _BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b")
 _BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b")
+# Game names in quotes, but exclude file paths (containing underscores followed by more text, dots, or slashes)
+_GAME_NAME_QUOTED_RE = re.compile(r"(['\"])((?![^'\"]*[._/])[^'\"]+)\1")
 
 
 # Builds ANSI escape sequence from a style description string
@@ -512,7 +514,7 @@ def _colorize_line(line):
     m = _USER_IN_GAME_RE.match(line)
     if m:
         prefix, game = m.groups()
-        return f"{colorize('game', prefix)}{colorize('game', game)}"
+        return f"{prefix}{colorize('game', game)}"
 
     # Status change long line
     m = _STATUS_CHANGE_RE.match(line)
@@ -521,11 +523,8 @@ def _colorize_line(line):
         # Colour only the status words; keep the surrounding text in default colour
         return f"{pfx}{colorize_status(old_s)}{mid}{colorize_status(new_s)}{tail}"
 
-    # Game change lines
-    m = _GAME_CHANGE_RE.match(line)
-    if m:
-        pfx, verb, tail = m.groups()
-        return f"{pfx}{colorize('status_change', verb)}{tail}"
+    # Game change lines - don't color the verb, just process the line normally
+    # (game names in quotes will be colored separately below)
 
     # Highlight durations
     def _dur_repl(mo):
@@ -539,6 +538,12 @@ def _colorize_line(line):
     line = _SHORT_RANGE_DATE_RE.sub(lambda mo: colorize("date_range", mo.group(0)), line)
     # Highlight date ranges without year, e.g. 'Sat 22 Nov 03:24 - 08:28'
     line = _DATE_RANGE_RE.sub(lambda mo: colorize("date_range", mo.group(0)), line)
+
+    # Highlight game names in quotes
+    def _game_name_repl(mo):
+        quote_char, game_name = mo.groups()
+        return f"{quote_char}{colorize('game', game_name)}{quote_char}"
+    line = _GAME_NAME_QUOTED_RE.sub(_game_name_repl, line)
 
     # Highlight boolean values first
     line = _BOOLEAN_TRUE_RE.sub(lambda mo: colorize("boolean_true", mo.group(0)), line)
