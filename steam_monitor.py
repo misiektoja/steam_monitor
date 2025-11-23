@@ -140,7 +140,7 @@ COLOR_THEME = {
     "username": "blue underline",
     "steam_id": "bright_magenta",
     # Status values
-    "status_online": "green blink",
+    "status_online": "green",
     "status_offline": "red",
     "status_away": "yellow",
     "status_snooze": "magenta",
@@ -159,6 +159,9 @@ COLOR_THEME = {
     # Dates
     "date": "magenta",
     "date_range": "magenta",
+    # Boolean values
+    "boolean_true": "green",
+    "boolean_false": "red",
 }
 
 # Value used by signal handlers increasing/decreasing the check for player activity
@@ -275,7 +278,7 @@ DEFAULT_COLOR_THEME = {
     "username": "blue underline",
     "steam_id": "bright_magenta",
     # Status values
-    "status_online": "green blink",
+    "status_online": "green",
     "status_offline": "red",
     "status_away": "yellow",
     "status_snooze": "magenta",
@@ -294,6 +297,9 @@ DEFAULT_COLOR_THEME = {
     # Dates
     "date": "magenta",
     "date_range": "magenta",
+    # Boolean values
+    "boolean_true": "green",
+    "boolean_false": "red",
 }
 
 ANSI_RESET = "\033[0m"
@@ -350,8 +356,10 @@ _GAME_CHANGE_RE = re.compile(
 _DURATION_RE = re.compile(
     r"(\d+\s+(seconds?|minutes?|hours?|days?|weeks?|months?|years?))", re.IGNORECASE
 )
-_ONLINE_WORD_RE = re.compile(r"(?i)( online| appeared |\bYes\b|\bTrue\b)")
-_OFFLINE_WORD_RE = re.compile(r"(?i)( offline| away| snooze|\bNo\b|\bFalse\b)")
+_ONLINE_WORD_RE = re.compile(r"(?i)( online| appeared |\bYes\b)")
+_OFFLINE_WORD_RE = re.compile(r"(?i)( offline| away| snooze|\bNo\b)")
+_BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b")
+_BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b")
 
 
 # Builds ANSI escape sequence from a style description string
@@ -502,6 +510,10 @@ def _colorize_line(line):
     line = _SHORT_RANGE_DATE_RE.sub(lambda mo: colorize("date_range", mo.group(0)), line)
     # Highlight date ranges without year, e.g. 'Sat 22 Nov 03:24 - 08:28'
     line = _DATE_RANGE_RE.sub(lambda mo: colorize("date_range", mo.group(0)), line)
+
+    # Highlight boolean values first
+    line = _BOOLEAN_TRUE_RE.sub(lambda mo: colorize("boolean_true", mo.group(0)), line)
+    line = _BOOLEAN_FALSE_RE.sub(lambda mo: colorize("boolean_false", mo.group(0)), line)
 
     # Highlight online/offline keywords
     line = _ONLINE_WORD_RE.sub(lambda mo: colorize("status_online", mo.group(0)), line)
