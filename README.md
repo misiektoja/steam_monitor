@@ -7,7 +7,7 @@ steam_monitor is a tool for real-time monitoring of **Steam players' activities*
 
 - **Real-time tracking** of Steam users' gaming activity (including detection when a user gets online/offline or plays games)
 - **Basic statistics for user activity** (such as how long in different states, how long a game is played, overall time and the number of played games in the session etc.)
-- **Detailed user information** display mode providing comprehensive Steam profile insights
+- **Detailed user information** display mode providing comprehensive Steam profile insights including **recent achievements**
 - **Email notifications** for different events (when a player gets online/away/snooze/offline, starts/finishes/changes a game or errors occur)
 - **Saving all user activities** with timestamps to a **CSV file**
 - Possibility to **control the running copy** of the script via signals
@@ -155,12 +155,12 @@ In order to monitor Steam user activity, proper privacy settings need to be enab
 
 The user should go to [Steam Privacy Settings](https://steamcommunity.com/my/edit/settings).
 
-The value in **My Profile → Game details** should be set to **Friends Only** or **Public**. 
+The value in **My Profile → Game details** should be set to **Friends Only** or **Public**.
 
 <a id="smtp-settings"></a>
 ### SMTP Settings
 
-If you want to use email notifications functionality, configure SMTP settings in the `steam_monitor.conf` file. 
+If you want to use email notifications functionality, configure SMTP settings in the `steam_monitor.conf` file.
 
 Verify your SMTP settings by using `--send-test-email` flag (the tool will try to send a test email notification):
 
@@ -189,7 +189,7 @@ STEAM_API_KEY="your_steam_web_api_key"
 SMTP_PASSWORD="your_smtp_password"
 ```
 
-By default the tool will auto-search for dotenv file named `.env` in current directory and then upward from it. 
+By default the tool will auto-search for dotenv file named `.env` in current directory and then upward from it.
 
 You can specify a custom file with `DOTENV_FILE` or `--env-file` flag:
 
@@ -244,6 +244,24 @@ This mode displays detailed information including:
 - Recently played games with playtime statistics
 - Hours played in the last 2 weeks
 
+Optionally, you can also display **recently earned achievements** using the `--achievements` flag:
+
+```sh
+steam_monitor <steam_user_id> -i --achievements                    # show recent achievements (default: 10)
+steam_monitor <steam_user_id> -i --achievements -n 20              # show up to 20 recent achievements
+steam_monitor <steam_user_id> -i --achievements --achievements-all-games  # check all owned games instead of only recently played
+```
+
+Recent achievements show game name, achievement name, description (if available) and earn time.
+
+**How it works:**
+- By default, the tool checks achievements from the user's recently played games (up to 15 games).
+- If the recently played games list is empty or hidden, it automatically falls back to checking all owned games.
+- Use `--achievements-all-games` to force checking all owned games instead of only recently played games. This is useful for users who haven't played recently, as their recently played list may be limited and older games with achievements might be missed.
+- Achievements are sorted by unlock time (most recent first) and limited to the number specified with `-n` (default: 10).
+
+The visibility of achievements depends on the user's Steam privacy settings for game details. If game details are set to "Private", achievements may not be accessible.
+
 The tool displays this information and then exits (does not start monitoring).
 
 <a id="monitoring-mode"></a>
@@ -261,7 +279,7 @@ If you have not set `STEAM_API_KEY` secret, you can use `-u` flag:
 steam_monitor <steam_user_id> -u "your_steam_web_api_key"
 ```
 
-If you do not know the user's Steam64 ID, but you know the Steam profile/community URL (which can be customized by the user), you can also run the tool with `-r` flag which will automatically resolve it to Steam64 ID: 
+If you do not know the user's Steam64 ID, but you know the Steam profile/community URL (which can be customized by the user), you can also run the tool with `-r` flag which will automatically resolve it to Steam64 ID:
 
 ```sh
 steam_monitor -r "https://steamcommunity.com/id/steam_username/"
@@ -270,9 +288,9 @@ steam_monitor -r "https://steamcommunity.com/id/steam_username/"
 When monitoring starts, the tool displays user information including Steam64 ID, display name, real name (if available), country/region, current status, profile visibility, account creation date and profile URL.
 
 By default, the tool looks for a configuration file named `steam_monitor.conf` in:
- - current directory 
+ - current directory
  - home directory (`~`)
- - script directory 
+ - script directory
 
  If you generated a configuration file as described in [Configuration](#configuration), but saved it under a different name or in a different directory, you can specify its location using the `--config-file` flag:
 
