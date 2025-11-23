@@ -1436,7 +1436,6 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     last_steam_level = None
     last_player_xp = None
     last_friend_ids = None
-    friends_unavailable_logged = False
 
     try:
         if csv_file_name:
@@ -1695,10 +1694,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     friends = s_api.call('ISteamUser.GetFriendList', steamid=steamid, relationship='friend')
                     friend_entries = friends.get('friendslist', {}).get('friends', [])
                     current_friend_ids = {f.get('steamid') for f in friend_entries if f.get('steamid')}
-                except Exception as e:
-                    if not friends_unavailable_logged:
-                        print(f"* Cannot fetch friends list (skipping friends tracking): {e}")
-                        friends_unavailable_logged = True
+                except Exception:
                     current_friend_ids = None
         except Exception as e:
 
