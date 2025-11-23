@@ -65,6 +65,24 @@ STATUS_NOTIFICATION = False
 # Can also be disabled via the -e flag
 ERROR_NOTIFICATION = True
 
+# Whether to periodically check the user's Steam level and total XP for changes
+# (disabled by default to avoid extra API usage)
+# Can also be enabled via the --check-level-xp flag
+STEAM_LEVEL_XP_CHECK = False
+
+# Whether to send an email when user's Steam level or total XP changes
+# Requires STEAM_LEVEL_XP_CHECK to be enabled; can also be enabled via the --notify-level-xp flag
+STEAM_LEVEL_XP_NOTIFICATION = False
+
+# Whether to periodically check the user's friends list for changes
+# (disabled by default to avoid extra API usage)
+# Can also be enabled via the --check-friends flag
+FRIENDS_CHECK = False
+
+# Whether to send an email when the user's friends list changes
+# Requires FRIENDS_CHECK to be enabled; can also be enabled via the --notify-friends flag
+FRIENDS_NOTIFICATION = False
+
 # How often to check for player activity when the user is offline; in seconds
 # Can also be set using the -c flag
 STEAM_CHECK_INTERVAL = 120  # 2 min
@@ -97,6 +115,10 @@ CHECK_INTERNET_TIMEOUT = 5
 # CSV file to write all status & game changes
 # Can also be set using the -b flag
 CSV_FILE = ""
+
+# Optional separate CSV file for profile-related changes (Steam level, total XP, friends changes)
+# Can also be set using the --profile-csv-file flag
+PROFILE_CSV_FILE = ""
 
 # Location of the optional dotenv file which can keep secrets
 # If not specified it will try to auto-search for .env files
@@ -187,6 +209,11 @@ ACTIVE_INACTIVE_NOTIFICATION = False
 GAME_CHANGE_NOTIFICATION = False
 STATUS_NOTIFICATION = False
 ERROR_NOTIFICATION = False
+STEAM_LEVEL_XP_CHECK = False
+STEAM_LEVEL_XP_NOTIFICATION = False
+FRIENDS_CHECK = False
+FRIENDS_NOTIFICATION = False
+PROFILE_CSV_FILE = ""
 STEAM_CHECK_INTERVAL = 0
 STEAM_ACTIVE_CHECK_INTERVAL = 0
 OFFLINE_INTERRUPT = 0
@@ -218,6 +245,8 @@ LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / STEAM_CHECK_INTERVAL
 
 stdout_bck = None
 csvfieldnames = ['Date', 'Status', 'Game name', 'Game ID']
+
+profile_csvfieldnames = ['Date', 'Event', 'OldValue', 'NewValue', 'Delta', 'FriendSteamID', 'FriendPersona', 'FriendRealName']
 
 steam_personastates = ["offline", "online", "busy", "away", "snooze", "looking to trade", "looking to play"]
 steam_visibilitystates = ["private", "private", "private", "public"]
@@ -813,6 +842,27 @@ def write_csv_entry(csv_file_name, timestamp, status, gamename, gameid):
         raise RuntimeError(f"Failed to write to CSV file '{csv_file_name}': {e}")
 
 
+# Initializes the profile CSV file
+def init_profile_csv_file(csv_file_name):
+    try:
+        if not os.path.isfile(csv_file_name) or os.path.getsize(csv_file_name) == 0:
+            with open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=profile_csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
+                writer.writeheader()
+    except Exception as e:
+        raise RuntimeError(f"Could not initialize profile CSV file '{csv_file_name}': {e}")
+
+
+# Writes profile CSV entry
+def write_profile_csv_entry(csv_file_name, date, event, old_value=None, new_value=None, delta=None, friend_steamid=None, friend_persona=None, friend_realname=None):
+    try:
+        with open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8") as csv_file:
+            csvwriter = csv.DictWriter(csv_file, fieldnames=profile_csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
+            csvwriter.writerow({'Date': str(date), 'Event': event, 'OldValue': old_value if old_value is not None else "", 'NewValue': new_value if new_value is not None else "", 'Delta': delta if delta is not None else "", 'FriendSteamID': friend_steamid if friend_steamid is not None else "", 'FriendPersona': friend_persona if friend_persona is not None else "", 'FriendRealName': friend_realname if friend_realname is not None else ""})
+    except Exception as e:
+        raise RuntimeError(f"Failed to write to profile CSV file '{csv_file_name}': {e}")
+
+
 # Returns the current date/time in human readable format; eg. Sun 21 Apr 2024, 15:08:45
 def get_cur_ts(ts_str=""):
     return (f'{ts_str}{calendar.day_abbr[(datetime.fromtimestamp(int(time.time()))).weekday()]} {datetime.fromtimestamp(int(time.time())).strftime("%d %b %Y, %H:%M:%S")}')
@@ -1364,7 +1414,7 @@ def display_user_info(steamid, list_friends=False, show_achievements=False, achi
 
 
 # Main function that monitors gaming activity of the specified Steam user
-def steam_monitor_user(steamid, csv_file_name):
+def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
     alive_counter = 0
     status_ts = 0
@@ -1378,10 +1428,20 @@ def steam_monitor_user(steamid, csv_file_name):
     games_number = 0
     game_total_after_offline_counted = False
     estimated_last_activity_ts = 0  # Estimated timestamp when user was last active (used for away/snooze calculations)
+    last_steam_level = None
+    last_player_xp = None
+    last_friend_ids = None
+    friends_unavailable_logged = False
 
     try:
         if csv_file_name:
             init_csv_file(csv_file_name)
+    except Exception as e:
+        print(f"* Error: {e}")
+
+    try:
+        if profile_csv_file_name:
+            init_profile_csv_file(profile_csv_file_name)
     except Exception as e:
         print(f"* Error: {e}")
 
@@ -1497,6 +1557,44 @@ def steam_monitor_user(steamid, csv_file_name):
     if profile_url:
         print(f"\nProfile URL:\t\t\t{profile_url}")
 
+    # Optional level/XP snapshot at monitoring start
+    if STEAM_LEVEL_XP_CHECK:
+        s_level_displayed = False
+        try:
+            s_level = s_api.call('IPlayerService.GetSteamLevel', steamid=steamid)
+            print(f"\nSteam level:\t\t\t{s_level.get('response', {}).get('player_level', 'n/a')}")
+            s_level_displayed = True
+        except Exception:
+            s_level_displayed = False
+
+        try:
+            badges = s_api.call('IPlayerService.GetBadges', steamid=steamid)
+            resp = badges.get('response', {}) if isinstance(badges, dict) else {}
+            player_xp = resp.get('player_xp', 0)
+            xp_to_level = resp.get('player_xp_needed_to_level_up', 0)
+            xp_current_level = resp.get('player_xp_needed_current_level', 0)
+            badge_count = len(resp.get('badges', []))
+
+            if not s_level_displayed:
+                print()
+            print(f"Badges earned:\t\t\t{badge_count}")
+            print(f"Total XP:\t\t\t{player_xp}")
+            print(f"XP to next level:\t\t{xp_to_level}")
+            print(f"XP in current level:\t\t{xp_current_level}")
+        except Exception:
+            pass
+
+    # Optional friends snapshot at monitoring start
+    if FRIENDS_CHECK:
+        try:
+            friends = s_api.call('ISteamUser.GetFriendList', steamid=steamid, relationship='friend')
+            friend_entries = friends.get('friendslist', {}).get('friends', []) if isinstance(friends, dict) else []
+            n_friends = len(friend_entries)
+            print(f"\nFriends:\t\t\t{n_friends}")
+        except Exception:
+            # Gracefully indicate that friends data is not accessible (privacy or API limitations)
+            print(f"\nFriends:\t\t\tN/A")
+
     if last_status_ts == 0:
         if lastlogoff and status == 0:
             status_ts_old = lastlogoff
@@ -1560,6 +1658,9 @@ def steam_monitor_user(steamid, csv_file_name):
 
     # Main loop
     while True:
+        current_steam_level = None
+        current_player_xp = None
+        current_friend_ids = None
         try:
             s_api = steam.webapi.WebAPI(key=STEAM_API_KEY)
             s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
@@ -1568,6 +1669,32 @@ def steam_monitor_user(steamid, csv_file_name):
             gameid = s_user["response"]["players"][0].get("gameid")
             gamename = s_user["response"]["players"][0].get("gameextrainfo", "")
             email_sent = False
+
+            # Fetch Steam level and total XP if tracking is enabled
+            if STEAM_LEVEL_XP_CHECK:
+                try:
+                    s_level = s_api.call('IPlayerService.GetSteamLevel', steamid=steamid)
+                    current_steam_level = s_level.get('response', {}).get('player_level')
+                except Exception:
+                    current_steam_level = None
+
+                try:
+                    badges = s_api.call('IPlayerService.GetBadges', steamid=steamid)
+                    current_player_xp = badges.get('response', {}).get('player_xp')
+                except Exception:
+                    current_player_xp = None
+
+            # Fetch friends list when tracking is enabled
+            if FRIENDS_CHECK:
+                try:
+                    friends = s_api.call('ISteamUser.GetFriendList', steamid=steamid, relationship='friend')
+                    friend_entries = friends.get('friendslist', {}).get('friends', [])
+                    current_friend_ids = {f.get('steamid') for f in friend_entries if f.get('steamid')}
+                except Exception as e:
+                    if not friends_unavailable_logged:
+                        print(f"* Cannot fetch friends list (skipping friends tracking): {e}")
+                        friends_unavailable_logged = True
+                    current_friend_ids = None
         except Exception as e:
 
             if status > 0:
@@ -1754,6 +1881,227 @@ def steam_monitor_user(steamid, csv_file_name):
             game_ts_old = game_ts
             print_cur_ts("Timestamp:\t\t\t")
 
+        # Steam level changed
+        if STEAM_LEVEL_XP_CHECK and current_steam_level is not None:
+            try:
+                level_int = int(current_steam_level)
+            except (TypeError, ValueError):
+                level_int = None
+            try:
+                last_level_int = int(last_steam_level) if last_steam_level is not None else None
+            except (TypeError, ValueError):
+                last_level_int = None
+
+            if last_level_int is not None and level_int is not None and level_int != last_level_int:
+                delta = level_int - last_level_int
+                direction = "increased" if delta > 0 else "decreased"
+                print(f"Steam user {username} Steam level {direction} from {last_level_int} to {level_int} (delta {delta})")
+                xp_info_str = ""
+                if current_player_xp is not None:
+                    try:
+                        xp_int_for_level = int(current_player_xp)
+                        xp_info_str = f"\nTotal XP after level change: {xp_int_for_level}"
+                    except (TypeError, ValueError):
+                        xp_info_str = ""
+                if profile_csv_file_name:
+                    try:
+                        write_profile_csv_entry(
+                            profile_csv_file_name,
+                            date=datetime.fromtimestamp(int(time.time())),
+                            event="steam_level_change",
+                            old_value=last_level_int,
+                            new_value=level_int,
+                            delta=delta,
+                        )
+                    except Exception as e:
+                        print(f"* Error writing profile CSV: {e}")
+
+                if STEAM_LEVEL_XP_NOTIFICATION:
+                    m_subject = f"Steam user {username} Steam level changed to {level_int}"
+                    m_body = (
+                        f"Steam user {username} Steam level {direction} from {last_level_int} to {level_int} (delta {delta})"
+                        f"{xp_info_str}"
+                        f"{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                    )
+                    print(f"Sending email notification to {RECEIVER_EMAIL}")
+                    send_email(m_subject, m_body, "", SMTP_SSL)
+                    print_cur_ts("Timestamp:\t\t\t")
+
+            if level_int is not None:
+                last_steam_level = level_int
+
+        # Total XP changed
+        if STEAM_LEVEL_XP_CHECK and current_player_xp is not None:
+            try:
+                xp_int = int(current_player_xp)
+            except (TypeError, ValueError):
+                xp_int = None
+            try:
+                last_xp_int = int(last_player_xp) if last_player_xp is not None else None
+            except (TypeError, ValueError):
+                last_xp_int = None
+
+            if last_xp_int is not None and xp_int is not None and xp_int != last_xp_int:
+                delta = xp_int - last_xp_int
+                direction = "increased" if delta > 0 else "decreased"
+                print(f"Steam user {username} total XP {direction} from {last_xp_int} to {xp_int} (delta {delta})")
+
+                if profile_csv_file_name:
+                    try:
+                        write_profile_csv_entry(
+                            profile_csv_file_name,
+                            date=datetime.fromtimestamp(int(time.time())),
+                            event="total_xp_change",
+                            old_value=last_xp_int,
+                            new_value=xp_int,
+                            delta=delta,
+                        )
+                    except Exception as e:
+                        print(f"* Error writing profile CSV: {e}")
+
+                if STEAM_LEVEL_XP_NOTIFICATION:
+                    m_subject = f"Steam user {username} total XP changed to {xp_int}"
+                    m_body = (
+                        f"Steam user {username} total XP {direction} from {last_xp_int} to {xp_int} (delta {delta})"
+                        f"{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                    )
+                    print(f"Sending email notification to {RECEIVER_EMAIL}")
+                    send_email(m_subject, m_body, "", SMTP_SSL)
+                    print_cur_ts("Timestamp:\t\t\t")
+
+            if xp_int is not None:
+                last_player_xp = xp_int
+
+        # Friends list changed
+        if FRIENDS_CHECK and current_friend_ids is not None:
+            if last_friend_ids is None:
+                # Initialize baseline without treating it as a change
+                last_friend_ids = current_friend_ids
+            else:
+                added_ids = current_friend_ids - last_friend_ids
+                removed_ids = last_friend_ids - current_friend_ids
+
+                if added_ids or removed_ids:
+                    old_count = len(last_friend_ids)
+                    new_count = len(current_friend_ids)
+                    delta = new_count - old_count
+                    print(f"Steam user {username} friends count changed from {old_count} to {new_count} (delta {delta})")
+
+                    if profile_csv_file_name:
+                        try:
+                            write_profile_csv_entry(
+                                profile_csv_file_name,
+                                date=datetime.fromtimestamp(int(time.time())),
+                                event="friends_count_change",
+                                old_value=old_count,
+                                new_value=new_count,
+                                delta=delta,
+                            )
+                        except Exception as e:
+                            print(f"* Error writing profile CSV: {e}")
+
+                    added_details = []
+                    removed_details = []
+
+                    def _fetch_friend_summaries(id_set):
+                        if not id_set:
+                            return []
+                        summaries = []
+                        ids_list = list(id_set)
+                        chunk_size = 100
+                        for i in range(0, len(ids_list), chunk_size):
+                            chunk = ids_list[i:i + chunk_size]
+                            try:
+                                resp = s_api.call('ISteamUser.GetPlayerSummaries', steamids=",".join(chunk))
+                                players = resp.get('response', {}).get('players', [])
+                                summaries.extend(players)
+                            except Exception:
+                                continue
+                        return summaries
+
+                    added_players = []
+                    removed_players = []
+
+                    try:
+                        added_players = _fetch_friend_summaries(added_ids)
+                        added_map = {p.get('steamid'): p for p in added_players}
+                        for sid in added_ids:
+                            p = added_map.get(sid, {})
+                            persona = p.get('personaname') or ""
+                            real = p.get('realname') or ""
+                            if profile_csv_file_name:
+                                try:
+                                    write_profile_csv_entry(
+                                        profile_csv_file_name,
+                                        date=datetime.fromtimestamp(int(time.time())),
+                                        event="friend_added",
+                                        friend_steamid=sid,
+                                        friend_persona=persona,
+                                        friend_realname=real,
+                                    )
+                                except Exception as e:
+                                    print(f"* Error writing profile CSV: {e}")
+                            if real:
+                                added_details.append(f"- {persona} ({real}) [{sid}]")
+                            else:
+                                added_details.append(f"- {persona or sid} [{sid}]")
+                    except Exception:
+                        pass
+
+                    try:
+                        removed_players = _fetch_friend_summaries(removed_ids)
+                        removed_map = {p.get('steamid'): p for p in removed_players}
+                        for sid in removed_ids:
+                            p = removed_map.get(sid, {})
+                            persona = p.get('personaname') or ""
+                            real = p.get('realname') or ""
+                            if profile_csv_file_name:
+                                try:
+                                    write_profile_csv_entry(
+                                        profile_csv_file_name,
+                                        date=datetime.fromtimestamp(int(time.time())),
+                                        event="friend_removed",
+                                        friend_steamid=sid,
+                                        friend_persona=persona,
+                                        friend_realname=real,
+                                    )
+                                except Exception as e:
+                                    print(f"* Error writing profile CSV: {e}")
+                            if real:
+                                removed_details.append(f"- {persona} ({real}) [{sid}]")
+                            else:
+                                removed_details.append(f"- {persona or sid} [{sid}]")
+                    except Exception:
+                        pass
+
+                    if added_details:
+                        print("New friends added:")
+                        for line in added_details:
+                            print(line)
+                    if removed_details:
+                        print("Friends removed:")
+                        for line in removed_details:
+                            print(line)
+
+                    if FRIENDS_NOTIFICATION:
+                        m_subject_friends = f"Steam user {username} friends list changed (now {new_count})"
+                        body_lines = [
+                            f"Steam user {username} friends count changed from {old_count} to {new_count} (delta {delta})",
+                        ]
+                        if added_details:
+                            body_lines.append("\nNew friends added:")
+                            body_lines.extend(added_details)
+                        if removed_details:
+                            body_lines.append("\nFriends removed:")
+                            body_lines.extend(removed_details)
+                        m_body_friends = "\n".join(body_lines) + get_cur_ts(nl_ch + nl_ch + "Timestamp: ")
+                        print(f"Sending email notification to {RECEIVER_EMAIL}")
+                        send_email(m_subject_friends, m_body_friends, "", SMTP_SSL)
+                        print_cur_ts("Timestamp:\t\t\t")
+
+                    alive_counter = 0
+                    last_friend_ids = current_friend_ids
+
         if change:
             alive_counter = 0
 
@@ -1779,7 +2127,7 @@ def steam_monitor_user(steamid, csv_file_name):
 
 
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, STEAM_API_KEY, CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck
+    global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck
 
     if "--generate-config" in sys.argv:
         print(CONFIG_BLOCK.strip("\n"))
@@ -1883,6 +2231,20 @@ def main():
         help="Email on all status changes"
     )
     notify.add_argument(
+        "--notify-level-xp",
+        dest="notify_level_xp",
+        action="store_true",
+        default=None,
+        help="Email when user's Steam level or total XP changes (requires --check-level-xp or STEAM_LEVEL_XP_CHECK=True)"
+    )
+    notify.add_argument(
+        "--notify-friends",
+        dest="notify_friends",
+        action="store_true",
+        default=None,
+        help="Email when friends list changes (requires --check-friends or FRIENDS_CHECK=True)"
+    )
+    notify.add_argument(
         "-e", "--no-error-notify",
         dest="notify_errors",
         action="store_false",
@@ -1930,7 +2292,6 @@ def main():
         help="When used with --achievements, check all owned games instead of only recently played games. "
              "Useful for users who haven't played recently, as their recently played list may be limited."
     )
-
     # Intervals & timers
     times = parser.add_argument_group("Intervals & timers")
     times.add_argument(
@@ -1951,11 +2312,32 @@ def main():
     # Features & Output
     opts = parser.add_argument_group("Features & output")
     opts.add_argument(
+        "--check-level-xp",
+        dest="check_level_xp",
+        action="store_true",
+        default=None,
+        help="Track Steam level and total XP changes (console/log output)"
+    )
+    opts.add_argument(
+        "--check-friends",
+        dest="check_friends",
+        action="store_true",
+        default=None,
+        help="Track changes in friends count and list (may be limited by privacy settings)"
+    )
+    opts.add_argument(
         "-b", "--csv-file",
         dest="csv_file",
         metavar="CSV_FILENAME",
         type=str,
         help="Write status & game changes to CSV"
+    )
+    opts.add_argument(
+        "--profile-csv-file",
+        dest="profile_csv_file",
+        metavar="CSV_FILENAME",
+        type=str,
+        help="Write profile changes (Steam level/XP and friends) to a separate CSV"
     )
     opts.add_argument(
         "-y", "--file-suffix",
@@ -2086,6 +2468,20 @@ def main():
             print(f"* Error: CSV file cannot be opened for writing: {e}")
             sys.exit(1)
 
+    if args.profile_csv_file:
+        PROFILE_CSV_FILE = os.path.expanduser(args.profile_csv_file)
+    else:
+        if PROFILE_CSV_FILE:
+            PROFILE_CSV_FILE = os.path.expanduser(PROFILE_CSV_FILE)
+
+    if PROFILE_CSV_FILE:
+        try:
+            with open(PROFILE_CSV_FILE, 'a', newline='', buffering=1, encoding="utf-8") as _:
+                pass
+        except Exception as e:
+            print(f"* Error: Profile CSV file cannot be opened for writing: {e}")
+            sys.exit(1)
+
     if args.file_suffix:
         FILE_SUFFIX = args.file_suffix
     else:
@@ -2127,17 +2523,30 @@ def main():
 
     if args.notify_errors is False:
         ERROR_NOTIFICATION = False
+    if args.check_level_xp is True:
+        STEAM_LEVEL_XP_CHECK = True
+    if args.notify_level_xp is True:
+        STEAM_LEVEL_XP_NOTIFICATION = True
+    if args.check_friends is True:
+        FRIENDS_CHECK = True
+    if args.notify_friends is True:
+        FRIENDS_NOTIFICATION = True
 
     if SMTP_HOST.startswith("your_smtp_server_"):
         ACTIVE_INACTIVE_NOTIFICATION = False
         GAME_CHANGE_NOTIFICATION = False
         STATUS_NOTIFICATION = False
         ERROR_NOTIFICATION = False
+        STEAM_LEVEL_XP_NOTIFICATION = False
+        FRIENDS_NOTIFICATION = False
 
     print(f"* Steam polling intervals:\t[offline: {display_time(STEAM_CHECK_INTERVAL)}] [online: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]")
-    print(f"* Email notifications:\t\t[online/offline status changes = {ACTIVE_INACTIVE_NOTIFICATION}] [game changes = {GAME_CHANGE_NOTIFICATION}]\n*\t\t\t\t[all status changes = {STATUS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
+    print(f"* Email notifications:\t\t[online/offline status changes = {ACTIVE_INACTIVE_NOTIFICATION}] [game changes = {GAME_CHANGE_NOTIFICATION}]\n*\t\t\t\t[all status changes = {STATUS_NOTIFICATION}] [level/XP changes = {STEAM_LEVEL_XP_NOTIFICATION}]\n*\t\t\t\t[friends changes = {FRIENDS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
     print(f"* Liveness check:\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
+    print(f"* Level/XP tracking enabled:\t{STEAM_LEVEL_XP_CHECK}")
+    print(f"* Friends tracking enabled:\t{FRIENDS_CHECK}")
     print(f"* CSV logging enabled:\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
+    print(f"* Profile CSV logging enabled:\t{bool(PROFILE_CSV_FILE)}" + (f" ({PROFILE_CSV_FILE})" if PROFILE_CSV_FILE else ""))
     print(f"* Output logging enabled:\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
     print(f"* Configuration file:\t\t{cfg_path}")
     print(f"* Dotenv file:\t\t\t{env_path or 'None'}")
@@ -2155,7 +2564,7 @@ def main():
         signal.signal(signal.SIGABRT, decrease_active_check_signal_handler)
         signal.signal(signal.SIGHUP, reload_secrets_signal_handler)
 
-    steam_monitor_user(s_id, CSV_FILE)
+    steam_monitor_user(s_id, CSV_FILE, PROFILE_CSV_FILE)
 
     sys.stdout = stdout_bck
     sys.exit(0)
