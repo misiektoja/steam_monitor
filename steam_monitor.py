@@ -1006,6 +1006,26 @@ def toggle_all_status_changes_notifications_signal_handler(sig, frame):
     print_cur_ts("Timestamp:\t\t\t")
 
 
+# Signal handler for SIGURG allowing to switch Steam level/XP changes notifications
+def toggle_level_xp_notifications_signal_handler(sig, frame):
+    global STEAM_LEVEL_XP_NOTIFICATION
+    STEAM_LEVEL_XP_NOTIFICATION = not STEAM_LEVEL_XP_NOTIFICATION
+    sig_name = signal.Signals(sig).name
+    print(f"* Signal {sig_name} received")
+    print(f"* Email notifications: [Steam level/XP changes = {STEAM_LEVEL_XP_NOTIFICATION}]")
+    print_cur_ts("Timestamp:\t\t\t")
+
+
+# Signal handler for SIGPIPE allowing to switch friends list changes notifications
+def toggle_friends_notifications_signal_handler(sig, frame):
+    global FRIENDS_NOTIFICATION
+    FRIENDS_NOTIFICATION = not FRIENDS_NOTIFICATION
+    sig_name = signal.Signals(sig).name
+    print(f"* Signal {sig_name} received")
+    print(f"* Email notifications: [friends changes = {FRIENDS_NOTIFICATION}]")
+    print_cur_ts("Timestamp:\t\t\t")
+
+
 # Signal handler for SIGTRAP allowing to increase check timer for player activity when user is online by STEAM_ACTIVE_CHECK_SIGNAL_VALUE seconds
 def increase_active_check_signal_handler(sig, frame):
     global STEAM_ACTIVE_CHECK_INTERVAL
@@ -2561,6 +2581,8 @@ def main():
         signal.signal(signal.SIGUSR1, toggle_active_inactive_notifications_signal_handler)
         signal.signal(signal.SIGUSR2, toggle_game_change_notifications_signal_handler)
         signal.signal(signal.SIGCONT, toggle_all_status_changes_notifications_signal_handler)
+        signal.signal(signal.SIGURG, toggle_level_xp_notifications_signal_handler)
+        signal.signal(signal.SIGPIPE, toggle_friends_notifications_signal_handler)
         signal.signal(signal.SIGTRAP, increase_active_check_signal_handler)
         signal.signal(signal.SIGABRT, decrease_active_check_signal_handler)
         signal.signal(signal.SIGHUP, reload_secrets_signal_handler)
