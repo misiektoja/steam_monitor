@@ -8,8 +8,10 @@ steam_monitor is a tool for real-time monitoring of **Steam players' activities*
 - **Real-time tracking** of Steam users' gaming activity (including detection when a user gets online/offline or plays games)
 - **Basic statistics for user activity** (such as how long in different states, how long a game is played, overall time and the number of played games in the session etc.)
 - **Detailed user information** display mode providing comprehensive Steam profile insights including **recent achievements**
-- **Email notifications** for different events (when a player gets online/away/snooze/offline, starts/finishes/changes a game or errors occur)
-- **Saving all user activities** with timestamps to a **CSV file**
+- **Steam level and total XP change tracking**
+- **Friends list change tracking** (friends count and when available - added/removed friends)
+- **Email notifications** for different events (when a player gets online/away/snooze/offline, starts/finishes/changes a game, Steam level and total XP changes, friends list changes or errors occur)
+- **Saving all user activities and profile changes** with timestamps to a **CSV file**
 - Possibility to **control the running copy** of the script via signals
 - **Functional, procedural Python** (minimal OOP)
 
@@ -342,6 +344,18 @@ To disable sending an email on errors (enabled by default):
 steam_monitor <steam_user_id> -e
 ```
 
+To track and optionally get email notifications when the user's **Steam level and total XP** change:
+- enable tracking by setting `STEAM_LEVEL_XP_CHECK` to `True` or using the `--check-level-xp` flag
+- enable email notifications by setting `STEAM_LEVEL_XP_NOTIFICATION` to `True` or using the `--notify-level-xp` flag
+
+To track changes in the user's **friends list** (count and when available - added/removed friends):
+- set `FRIENDS_CHECK` to `True`
+- or use the `--check-friends` flag (console/log output only, no emails)
+
+To get email notifications when the user's **friends list** changes:
+- set `FRIENDS_NOTIFICATION` to `True`
+- or use the `--notify-friends` flag (requires friends tracking to be enabled)
+
 Make sure you defined your SMTP settings earlier (see [SMTP settings](#smtp-settings)).
 
 Example email:
@@ -360,6 +374,14 @@ steam_monitor <steam_user_id> -b steam_user_id.csv
 ```
 
 The file will be automatically created if it does not exist.
+
+If you want to save **profile-related changes** (Steam level changes, total XP changes, friends count changes and individual added/removed friends) to a **separate CSV file**, set `PROFILE_CSV_FILE` or use the `--profile-csv-file` flag:
+
+```sh
+steam_monitor <steam_user_id> --profile-csv-file steam_user_id_profile.csv
+```
+
+Each row contains a timestamp, event type and associated values (for example: old/new Steam level or XP, friends count delta or one friend per row for added/removed friends, when available).
 
 <a id="check-intervals"></a>
 ### Check Intervals
@@ -385,6 +407,8 @@ List of supported signals:
 | USR1 | Toggle email notifications when user gets online or offline (-a) |
 | USR2 | Toggle email notifications when user starts/stops/changes the game (-g) |
 | CONT | Toggle email notifications for all user status changes (online/away/snooze/offline) (-s) |
+| URG | Toggle email notifications for Steam level/XP changes (--notify-level-xp) |
+| PIPE | Toggle email notifications for friends list changes (--notify-friends) |
 | TRAP | Increase the check timer for player activity when user is online/away/snooze (by 30 seconds) |
 | ABRT | Decrease check timer for player activity when user is online/away/snooze (by 30 seconds) |
 | HUP | Reload secrets from .env file |
