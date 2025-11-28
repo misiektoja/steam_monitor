@@ -210,7 +210,7 @@ regexp=.*Getting details of last played match for (\w*) (\.\.\..*)$
 colours=unchanged, blue underline, unchanged
 -
 regexp=.* playing '(.*)'
-colours=unchanged, magenta
+colours=unchanged, yellow bold
 -
 regexp=.* changed game from '(.*)'( to )'(.*)'
 colours=unchanged, magenta, unchanged, magenta
