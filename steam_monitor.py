@@ -1916,37 +1916,31 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             if last_level_int is not None and level_int is not None and level_int != last_level_int:
                 delta = level_int - last_level_int
                 direction = "increased" if delta > 0 else "decreased"
-                print(f"Steam user {username} Steam level {direction} from {last_level_int} to {level_int} (delta {delta})")
+                print(f"Steam user {username} level {direction} from {last_level_int} to {level_int} (delta {delta})")
                 xp_info_str = ""
                 if current_player_xp is not None:
                     try:
                         xp_int_for_level = int(current_player_xp)
-                        xp_info_str = f"\nTotal XP after level change: {xp_int_for_level}"
+                        xp_info_str = f"Total XP after level change:\t{xp_int_for_level}"
                     except (TypeError, ValueError):
                         xp_info_str = ""
                 if profile_csv_file_name:
                     try:
-                        write_profile_csv_entry(
-                            profile_csv_file_name,
-                            date=datetime.fromtimestamp(int(time.time())),
-                            event="steam_level_change",
-                            old_value=last_level_int,
-                            new_value=level_int,
-                            delta=delta,
-                        )
+                        write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="steam_level_change", old_value=last_level_int, new_value=level_int, delta=delta,)
                     except Exception as e:
                         print(f"* Error writing profile CSV: {e}")
 
                 if STEAM_LEVEL_XP_NOTIFICATION:
-                    m_subject = f"Steam user {username} Steam level changed to {level_int}"
+                    m_subject = f"Steam user {username} level changed to {level_int}"
                     m_body = (
-                        f"Steam user {username} Steam level {direction} from {last_level_int} to {level_int} (delta {delta})"
+                        f"Steam user {username} level {direction} from {last_level_int} to {level_int} (delta {delta})"
                         f"{xp_info_str}"
                         f"{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                     )
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
-                    print_cur_ts("Timestamp:\t\t\t")
+
+                print_cur_ts("Timestamp:\t\t\t")
 
             if level_int is not None:
                 last_steam_level = level_int
@@ -1969,14 +1963,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
                 if profile_csv_file_name:
                     try:
-                        write_profile_csv_entry(
-                            profile_csv_file_name,
-                            date=datetime.fromtimestamp(int(time.time())),
-                            event="total_xp_change",
-                            old_value=last_xp_int,
-                            new_value=xp_int,
-                            delta=delta,
-                        )
+                        write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="total_xp_change", old_value=last_xp_int, new_value=xp_int, delta=delta,)
                     except Exception as e:
                         print(f"* Error writing profile CSV: {e}")
 
@@ -1988,7 +1975,8 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     )
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
-                    print_cur_ts("Timestamp:\t\t\t")
+
+                print_cur_ts("Timestamp:\t\t\t")
 
             if xp_int is not None:
                 last_player_xp = xp_int
@@ -2010,14 +1998,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
                     if profile_csv_file_name:
                         try:
-                            write_profile_csv_entry(
-                                profile_csv_file_name,
-                                date=datetime.fromtimestamp(int(time.time())),
-                                event="friends_count_change",
-                                old_value=old_count,
-                                new_value=new_count,
-                                delta=delta,
-                            )
+                            write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="friends_count_change", old_value=old_count, new_value=new_count, delta=delta,)
                         except Exception as e:
                             print(f"* Error writing profile CSV: {e}")
 
@@ -2052,14 +2033,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                             real = p.get('realname') or ""
                             if profile_csv_file_name:
                                 try:
-                                    write_profile_csv_entry(
-                                        profile_csv_file_name,
-                                        date=datetime.fromtimestamp(int(time.time())),
-                                        event="friend_added",
-                                        friend_steamid=sid,
-                                        friend_persona=persona,
-                                        friend_realname=real,
-                                    )
+                                    write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="friend_added", friend_steamid=sid, friend_persona=persona, friend_realname=real,)
                                 except Exception as e:
                                     print(f"* Error writing profile CSV: {e}")
                             if real:
@@ -2078,14 +2052,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                             real = p.get('realname') or ""
                             if profile_csv_file_name:
                                 try:
-                                    write_profile_csv_entry(
-                                        profile_csv_file_name,
-                                        date=datetime.fromtimestamp(int(time.time())),
-                                        event="friend_removed",
-                                        friend_steamid=sid,
-                                        friend_persona=persona,
-                                        friend_realname=real,
-                                    )
+                                    write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="friend_removed", friend_steamid=sid, friend_persona=persona, friend_realname=real,)
                                 except Exception as e:
                                     print(f"* Error writing profile CSV: {e}")
                             if real:
@@ -2118,7 +2085,8 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                         m_body_friends = "\n".join(body_lines) + get_cur_ts(nl_ch + nl_ch + "Timestamp: ")
                         print(f"Sending email notification to {RECEIVER_EMAIL}")
                         send_email(m_subject_friends, m_body_friends, "", SMTP_SSL)
-                        print_cur_ts("Timestamp:\t\t\t")
+
+                    print_cur_ts("Timestamp:\t\t\t")
 
                     alive_counter = 0
                     last_friend_ids = current_friend_ids
