@@ -309,6 +309,14 @@ The tool automatically saves its output to `steam_monitor_<user_steam_id/file_su
 
 The tool also saves the timestamp and last status (after every change) to the `steam_<user_display_name>_last_status.json` file, so the last status is available after the restart of the tool.
 
+To track when the user's **Steam level and total XP** changes:
+- set `STEAM_LEVEL_XP_CHECK` to `True`
+- or use the `--check-level-xp` flag
+
+To track changes in the user's **friends list** (count and when available - added/removed friends):
+- set `FRIENDS_CHECK` to `True`
+- or use the `--check-friends` flag
+
 <a id="email-notifications"></a>
 ### Email Notifications
 
@@ -336,6 +344,26 @@ To get email notifications about any changes in user status (online/away/snooze/
 steam_monitor <steam_user_id> -s
 ```
 
+To get email notifications when the user's **Steam level and total XP** changes:
+- set `STEAM_LEVEL_XP_NOTIFICATION` to `True`
+- or use the `--notify-level-xp` flag
+
+It requires Steam level and total XP tracking (`STEAM_LEVEL_XP_CHECK` / `--check-level-xp`) to be enabled.
+
+```sh
+steam_monitor <steam_user_id> --check-level-xp --notify-level-xp
+```
+
+To get email notifications when the user's **friends list** changes:
+- set `FRIENDS_NOTIFICATION` to `True`
+- or use the `--notify-friends` flag
+
+It requires friends tracking (`FRIENDS_CHECK` / `--check-friends`) to be enabled.
+
+```sh
+steam_monitor <steam_user_id> --check-friends --notify-friends
+```
+
 To disable sending an email on errors (enabled by default):
 - set `ERROR_NOTIFICATION` to `False`
 - or use the `-e` flag
@@ -343,18 +371,6 @@ To disable sending an email on errors (enabled by default):
 ```sh
 steam_monitor <steam_user_id> -e
 ```
-
-To track and optionally get email notifications when the user's **Steam level and total XP** change:
-- enable tracking by setting `STEAM_LEVEL_XP_CHECK` to `True` or using the `--check-level-xp` flag
-- enable email notifications by setting `STEAM_LEVEL_XP_NOTIFICATION` to `True` or using the `--notify-level-xp` flag
-
-To track changes in the user's **friends list** (count and when available - added/removed friends):
-- set `FRIENDS_CHECK` to `True`
-- or use the `--check-friends` flag (console/log output only, no emails)
-
-To get email notifications when the user's **friends list** changes:
-- set `FRIENDS_NOTIFICATION` to `True`
-- or use the `--notify-friends` flag (requires friends tracking to be enabled)
 
 Make sure you defined your SMTP settings earlier (see [SMTP settings](#smtp-settings)).
 
