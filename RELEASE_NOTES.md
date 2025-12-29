@@ -6,7 +6,7 @@ This is a high-level summary of the most important changes.
 
 **Features and Improvements**:
 
-- **NEW:** Implemented **color output** support for terminal, enhancing user experience with customizable **color themes** (see `COLORED_OUTPUT` and `COLOR_THEME` config options, you can still use **grc** if you prefer)
+- **NEW:** Implemented native **color output** support for terminal, enhancing user experience with customizable **color themes** (see `COLORED_OUTPUT` and `COLOR_THEME` config options). You can still use the old **grc** method if you prefer
 - **NEW:** Added **inactivity thresholds** and **estimated last activity** tracking for user status changes (see `STEAM_AWAY_INACTIVITY_THRESHOLD` and `STEAM_SNOOZE_INACTIVITY_THRESHOLD` config options)
 - **NEW:** Introduced tracking for **Steam level**, **total XP** and **friends list** changes with optional **email notifications** and **CSV logging**
 - **NEW:** Added **signal handlers** for toggling **Steam level/XP** and **friends list** email notifications
