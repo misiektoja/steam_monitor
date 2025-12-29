@@ -1934,7 +1934,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     m_subject = f"Steam user {username} level changed to {level_int}"
                     m_body = (
                         f"Steam user {username} level {direction} from {last_level_int} to {level_int} (delta {delta})"
-                        f"{xp_info_str}"
+                        f"\n{xp_info_str}"
                         f"{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                     )
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
