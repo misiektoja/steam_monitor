@@ -2,6 +2,25 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 1.5 (29 Dec 2025)
+
+**Features and Improvements**:
+
+- **NEW:** Implemented **color output** support for terminal, enhancing user experience with customizable **color themes** (see `COLORED_OUTPUT` and `COLOR_THEME`config options, you can still use **grc** if you prefer)
+- **NEW:** Added **inactivity thresholds** and **estimated last activity** tracking for user status changes (see `STEAM_AWAY_INACTIVITY_THRESHOLD` and `STEAM_SNOOZE_INACTIVITY_THRESHOLD` config options)
+- **NEW:** Introduced tracking for **Steam level**, **total XP** and **friends list** changes with optional **email notifications** and **CSV logging**
+- **NEW:** Added **signal handlers** for toggling **Steam level/XP** and **friends list** email notifications
+- **NEW:** Added **optional separate CSV file** for **profile-related changes** (Steam level, total XP, friends changes). See `PROFILE_CSV_FILE` config option and `--profile-csv-file` flag
+- **IMPROVE:** Enhanced **user info** display mode (`-i`) to optionally list **recent achievements** (`--achievements`) and added **CLI flag** to force fetching achievements from all **owned games** (`--achievements-all-games`)
+- **IMPROVE:** Implemented fallback for **achievement fetching** by referring to **owned games** when **recently played list** is empty
+- **IMPROVE:** Enhanced **user info** display mode (`-i`) to optionally list **friends** with detailed information (`--list-friends`)
+- **IMPROVE:** Enhanced **game playtime** display in monitoring and user info display mode
+- **IMPROVE:** Refactored handling of users with **privacy settings** set to block **friends list**
+
+**Dependencies**:
+
+- **NEW:** Added **colorama** dependency for **Windows platform** support
+
 # Changes in 1.4 (11 Nov 2025)
 
 **Features and Improvements**:
