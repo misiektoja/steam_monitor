@@ -7,11 +7,16 @@ steam_monitor is a tool for real-time monitoring of **Steam players' activities*
 
 - **Real-time tracking** of Steam users' gaming activity (including detection when a user gets online/offline or plays games)
 - **Basic statistics for user activity** (such as how long in different states, how long a game is played, overall time and the number of played games in the session etc.)
-- **Detailed user information** display mode providing comprehensive Steam profile insights including list of **recently played & top games**, **recent achievements**, **total XP**, **earned badges**, **ban status** and **list of friends**
+- **Detailed user information** display mode providing comprehensive Steam profile insights including **profile details**, **Steam level and XP statistics**, **earned badges**, **ban status**, **friends count** (with optional full friends list), **top games by lifetime hours**, **recently played games** with playtime statistics, **hours played in the last 2 weeks** and optionally list of **recent achievements**
+- **Steam community URL resolution** - automatically resolve Steam community URLs to Steam64 IDs (no need to know the numeric ID)
 - **Steam level and total XP change tracking**
 - **Friends list change tracking** (friends count and when available - added/removed friends)
 - **Email notifications** for different events (when a player gets online/away/snooze/offline, starts/finishes/changes a game, Steam level and total XP changes, friends list changes or errors occur)
 - **Saving all user activities and profile changes** with timestamps to a **CSV file**
+- **Status persistence** - automatically saves last status to JSON file to resume monitoring after restart
+- **Smart session continuity** - handles short offline interruptions and preserves session statistics
+- **Flexible configuration** - support for config files, dotenv files, environment variables and command-line arguments
+- **Configurable color themes** - customizable terminal output colors and styles
 - Possibility to **control the running copy** of the script via signals
 - **Functional, procedural Python** (minimal OOP)
 
