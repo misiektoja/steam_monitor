@@ -7,7 +7,7 @@ steam_monitor is a tool for real-time monitoring of **Steam players' activities*
 
 - **Real-time tracking** of Steam users' gaming activity (including detection when a user gets online/offline or plays games)
 - **Basic statistics for user activity** (such as how long in different states, how long a game is played, overall time and the number of played games in the session etc.)
-- **Detailed user information** display mode providing comprehensive Steam profile insights including **recent achievements**
+- **Detailed user information** display mode providing comprehensive Steam profile insights including list of **recently played & top games**, **recent achievements**, **total XP**, **earned badges**, **ban status** and **list of friends**
 - **Steam level and total XP change tracking**
 - **Friends list change tracking** (friends count and when available - added/removed friends)
 - **Email notifications** for different events (when a player gets online/away/snooze/offline, starts/finishes/changes a game, Steam level and total XP changes, friends list changes or errors occur)
