@@ -2370,6 +2370,21 @@ def main():
         parser.print_help(sys.stderr)
         sys.exit(1)
 
+    # Allow empty targets if utility flags are used
+    if not args.steam64_id and not args.resolve_community_url:
+        utility_flags = {
+            "--no-color", "-h", "--help",
+            "--version", "--generate-config",
+            "--send-test-email"
+        }
+        complex_args = [a for a in sys.argv[1:] if a not in utility_flags]
+
+        if complex_args:
+            print("\n* Error: STEAM64_ID needs to be defined !\n", flush=True)
+
+        parser.print_help(sys.stderr)
+        sys.exit(1)
+
     if args.config_file:
         CLI_CONFIG_PATH = os.path.expanduser(args.config_file)
 
@@ -2461,6 +2476,7 @@ def main():
             sys.exit(1)
 
     if not s_id:
+        # Check should have been handled earlier by the utility_flags logic
         print("* Error: STEAM64_ID needs to be defined !")
         sys.exit(1)
 
