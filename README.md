@@ -445,7 +445,7 @@ As Windows supports limited number of signals, this functionality is available o
 <a id="coloring-log-output-with-grc"></a>
 ### Coloring Log Output with GRC
 
-You can use [GRC](https://github.com/garabik/grc) to color logs.
+The tool has native **color output** support for terminal since v1.5 (see `COLORED_OUTPUT` and `COLOR_THEME` config options), but you can also use [GRC](https://github.com/garabik/grc) to color logs.
 
 Add to your GRC config (`~/.grc/grc.conf`):
 
