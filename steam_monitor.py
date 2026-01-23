@@ -614,11 +614,15 @@ class Logger(object):
     def write(self, message):
         coloured = apply_color_to_text(message)
         self.terminal.write(coloured)
+
+        # Expand tabs for file output (stdout remains untouched)
+        expanded_message = message.expandtabs(8)
+
         if self.strip_ansi:
-            clean = ANSI_ESCAPE_RE.sub("", coloured)
+            clean = ANSI_ESCAPE_RE.sub("", expanded_message)
             self.logfile.write(clean)
         else:
-            self.logfile.write(coloured)
+            self.logfile.write(expanded_message)
         self.terminal.flush()
         self.logfile.flush()
 
