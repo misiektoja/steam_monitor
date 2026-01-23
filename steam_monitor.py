@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.5
+v1.6
 
 Tool implementing real-time tracking of Steam players activities:
 https://github.com/misiektoja/steam_monitor/
@@ -15,7 +15,7 @@ python-dotenv (optional)
 colorama (optional, for better colours on Windows terminals)
 """
 
-VERSION = "1.5"
+VERSION = "1.6"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -146,10 +146,11 @@ CLEAR_SCREEN = True
 
 # Whether to use coloured output in the terminal (auto-disabled if the terminal
 # does not appear to support colours or when output is redirected to a file)
+# Can also be disabled via the --no-color flag
 COLORED_OUTPUT = True
 
-# Colour theme used for different parts of the output.
-# Keys are logical names used by the tool, values are colour/style strings.
+# Colour theme used for different parts of the output
+# Keys are logical names used by the tool, values are colour/style strings
 # You can combine multiple attributes with spaces or '+', for example:
 #   "bright_cyan bold", "yellow", "red underline", "bright_magenta bold underline", "red bold blink"
 # Valid colour names: black, red, green, yellow, blue, magenta, cyan, white,
@@ -280,8 +281,15 @@ from email.mime.text import MIMEText
 import argparse
 import csv
 import platform
+from platform import system
 import re
 import ipaddress
+
+try:
+    from colorama import init as colorama_init  # type: ignore[import]
+except ImportError:
+    colorama_init = None
+
 try:
     import steam.steamid
     import steam.webapi
@@ -414,9 +422,12 @@ def _stream_supports_color(stream):
         return False
     if os.getenv("NO_COLOR"):
         return False
-    term = os.getenv("TERM", "")
-    if term.lower() in ("", "dumb", "unknown"):
-        return False
+    # On Windows with colorama, skip TERM check since colorama handles ANSI translation
+    # Windows Terminal and Command Prompt often don't set TERM, but colorama works fine
+    if not (colorama_init and system() == 'Windows'):
+        term = os.getenv("TERM", "")
+        if term.lower() in ("", "dumb", "unknown"):
+            return False
     # If stdin is a pipe, we're likely being piped (e.g., via tee), so disable colors
     # to avoid writing ANSI codes to files
     if hasattr(sys.stdin, "isatty") and not sys.stdin.isatty():
@@ -428,19 +439,19 @@ def _stream_supports_color(stream):
 def init_color_output(stream):
     global COLOR_ENABLED, _COLOR_STYLES
 
+    # On Windows, initialize colorama before checking color support
+    # This allows colorama to enable ANSI support, which may affect the isatty() check
+    if colorama_init and system() == 'Windows':
+        try:
+            colorama_init(autoreset=False)
+        except Exception:
+            pass
+
     COLOR_ENABLED = bool(globals().get("COLORED_OUTPUT", False)) and _stream_supports_color(stream)
 
     if not COLOR_ENABLED:
         _COLOR_STYLES = {}
         return
-
-    # Best effort: on Windows, enable ANSI support if colorama is installed
-    try:
-        from colorama import init as colorama_init  # type: ignore[import]
-
-        colorama_init(autoreset=False)
-    except Exception:
-        pass
 
     user_theme = globals().get("COLOR_THEME") if isinstance(globals().get("COLOR_THEME"), dict) else {}
     theme = {**DEFAULT_COLOR_THEME, **(user_theme or {})}
@@ -2116,7 +2127,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
 
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck
+    global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME
 
     if "--generate-config" in sys.argv:
         print(CONFIG_BLOCK.strip("\n"))
@@ -2128,7 +2139,10 @@ def main():
 
     stdout_bck = sys.stdout
 
-    # Initialise colour handling based on config and terminal capabilities
+    # Initialise colour handling based on CLI args (early check) and terminal capabilities
+    if "--no-color" in sys.argv:
+        globals()["COLORED_OUTPUT"] = False
+
     init_color_output(stdout_bck)
 
     signal.signal(signal.SIGINT, signal_handler)
@@ -2342,6 +2356,13 @@ def main():
         default=None,
         help="Disable logging to steam_monitor_<user_steam_id/file_suffix>.log"
     )
+    opts.add_argument(
+        "--no-color",
+        dest="no_color",
+        action="store_true",
+        default=None,
+        help="Disable coloured output in the terminal"
+    )
 
     args = parser.parse_args()
 
@@ -2476,8 +2497,14 @@ def main():
     else:
         FILE_SUFFIX = str(s_id)
 
+    if args.no_color is True:
+        COLORED_OUTPUT = False
+
     if args.disable_logging is True:
         DISABLE_LOGGING = True
+
+    # Re-initialize colour output to pick up any theme changes from config/dotenv
+    init_color_output(stdout_bck)
 
     if not DISABLE_LOGGING:
         log_path = Path(os.path.expanduser(ST_LOGFILE))
