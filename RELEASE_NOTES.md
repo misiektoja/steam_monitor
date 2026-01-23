@@ -8,8 +8,8 @@ This is a high-level summary of the most important changes.
 
 - **NEW:** Added `--no-color` flag to disable colored output
 - **IMPROVE:** Enhanced `--generate-config` to support writing directly to a file (e.g. `steam_monitor --generate-config steam_monitor.conf`). This avoids UTF-16 encoding issues on **Windows PowerShell**
-- **IMPROVE:** Improved color output initialization for Windows compatibility
-- **IMPROVE:** Expanded tabs to spaces in output log files to ensure consistent alignment across different viewers
+- **IMPROVE:** Improved color output initialization for **Windows compatibility**
+- **IMPROVE:** Expanded tabs to spaces in output log files to ensure **consistent alignment across different viewers**
 
 # Changes in 1.5 (29 Dec 2025)
 
