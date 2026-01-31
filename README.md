@@ -11,6 +11,7 @@ steam_monitor is a tool for real-time monitoring of **Steam players' activities*
 - **Steam community URL resolution** - automatically resolve Steam community URLs to Steam64 IDs (no need to know the numeric ID)
 - **Steam level and total XP change tracking**
 - **Friends list change tracking** (friends count and when available - added/removed friends)
+- **Games library change tracking** (game count, added/removed games)
 - **Email notifications** for different events (when a player gets online/away/snooze/offline, starts/finishes/changes a game, Steam level and total XP changes, friends list changes or errors occur)
 - **Saving all user activities and profile changes** with timestamps to a **CSV file**
 - **Status persistence** - automatically saves last status to JSON file to resume monitoring after restart
@@ -317,7 +318,7 @@ You can monitor multiple Steam players by running multiple instances of the scri
 
 The tool automatically saves its output to `steam_monitor_<user_steam_id/file_suffix>.log` file. The log file name can be changed via `ST_LOGFILE` configuration option and its suffix via `FILE_SUFFIX` / `-y` flag. Logging can be disabled completely via `DISABLE_LOGGING` / `-d` flag.
 
-The tool also saves the timestamp and last status (after every change) to the `steam_<user_display_name>_last_status.json` file, so the last status is available after the restart of the tool.
+The tool also saves the timestamp and last status (after every change) to the `steam_<user_display_name>_last_status.json` file, so the last status is available after the restart of the tool. When games library tracking is enabled, a snapshot of the library (game count and app IDs) is stored in `steam_<user_display_name>_games.json` and only changes are reported.
 
 To track when the user's **Steam level and total XP** changes:
 - set `STEAM_LEVEL_XP_CHECK` to `True`
@@ -326,6 +327,10 @@ To track when the user's **Steam level and total XP** changes:
 To track changes in the user's **friends list** (count and when available - added/removed friends):
 - set `FRIENDS_CHECK` to `True`
 - or use the `--check-friends` flag
+
+To track changes in the user's **games library** (game count and added/removed games):
+- set `GAMES_LIBRARY_CHECK` to `True`
+- or use the `--check-games` flag
 
 <a id="email-notifications"></a>
 ### Email Notifications
@@ -374,6 +379,16 @@ It requires friends tracking (`FRIENDS_CHECK` / `--check-friends`) to be enabled
 steam_monitor <steam_user_id> --check-friends --notify-friends
 ```
 
+To get email notifications when the user's **games library** changes:
+- set `GAMES_LIBRARY_NOTIFICATION` to `True`
+- or use the `--notify-games` flag
+
+It requires games library tracking (`GAMES_LIBRARY_CHECK` / `--check-games`) to be enabled.
+
+```sh
+steam_monitor <steam_user_id> --check-games --notify-games
+```
+
 To disable sending an email on errors (enabled by default):
 - set `ERROR_NOTIFICATION` to `False`
 - or use the `-e` flag
@@ -401,7 +416,7 @@ steam_monitor <steam_user_id> -b steam_user_id.csv
 
 The file will be automatically created if it does not exist.
 
-If you want to save **profile-related changes** (Steam level changes, total XP changes, friends count changes and individual added/removed friends) to a **separate CSV file**, set `PROFILE_CSV_FILE` or use the `--profile-csv-file` flag:
+If you want to save **profile-related changes** (Steam level changes, total XP changes, friends count changes, games library changes and individual added/removed friends) to a **separate CSV file**, set `PROFILE_CSV_FILE` or use the `--profile-csv-file` flag:
 
 ```sh
 steam_monitor <steam_user_id> --profile-csv-file steam_user_id_profile.csv
