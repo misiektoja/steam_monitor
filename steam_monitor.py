@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.6
+v1.7
 
 Tool implementing real-time tracking of Steam players activities:
 https://github.com/misiektoja/steam_monitor/
@@ -15,7 +15,7 @@ python-dotenv (optional)
 colorama (optional, for better colours on Windows terminals)
 """
 
-VERSION = "1.6"
+VERSION = "1.7"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -82,6 +82,15 @@ FRIENDS_CHECK = False
 # Whether to send an email when the user's friends list changes
 # Requires FRIENDS_CHECK to be enabled; can also be enabled via the --notify-friends flag
 FRIENDS_NOTIFICATION = False
+
+# Whether to periodically check the user's games library (game count and list) for changes
+# Uses a minimal API call (no names/icons)
+# Can also be enabled via the --check-games flag
+GAMES_LIBRARY_CHECK = False
+
+# Whether to send an email when the user's games library changes
+# Requires GAMES_LIBRARY_CHECK to be enabled; can also be enabled via the --notify-games flag
+GAMES_LIBRARY_NOTIFICATION = False
 
 # How often to check for player activity when the user is offline; in seconds
 # Can also be set using the -c flag
@@ -214,6 +223,8 @@ STEAM_LEVEL_XP_CHECK = False
 STEAM_LEVEL_XP_NOTIFICATION = False
 FRIENDS_CHECK = False
 FRIENDS_NOTIFICATION = False
+GAMES_LIBRARY_CHECK = False
+GAMES_LIBRARY_NOTIFICATION = False
 PROFILE_CSV_FILE = ""
 STEAM_CHECK_INTERVAL = 0
 STEAM_ACTIVE_CHECK_INTERVAL = 0
@@ -1471,6 +1482,8 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     last_steam_level = None
     last_player_xp = None
     last_friend_ids = None
+    last_games_count = None
+    last_games_appids = None
 
     try:
         if csv_file_name:
@@ -1516,6 +1529,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         status_online_start_ts_old = status_online_start_ts
 
     steam_last_status_file = f"steam_{username}_last_status.json"
+    steam_games_file = f"steam_{username}_games.json"
     last_status_read = []
     last_status_ts = 0
     last_status = -1
@@ -1552,6 +1566,18 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     status_online_start_ts = last_status_ts
                     status_online_start_ts_old = status_online_start_ts
                     status_ts_old = last_status_ts
+
+    if GAMES_LIBRARY_CHECK and os.path.isfile(steam_games_file):
+        try:
+            with open(steam_games_file, 'r', encoding="utf-8") as f:
+                games_data = json.load(f)
+            if isinstance(games_data, dict):
+                last_games_count = games_data.get("game_count")
+                appids_list = games_data.get("appids")
+                if appids_list is not None:
+                    last_games_appids = set(appids_list)
+        except Exception as e:
+            print(f"* Cannot load games library from '{steam_games_file}': {e}")
 
     if last_status_ts > 0 and status != last_status:
         last_status_to_save = []
@@ -1634,6 +1660,33 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             # Gracefully indicate that friends data is not accessible (privacy or API limitations)
             print(f"\nFriends:\t\t\tN/A")
 
+    # Optional games library snapshot at monitoring start
+    if GAMES_LIBRARY_CHECK:
+        try:
+            owned = s_api.call(
+                "IPlayerService.GetOwnedGames",
+                steamid=steamid,
+                include_appinfo=0,
+                include_played_free_games=1,
+                appids_filter=[],
+                include_free_sub=0,
+                include_extended_appinfo=0,
+                language="en",
+            )
+            games_list = owned.get("response", {}).get("games", []) if isinstance(owned, dict) else []
+            current_count = len(games_list)
+            current_appids = sorted(set(g.get("appid") for g in games_list if g.get("appid")))
+            print(f"\nGames in library:\t\t{current_count}")
+            last_games_count = current_count
+            last_games_appids = set(current_appids)
+            try:
+                with open(steam_games_file, 'w', encoding="utf-8") as f:
+                    json.dump({"game_count": current_count, "appids": current_appids}, f, indent=2)
+            except Exception as e:
+                print(f"* Cannot save games library to '{steam_games_file}': {e}")
+        except Exception as e:
+            print(f"\nGames in library:\tN/A ({e})")
+
     if last_status_ts == 0:
         if lastlogoff and status == 0:
             status_ts_old = lastlogoff
@@ -1700,6 +1753,8 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         current_steam_level = None
         current_player_xp = None
         current_friend_ids = None
+        current_games_count = None
+        current_games_appids = None
         try:
             s_api = steam.webapi.WebAPI(key=STEAM_API_KEY)
             s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
@@ -1731,6 +1786,26 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     current_friend_ids = {f.get('steamid') for f in friend_entries if f.get('steamid')}
                 except Exception:
                     current_friend_ids = None
+
+            # Fetch games library (minimal: count + appids only) when tracking is enabled
+            if GAMES_LIBRARY_CHECK:
+                try:
+                    owned = s_api.call(
+                        "IPlayerService.GetOwnedGames",
+                        steamid=steamid,
+                        include_appinfo=0,
+                        include_played_free_games=1,
+                        appids_filter=[],
+                        include_free_sub=0,
+                        include_extended_appinfo=0,
+                        language="en",
+                    )
+                    games_list = owned.get("response", {}).get("games", []) if isinstance(owned, dict) else []
+                    current_games_count = len(games_list)
+                    current_games_appids = set(g.get("appid") for g in games_list if g.get("appid"))
+                except Exception:
+                    current_games_count = None
+                    current_games_appids = None
         except Exception as e:
 
             if status > 0:
@@ -2106,6 +2181,65 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     alive_counter = 0
                     last_friend_ids = current_friend_ids
 
+        # Games library changed
+        if GAMES_LIBRARY_CHECK and current_games_count is not None and current_games_appids is not None:
+            if last_games_count is None and last_games_appids is None:
+                last_games_count = current_games_count
+                last_games_appids = set(current_games_appids)
+            else:
+                count_changed = current_games_count != last_games_count
+                appids_changed = current_games_appids != last_games_appids
+                if count_changed or appids_changed:
+                    old_count = last_games_count
+                    new_count = current_games_count
+                    delta = new_count - old_count
+                    added_appids = sorted(current_games_appids - last_games_appids)
+                    removed_appids = sorted(last_games_appids - current_games_appids)
+
+                    if delta != 0:
+                        delta_str = f"+{delta}" if delta > 0 else str(delta)
+                        print(f"Steam user {username} games library changed from {old_count} to {new_count} ({delta_str})")
+                    else:
+                        print(f"Steam user {username} games library changed (same count: {new_count}, titles changed)")
+
+                    if added_appids:
+                        print(f"Added: {', '.join(str(a) for a in added_appids)}")
+                    if removed_appids:
+                        print(f"Removed: {', '.join(str(a) for a in removed_appids)}")
+
+                    try:
+                        with open(steam_games_file, 'w', encoding="utf-8") as f:
+                            json.dump({"game_count": new_count, "appids": sorted(current_games_appids)}, f, indent=2)
+                    except Exception as e:
+                        print(f"* Cannot save games library to '{steam_games_file}': {e}")
+
+                    if profile_csv_file_name:
+                        try:
+                            write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="games_library_change", old_value=old_count, new_value=new_count, delta=delta,)
+                        except Exception as e:
+                            print(f"* Error writing profile CSV: {e}")
+
+                    if GAMES_LIBRARY_NOTIFICATION:
+                        m_subject_games = f"Steam user {username} games library changed (now {new_count})"
+                        body_parts = []
+                        if delta != 0:
+                            delta_str = f"+{delta}" if delta > 0 else str(delta)
+                            body_parts.append(f"Steam user {username} games library changed from {old_count} to {new_count} ({delta_str})")
+                        else:
+                            body_parts.append(f"Steam user {username} games library changed (same count: {new_count}, titles changed)")
+                        if added_appids:
+                            body_parts.append(f"Added: {', '.join(str(a) for a in added_appids)}")
+                        if removed_appids:
+                            body_parts.append(f"Removed: {', '.join(str(a) for a in removed_appids)}")
+                        m_body_games = "\n".join(body_parts) + get_cur_ts(nl_ch + nl_ch + "Timestamp: ")
+                        print(f"Sending email notification to {RECEIVER_EMAIL}")
+                        send_email(m_subject_games, m_body_games, "", SMTP_SSL)
+
+                    print_cur_ts("Timestamp:\t\t\t")
+                    alive_counter = 0
+                    last_games_count = current_games_count
+                    last_games_appids = set(current_games_appids)
+
         if change:
             alive_counter = 0
 
@@ -2131,7 +2265,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
 
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME
+    global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME
 
     if "--generate-config" in sys.argv:
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
@@ -2270,6 +2404,13 @@ def main():
         help="Email when friends list changes (requires --check-friends or FRIENDS_CHECK=True)"
     )
     notify.add_argument(
+        "--notify-games",
+        dest="notify_games",
+        action="store_true",
+        default=None,
+        help="Email when games library changes (requires --check-games or GAMES_LIBRARY_CHECK=True)"
+    )
+    notify.add_argument(
         "-e", "--no-error-notify",
         dest="notify_errors",
         action="store_false",
@@ -2349,6 +2490,13 @@ def main():
         action="store_true",
         default=None,
         help="Track changes in friends count and list (may be limited by privacy settings)"
+    )
+    opts.add_argument(
+        "--check-games",
+        dest="check_games",
+        action="store_true",
+        default=None,
+        help="Track changes in games library (game count); uses minimal API data (no names/icons)"
     )
     opts.add_argument(
         "-b", "--csv-file",
@@ -2585,6 +2733,10 @@ def main():
         FRIENDS_CHECK = True
     if args.notify_friends is True:
         FRIENDS_NOTIFICATION = True
+    if getattr(args, "check_games", None) is True:
+        GAMES_LIBRARY_CHECK = True
+    if getattr(args, "notify_games", None) is True:
+        GAMES_LIBRARY_NOTIFICATION = True
 
     if SMTP_HOST.startswith("your_smtp_server_"):
         ACTIVE_INACTIVE_NOTIFICATION = False
@@ -2593,12 +2745,14 @@ def main():
         ERROR_NOTIFICATION = False
         STEAM_LEVEL_XP_NOTIFICATION = False
         FRIENDS_NOTIFICATION = False
+        GAMES_LIBRARY_NOTIFICATION = False
 
     print(f"* Steam polling intervals:\t[offline: {display_time(STEAM_CHECK_INTERVAL)}] [online: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]")
-    print(f"* Email notifications:\t\t[online/offline status changes = {ACTIVE_INACTIVE_NOTIFICATION}] [game changes = {GAME_CHANGE_NOTIFICATION}]\n*\t\t\t\t[all status changes = {STATUS_NOTIFICATION}] [level/XP changes = {STEAM_LEVEL_XP_NOTIFICATION}]\n*\t\t\t\t[friends changes = {FRIENDS_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
+    print(f"* Email notifications:\t\t[online/offline status changes = {ACTIVE_INACTIVE_NOTIFICATION}] [game changes = {GAME_CHANGE_NOTIFICATION}]\n*\t\t\t\t[all status changes = {STATUS_NOTIFICATION}] [level/XP changes = {STEAM_LEVEL_XP_NOTIFICATION}]\n*\t\t\t\t[friends changes = {FRIENDS_NOTIFICATION}] [games library = {GAMES_LIBRARY_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
     print(f"* Liveness check:\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
     print(f"* Level/XP tracking enabled:\t{STEAM_LEVEL_XP_CHECK}")
     print(f"* Friends tracking enabled:\t{FRIENDS_CHECK}")
+    print(f"* Games tracking enabled:\t{GAMES_LIBRARY_CHECK}")
     print(f"* CSV logging enabled:\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
     print(f"* Profile CSV logging enabled:\t{bool(PROFILE_CSV_FILE)}" + (f" ({PROFILE_CSV_FILE})" if PROFILE_CSV_FILE else ""))
     print(f"* Output logging enabled:\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
