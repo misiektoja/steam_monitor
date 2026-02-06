@@ -2,11 +2,11 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 1.7 (TBD)
+# Changes in 1.7 (06 Feb 2026)
 
 **Features and Improvements**:
 
-- **NEW:** **Games library change tracking** – track when the user's game count (or library set) changes. Enable with `GAMES_LIBRARY_CHECK` or `--check-games`
+- **NEW:** **Games library change tracking** - track when the user's game count (or library set) changes. Enable with `GAMES_LIBRARY_CHECK` or `--check-games` (closes [#1](https://github.com/misiektoja/steam_monitor/issues/1))
 - **NEW:** Optional **email notifications** when the games library changes (`GAMES_LIBRARY_NOTIFICATION` / `--notify-games`; requires games library tracking to be enabled)
 - **NEW:** Games library changes can be logged to the **profile CSV**
 
