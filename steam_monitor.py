@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.7
+v1.8
 
 Tool implementing real-time tracking of Steam players activities:
 https://github.com/misiektoja/steam_monitor/
@@ -15,7 +15,7 @@ python-dotenv (optional)
 colorama (optional, for better colours on Windows terminals)
 """
 
-VERSION = "1.7"
+VERSION = "1.8"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -60,6 +60,11 @@ GAME_CHANGE_NOTIFICATION = False
 # Whether to send an email on all status changes (online/away/snooze/offline)
 # Can also be enabled via the -s flag
 STATUS_NOTIFICATION = False
+
+# Whether to send an email when the user's display (persona) name changes
+# Display name changes are always detected and logged. This flag only controls email
+# Can also be enabled via the --notify-name-change flag
+NAME_CHANGE_NOTIFICATION = False
 
 # Whether to send an email on errors
 # Can also be disabled via the -e flag
@@ -218,6 +223,7 @@ RECEIVER_EMAIL = ""
 ACTIVE_INACTIVE_NOTIFICATION = False
 GAME_CHANGE_NOTIFICATION = False
 STATUS_NOTIFICATION = False
+NAME_CHANGE_NOTIFICATION = False
 ERROR_NOTIFICATION = False
 STEAM_LEVEL_XP_CHECK = False
 STEAM_LEVEL_XP_NOTIFICATION = False
@@ -1052,6 +1058,16 @@ def toggle_friends_notifications_signal_handler(sig, frame):
     print_cur_ts("Timestamp:\t\t\t")
 
 
+# Signal handler for SIGVTALRM allowing to switch display name changes notifications
+def toggle_name_change_notifications_signal_handler(sig, frame):
+    global NAME_CHANGE_NOTIFICATION
+    NAME_CHANGE_NOTIFICATION = not NAME_CHANGE_NOTIFICATION
+    sig_name = signal.Signals(sig).name
+    print(f"* Signal {sig_name} received")
+    print(f"* Email notifications: [display name changes = {NAME_CHANGE_NOTIFICATION}]")
+    print_cur_ts("Timestamp:\t\t\t")
+
+
 # Signal handler for SIGTRAP allowing to increase check timer for player activity when user is online by STEAM_ACTIVE_CHECK_SIGNAL_VALUE seconds
 def increase_active_check_signal_handler(sig, frame):
     global STEAM_ACTIVE_CHECK_INTERVAL
@@ -1281,8 +1297,52 @@ def display_recent_achievements(steamid, s_api, s_played, max_games=15, max_achi
             print(f"   Earned: {colorize('warning', 'Date not available')}")
 
 
+# Fetches the persona (display) name history from Steam's public ajaxaliases endpoint
+def fetch_persona_name_history(steamid, timeout=15):
+    url = f"https://steamcommunity.com/profiles/{steamid}/ajaxaliases"
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; steam_monitor)"}
+    try:
+        resp = req.get(url, headers=headers, timeout=timeout)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:
+        return []
+
+    if not isinstance(data, list):
+        return []
+
+    history = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("newname")
+        if not name:
+            continue
+        history.append({"name": name, "timechanged": entry.get("timechanged", "")})
+    return history
+
+
+# Fetches and displays the persona name history for a Steam user
+def display_persona_name_history(steamid):
+    print(f"\n* Fetching persona name history...")
+    history = fetch_persona_name_history(steamid)
+
+    if not history:
+        print("* No persona name history found or access is restricted by the user's privacy settings.")
+        return
+
+    print(f"\nPersona name history ({len(history)}):")
+    for i, entry in enumerate(history, 1):
+        name = entry.get("name", "")
+        when = entry.get("timechanged", "")
+        if when:
+            print(f"{i} {colorize('username', name)} (changed: {when})")
+        else:
+            print(f"{i} {colorize('username', name)}")
+
+
 # Gets detailed user information and displays it (for -i/--info mode)
-def display_user_info(steamid, list_friends=False, show_achievements=False, achievements_count=None, achievements_use_owned_games=False):
+def display_user_info(steamid, list_friends=False, show_name_history=False, show_achievements=False, achievements_count=None, achievements_use_owned_games=False):
     steamid_coloured = colorize("steam_id", str(steamid))
     print(f"* Fetching details for Steam user with ID '{steamid_coloured}'...\n")
 
@@ -1390,6 +1450,9 @@ def display_user_info(steamid, list_friends=False, show_achievements=False, achi
     except Exception:
         pass
 
+    if show_name_history:
+        display_persona_name_history(steamid)
+
     try:
         friends = s_api.call('ISteamUser.GetFriendList', steamid=steamid, relationship='friend')
         friend_entries = friends.get('friendslist', {}).get('friends', [])
@@ -1398,6 +1461,8 @@ def display_user_info(steamid, list_friends=False, show_achievements=False, achi
 
         if list_friends and friend_entries:
             friend_ids = [f.get('steamid') for f in friend_entries if f.get('steamid')]
+            # Map each friend's Steam64 ID to the Unix timestamp when the friendship started
+            friend_since_map = {f.get('steamid'): f.get('friend_since') for f in friend_entries if f.get('steamid')}
             print("\nFriends list:")
 
             # Steam Web API allows up to 100 steamids per GetPlayerSummaries call, so chunk the requests
@@ -1418,10 +1483,12 @@ def display_user_info(steamid, list_friends=False, show_achievements=False, achi
                     persona = p.get("personaname", "")
                     real_name = p.get("realname") or ""
                     sid = p.get("steamid", "")
+                    since_ts = friend_since_map.get(sid)
+                    since_str = f" - friend since {get_date_from_ts(int(since_ts))}" if since_ts else ""
                     if real_name:
-                        print(f"- {persona} ({real_name}) [{sid}]")
+                        print(f"- {persona} ({real_name}) [{sid}]{since_str}")
                     else:
-                        print(f"- {persona} [{sid}]")
+                        print(f"- {persona} [{sid}]{since_str}")
     except Exception:
         pass
 
@@ -1755,6 +1822,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         current_friend_ids = None
         current_games_count = None
         current_games_appids = None
+        current_username = None
         try:
             s_api = steam.webapi.WebAPI(key=STEAM_API_KEY)
             s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
@@ -1762,6 +1830,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             status = int(s_user["response"]["players"][0]["personastate"])
             gameid = s_user["response"]["players"][0].get("gameid")
             gamename = s_user["response"]["players"][0].get("gameextrainfo", "")
+            current_username = s_user["response"]["players"][0].get("personaname")
             email_sent = False
 
             # Fetch Steam level and total XP if tracking is enabled
@@ -2240,6 +2309,30 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     last_games_count = current_games_count
                     last_games_appids = set(current_games_appids)
 
+        # Display (persona) name changed
+        if current_username and current_username != username:
+            old_name = username
+            new_name = current_username
+            print(f"Steam user {old_name} changed display name to {new_name}")
+
+            if profile_csv_file_name:
+                try:
+                    write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="name_change", old_value=old_name, new_value=new_name)
+                except Exception as e:
+                    print(f"* Error writing profile CSV: {e}")
+
+            if NAME_CHANGE_NOTIFICATION:
+                m_subject_name = f"Steam user {old_name} changed display name to {new_name}"
+                m_body_name = f"Steam user {old_name} changed display name to {new_name}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                print(f"Sending email notification to {RECEIVER_EMAIL}")
+                send_email(m_subject_name, m_body_name, "", SMTP_SSL)
+
+            print_cur_ts("Timestamp:\t\t\t")
+            alive_counter = 0
+
+            # Adopt the new display name for subsequent notifications and output
+            username = current_username
+
         if change:
             alive_counter = 0
 
@@ -2265,7 +2358,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
 
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME
+    global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, NAME_CHANGE_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME
 
     if "--generate-config" in sys.argv:
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
@@ -2390,6 +2483,13 @@ def main():
         help="Email on all status changes"
     )
     notify.add_argument(
+        "--notify-name-change",
+        dest="notify_name_change",
+        action="store_true",
+        default=None,
+        help="Email when user's display (persona) name changes"
+    )
+    notify.add_argument(
         "--notify-level-xp",
         dest="notify_level_xp",
         action="store_true",
@@ -2437,6 +2537,12 @@ def main():
         dest="list_friends",
         action="store_true",
         help="When used with -i/--info, also list all friends instead of only the count"
+    )
+    info.add_argument(
+        "--name-history",
+        dest="show_name_history",
+        action="store_true",
+        help="When used with -i/--info, also display the persona (display) name history"
     )
     info.add_argument(
         "--achievements",
@@ -2710,7 +2816,7 @@ def main():
 
     # Handle info mode - display user information once and exit
     if args.info:
-        display_user_info(s_id, list_friends=getattr(args, "list_friends", False), show_achievements=getattr(args, "show_achievements", False), achievements_count=getattr(args, "achievements_count", None), achievements_use_owned_games=getattr(args, "achievements_use_owned_games", False))
+        display_user_info(s_id, list_friends=getattr(args, "list_friends", False), show_name_history=getattr(args, "show_name_history", False), show_achievements=getattr(args, "show_achievements", False), achievements_count=getattr(args, "achievements_count", None), achievements_use_owned_games=getattr(args, "achievements_use_owned_games", False))
         sys.stdout = stdout_bck
         sys.exit(0)
 
@@ -2722,6 +2828,9 @@ def main():
 
     if args.notify_status is True:
         STATUS_NOTIFICATION = True
+
+    if args.notify_name_change is True:
+        NAME_CHANGE_NOTIFICATION = True
 
     if args.notify_errors is False:
         ERROR_NOTIFICATION = False
@@ -2742,13 +2851,14 @@ def main():
         ACTIVE_INACTIVE_NOTIFICATION = False
         GAME_CHANGE_NOTIFICATION = False
         STATUS_NOTIFICATION = False
+        NAME_CHANGE_NOTIFICATION = False
         ERROR_NOTIFICATION = False
         STEAM_LEVEL_XP_NOTIFICATION = False
         FRIENDS_NOTIFICATION = False
         GAMES_LIBRARY_NOTIFICATION = False
 
     print(f"* Steam polling intervals:\t[offline: {display_time(STEAM_CHECK_INTERVAL)}] [online: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]")
-    print(f"* Email notifications:\t\t[online/offline status changes = {ACTIVE_INACTIVE_NOTIFICATION}] [game changes = {GAME_CHANGE_NOTIFICATION}]\n*\t\t\t\t[all status changes = {STATUS_NOTIFICATION}] [level/XP changes = {STEAM_LEVEL_XP_NOTIFICATION}]\n*\t\t\t\t[friends changes = {FRIENDS_NOTIFICATION}] [games library = {GAMES_LIBRARY_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
+    print(f"* Email notifications:\t\t[online/offline status changes = {ACTIVE_INACTIVE_NOTIFICATION}] [game changes = {GAME_CHANGE_NOTIFICATION}]\n*\t\t\t\t[all status changes = {STATUS_NOTIFICATION}] [level/XP changes = {STEAM_LEVEL_XP_NOTIFICATION}]\n*\t\t\t\t[friends changes = {FRIENDS_NOTIFICATION}] [games library = {GAMES_LIBRARY_NOTIFICATION}]\n*\t\t\t\t[name changes = {NAME_CHANGE_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
     print(f"* Liveness check:\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
     print(f"* Level/XP tracking enabled:\t{STEAM_LEVEL_XP_CHECK}")
     print(f"* Friends tracking enabled:\t{FRIENDS_CHECK}")
@@ -2770,6 +2880,7 @@ def main():
         signal.signal(signal.SIGCONT, toggle_all_status_changes_notifications_signal_handler)
         signal.signal(signal.SIGURG, toggle_level_xp_notifications_signal_handler)
         signal.signal(signal.SIGPIPE, toggle_friends_notifications_signal_handler)
+        signal.signal(signal.SIGVTALRM, toggle_name_change_notifications_signal_handler)
         signal.signal(signal.SIGTRAP, increase_active_check_signal_handler)
         signal.signal(signal.SIGABRT, decrease_active_check_signal_handler)
         signal.signal(signal.SIGHUP, reload_secrets_signal_handler)
