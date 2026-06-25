@@ -26,12 +26,13 @@ pip install steam_monitor
 
 - **Real-time tracking** of Steam users' gaming activity (including detection when a user gets online/offline or plays games)
 - **Basic statistics for user activity** (such as how long in different states, how long a game is played, overall time and the number of played games in the session etc.)
-- **Detailed user information** display mode providing comprehensive Steam profile insights including **profile details**, **Steam level and XP statistics**, **earned badges**, **ban status**, **friends count** (with optional full friends list), **top games by lifetime hours**, **recently played games** with playtime statistics, **hours played in the last 2 weeks** and optionally list of **recent achievements**
+- **Detailed user information** display mode providing comprehensive Steam profile insights including **profile details**, **Steam level and XP statistics**, **earned badges**, **ban status**, **friends count** (with optional full friends list showing when each friendship started), **top games by lifetime hours**, **recently played games** with playtime statistics, **hours played in the last 2 weeks**, optional **persona name history** and optionally list of **recent achievements**
 - **Steam community URL resolution** - automatically resolve Steam community URLs to Steam64 IDs (no need to know the numeric ID)
 - **Steam level and total XP change tracking**
+- **Display (persona) name change tracking** (detects and logs in real time when the monitored user renames their account)
 - **Friends list change tracking** (friends count and when available - added/removed friends)
 - **Games library change tracking** (game count, added/removed games)
-- **Email notifications** for different events (when a player gets online/away/snooze/offline, starts/finishes/changes a game, Steam level and total XP changes, friends list changes or errors occur)
+- **Email notifications** for different events (when a player gets online/away/snooze/offline, starts/finishes/changes a game, Steam level and total XP changes, display name changes, friends list changes or errors occur)
 - **Saving all user activities and profile changes** with timestamps to a **CSV file**
 - **Status persistence** - automatically saves last status to JSON file to resume monitoring after restart
 - **Smart session continuity** - handles short offline interruptions and preserves session statistics
@@ -267,10 +268,18 @@ This mode displays detailed information including:
 - Profile URL
 - Steam level, badges earned and XP statistics
 - Ban status (VAC, Community, Economy)
-- Friends count
+- Friends count (with `--list-friends` it also shows the full list including when each friendship started)
 - Top games by lifetime hours
 - Recently played games with playtime statistics
 - Hours played in the last 2 weeks
+
+Optionally, you can also display the **persona (display) name history** using the `--name-history` flag:
+
+```sh
+steam_monitor <steam_user_id> -i --name-history
+```
+
+This lists the user's previous display names with the date each one was changed, as reported by Steam.
 
 Optionally, you can also display **recently earned achievements** using the `--achievements` flag:
 
@@ -347,6 +356,8 @@ To track changes in the user's **games library** (game count and added/removed g
 - set `GAMES_LIBRARY_CHECK` to `True`
 - or use the `--check-games` flag
 
+The user's **display (persona) name** is tracked automatically with no extra configuration. Whenever it changes, the tool logs the old and new name and (when a profile CSV is configured) records a `name_change` row. To also receive an email on such changes use `--notify-name-change` (see [Email Notifications](#email-notifications)).
+
 <a id="email-notifications"></a>
 ### Email Notifications
 
@@ -372,6 +383,16 @@ To get email notifications about any changes in user status (online/away/snooze/
 
 ```sh
 steam_monitor <steam_user_id> -s
+```
+
+To get email notifications when the user's **display (persona) name** changes:
+- set `NAME_CHANGE_NOTIFICATION` to `True`
+- or use the `--notify-name-change` flag
+
+Display name changes are always detected and logged to the console, log file and profile CSV. This flag only controls whether an email is also sent.
+
+```sh
+steam_monitor <steam_user_id> --notify-name-change
 ```
 
 To get email notifications when the user's **Steam level and total XP** changes:
@@ -431,7 +452,7 @@ steam_monitor <steam_user_id> -b steam_user_id.csv
 
 The file will be automatically created if it does not exist.
 
-If you want to save **profile-related changes** (Steam level changes, total XP changes, friends count changes, games library changes and individual added/removed friends) to a **separate CSV file**, set `PROFILE_CSV_FILE` or use the `--profile-csv-file` flag:
+If you want to save **profile-related changes** (Steam level changes, total XP changes, display name changes, friends count changes, games library changes and individual added/removed friends) to a **separate CSV file**, set `PROFILE_CSV_FILE` or use the `--profile-csv-file` flag:
 
 ```sh
 steam_monitor <steam_user_id> --profile-csv-file steam_user_id_profile.csv
@@ -465,6 +486,7 @@ List of supported signals:
 | CONT | Toggle email notifications for all user status changes (online/away/snooze/offline) (-s) |
 | URG | Toggle email notifications for Steam level/XP changes (--notify-level-xp) |
 | PIPE | Toggle email notifications for friends list changes (--notify-friends) |
+| VTALRM | Toggle email notifications for display name changes (--notify-name-change) |
 | TRAP | Increase the check timer for player activity when user is online/away/snooze (by 30 seconds) |
 | ABRT | Decrease check timer for player activity when user is online/away/snooze (by 30 seconds) |
 | HUP | Reload secrets from .env file |
