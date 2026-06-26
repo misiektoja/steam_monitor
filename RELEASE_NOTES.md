@@ -2,6 +2,18 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 1.8 (26 Jun 2026)
+
+**Features and Improvements**:
+
+- **NEW:** **Display (persona) name change tracking** - detects and logs in real time when the monitored user renames their account. Changes are written to the console, log file and profile CSV with no extra configuration and no additional API calls
+- **NEW:** Optional **email notifications** when the display name changes (`NAME_CHANGE_NOTIFICATION` / `--notify-name-change`)
+- **NEW:** Added **signal handler** (SIGVTALRM) for toggling display name change email notifications
+- **NEW:** Enhanced **user info** display mode (`-i`) to optionally show the **persona name history** (`--name-history`), retrieved from Steam's public profile endpoint
+- **IMPROVE:** Enhanced the `--list-friends` output in **user info** display mode (`-i`) to show when each friendship started
+- **IMPROVE:** Added GitHub Actions workflow for publishing packages to PyPI and auto-building/attaching zip and tar.gz assets to published releases
+- **IMPROVE:** Added **Dependabot** version updates
+
 # Changes in 1.7 (06 Feb 2026)
 
 **Features and Improvements**:
