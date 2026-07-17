@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.8
+v1.8.1
 
 Tool implementing real-time tracking of Steam players activities:
 https://github.com/misiektoja/steam_monitor/
@@ -15,7 +15,7 @@ python-dotenv (optional)
 colorama (optional, for better colours on Windows terminals)
 """
 
-VERSION = "1.8"
+VERSION = "1.8.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -301,6 +301,7 @@ import platform
 from platform import system
 import re
 import ipaddress
+from urllib.parse import unquote, urlparse
 
 try:
     from colorama import init as colorama_init  # type: ignore[import]
@@ -678,6 +679,75 @@ def check_internet(url=CHECK_INTERNET_URL, timeout=CHECK_INTERNET_TIMEOUT):
     except req.RequestException as e:
         print(f"* No connectivity, please check your network:\n\n{e}")
         return False
+
+
+# Resolves a Steam community user URL to a Steam64 ID through the Steam Web API
+def resolve_steam_community_url(community_url, api_key, timeout=30):
+    try:
+        parsed_url = urlparse(community_url)
+        hostname = (parsed_url.hostname or "").lower()
+    except (AttributeError, ValueError):
+        raise ValueError("Invalid Steam community URL") from None
+
+    if parsed_url.scheme not in ("http", "https") or hostname not in ("steamcommunity.com", "www.steamcommunity.com"):
+        raise ValueError("Invalid Steam community URL")
+
+    path_parts = [unquote(part) for part in parsed_url.path.split("/") if part]
+    if len(path_parts) < 2:
+        raise ValueError("Invalid Steam community user URL")
+
+    profile_type = path_parts[0].lower()
+    profile_name = path_parts[1]
+
+    if profile_type == "profiles":
+        profile_id = steam.steamid.SteamID(profile_name)
+        if not profile_id.is_valid() or profile_id.type != steam.steamid.EType.Individual:
+            raise ValueError("Invalid Steam user profile ID")
+        return int(profile_id.as_64)
+
+    if profile_type == "user":
+        profile_id = steam.steamid.from_invite_code(profile_name)
+        if not profile_id or not profile_id.is_valid():
+            raise ValueError("Invalid Steam user invite URL")
+        return int(profile_id.as_64)
+
+    if profile_type != "id":
+        raise ValueError("Only Steam user profile URLs are supported")
+
+    resolver_url = "https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/"
+    try:
+        response = req.get(resolver_url, params={"key": api_key, "vanityurl": profile_name, "url_type": 1}, timeout=timeout)
+    except req.Timeout:
+        raise ValueError("Steam Web API request timed out") from None
+    except req.RequestException:
+        raise ValueError("Cannot connect to the Steam Web API") from None
+
+    if response.status_code == 429:
+        retry_after = response.headers.get("Retry-After")
+        retry_message = f" Retry after {retry_after}." if retry_after else ""
+        raise ValueError(f"Steam Web API rate limit exceeded.{retry_message}")
+    if response.status_code == 403:
+        raise ValueError("Steam Web API rejected the API key")
+    if response.status_code != 200:
+        raise ValueError(f"Steam Web API returned HTTP {response.status_code}")
+
+    try:
+        result = response.json().get("response", {})
+    except (AttributeError, ValueError):
+        raise ValueError("Steam Web API returned an invalid response") from None
+    if not isinstance(result, dict):
+        raise ValueError("Steam Web API returned an invalid response")
+
+    if str(result.get("success")) != "1":
+        message = result.get("message")
+        if message:
+            raise ValueError(f"Steam community URL could not be resolved: {message}")
+        raise ValueError("Steam community URL could not be resolved")
+
+    resolved_id = steam.steamid.SteamID(result.get("steamid", ""))
+    if not resolved_id.is_valid() or resolved_id.type != steam.steamid.EType.Individual:
+        raise ValueError("Steam Web API returned an invalid Steam64 ID")
+    return int(resolved_id.as_64)
 
 
 # Clears the terminal screen
@@ -2743,12 +2813,9 @@ def main():
     if args.resolve_community_url:
         print(f"* Resolving Steam community URL to Steam64 ID: {args.resolve_community_url}\n")
         try:
-            s_id = steam.steamid.steam64_from_url(args.resolve_community_url)
-            if s_id:
-                s_id = int(s_id)
-        except Exception as e:
-            print("* Error: Cannot get Steam64 ID for specified community URL")
-            print("*", e)
+            s_id = resolve_steam_community_url(args.resolve_community_url, STEAM_API_KEY)
+        except ValueError as e:
+            print(f"* Error: {e}")
             sys.exit(1)
 
     if not s_id:
