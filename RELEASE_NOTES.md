@@ -2,6 +2,14 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 1.8.1 (21 Jul 2026)
+
+**Bug fixes**:
+
+- **BUGFIX:** Replaced intermittent Steam community profile HTML scraping with the authenticated `ISteamUser.ResolveVanityURL` Web API for reliable vanity URL resolution
+- **BUGFIX:** Added local handling for numeric Steam64, Steam3 and `/user/<invite-code>` profile URLs
+- **BUGFIX:** Improved error reporting for invalid URLs, API failures and rate limits so resolver failures are no longer reported as a missing `STEAM64_ID`
+
 # Changes in 1.8 (26 Jun 2026)
 
 **Features and Improvements**:
