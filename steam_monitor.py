@@ -405,9 +405,6 @@ _DATE_RANGE_RE = re.compile(
 _STATUS_CHANGE_RE = re.compile(
     r"^(Steam user .+? changed status from\s+)([a-zA-Z ]+)(\s+to\s+)([a-zA-Z ]+)(.*)$"
 )
-_GAME_CHANGE_RE = re.compile(
-    r"^(Steam user .+? )(started playing|stopped playing|changed game from)(.*)$"
-)
 _DURATION_RE = re.compile(
     r"(\d+\s+(seconds?|minutes?|hours?|days?|weeks?|months?|years?))", re.IGNORECASE
 )
@@ -1952,8 +1949,9 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             else:
                 sleep_interval = STEAM_CHECK_INTERVAL
 
-            if isinstance(e, req.exceptions.HTTPError) and e.response.status_code == 429:
-                retry_after = int(e.response.headers.get('Retry-After') or sleep_interval)
+            response = e.response if isinstance(e, req.exceptions.HTTPError) else None
+            if response is not None and response.status_code == 429:
+                retry_after = int(response.headers.get('Retry-After') or sleep_interval)
                 time.sleep(retry_after)
                 continue
             else:
@@ -2322,7 +2320,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
         # Games library changed
         if GAMES_LIBRARY_CHECK and current_games_count is not None and current_games_appids is not None:
-            if last_games_count is None and last_games_appids is None:
+            if last_games_count is None or last_games_appids is None:
                 last_games_count = current_games_count
                 last_games_appids = set(current_games_appids)
             else:
