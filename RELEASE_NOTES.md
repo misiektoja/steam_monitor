@@ -16,6 +16,10 @@ This is a high-level summary of the most important changes.
 
 - **NEW:** Added the `Pillow` for bounded ntfy image preparation with Python-version-aware dependency constraints
 
+**Bug fixes**:
+
+- **BUGFIX:** Kept long ntfy text notifications below the server's 4 KB attachment boundary and added a visible truncation marker
+
 # Changes in 1.8.1 (22 Jul 2026)
 
 **Bug fixes**:
