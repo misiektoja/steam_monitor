@@ -82,6 +82,18 @@ class WebhookNotificationTests(unittest.TestCase):
         steam_monitor.WEBHOOK_ENABLED = False
         self.assertEqual(steam_monitor._startup_notification_summary_lines()[1], "* Notifications (webhook):      Off")
 
+    # Verifies notification rows color only their state without turning error categories red
+    def test_notification_summary_colors_only_on_off_state(self):
+        styles = {"boolean_true": "\033[32m", "boolean_false": "\033[31m", "error": "\033[31m"}
+        text = "* Notifications (email):        On (errors)\n* Notifications (webhook):      On (active, inactive, status, game,\n                                errors)\n* Liveness check:               True\n"
+        with patch.object(steam_monitor, "COLOR_ENABLED", True), patch.object(steam_monitor, "_COLOR_STYLES", styles):
+            colored = steam_monitor.apply_color_to_text(text)
+            off_colored = steam_monitor.apply_color_to_text("* Notifications (email):        Off\n")
+        expected = "* Notifications (email):        \033[32mOn\033[0m (errors)\n* Notifications (webhook):      \033[32mOn\033[0m (active, inactive, status, game,\n                                errors)\n* Liveness check:               \033[32mTrue\033[0m\n"
+        self.assertEqual(colored, expected)
+        self.assertEqual(off_colored, "* Notifications (email):        \033[31mOff\033[0m\n")
+        self.assertNotIn("\033[31m* Notifications", colored)
+
     # Verifies the generated config exposes supported webhook options without compact ntfy mode
     def test_config_block_contains_webhook_options(self):
         shared_options = ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "WEBHOOK_URL", "WEBHOOK_USERNAME", "WEBHOOK_AVATAR_URL", "WEBHOOK_HEADERS", "WEBHOOK_TEMPLATE", "WEBHOOK_TRANSFORMS", "NTFY_ACCESS_TOKEN", "NTFY_IMAGES")
