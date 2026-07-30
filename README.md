@@ -235,7 +235,7 @@ Save the private destination through a hidden prompt:
 steam_monitor --set-webhook-url
 ```
 
-The command validates the URL and atomically stores `WEBHOOK_URL` in `.env` without sending a message. Use a custom dotenv destination with `--env-file PATH`. Then select a provider and event switches in `steam_monitor.conf`:
+The command validates the URL and atomically stores only the private `WEBHOOK_URL` in `.env` without sending a message. Use a custom dotenv destination with `--env-file PATH`. Select the provider and event switches in `steam_monitor.conf`:
 
 ```python
 WEBHOOK_ENABLED = True
@@ -537,7 +537,7 @@ steam_monitor <steam_user_id> --webhook-active --webhook-inactive --webhook-game
 steam_monitor <steam_user_id> --check-friends --webhook-friends
 ```
 
-Use `--webhook-provider {discord,ntfy}` to override the configured request format. For automation or one-time tests, `--webhook-url URL` overrides the destination without changing `.env`:
+Known Discord and `ntfy.sh` URLs automatically select the matching request format even if the configured provider is stale. Set `WEBHOOK_PROVIDER` in `steam_monitor.conf` or use `--webhook-provider {discord,ntfy}` for self-hosted ntfy or compatible endpoints. For automation or one-time tests, `--webhook-url URL` overrides the destination without changing `.env`:
 
 ```sh
 steam_monitor --webhook-provider ntfy --webhook-url "https://ntfy.sh/your-private-topic" --send-test-webhook
