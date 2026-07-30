@@ -417,6 +417,7 @@ if sys.version_info < (3, 6):
 
 import time
 import string
+import textwrap
 import json
 import os
 from datetime import datetime
@@ -1293,12 +1294,12 @@ def normalized_webhook_provider(provider=None):
 def _startup_email_notification_categories():
     settings = (
         (ACTIVE_INACTIVE_NOTIFICATION, "online/offline"),
-        (STATUS_NOTIFICATION, "all status changes"),
-        (GAME_CHANGE_NOTIFICATION, "game changes"),
-        (STEAM_LEVEL_XP_NOTIFICATION, "level/XP changes"),
-        (FRIENDS_NOTIFICATION, "friends changes"),
-        (GAMES_LIBRARY_NOTIFICATION, "games library"),
-        (NAME_CHANGE_NOTIFICATION, "name changes"),
+        (STATUS_NOTIFICATION, "status"),
+        (GAME_CHANGE_NOTIFICATION, "game"),
+        (STEAM_LEVEL_XP_NOTIFICATION, "level/XP"),
+        (FRIENDS_NOTIFICATION, "friends"),
+        (GAMES_LIBRARY_NOTIFICATION, "games"),
+        (NAME_CHANGE_NOTIFICATION, "name"),
         (ERROR_NOTIFICATION, "errors"),
     )
     return [label for enabled, label in settings if enabled]
@@ -1309,24 +1310,29 @@ def _startup_webhook_notification_categories():
     settings = (
         (WEBHOOK_ACTIVE_NOTIFICATION, "active"),
         (WEBHOOK_INACTIVE_NOTIFICATION, "inactive"),
-        (WEBHOOK_STATUS_NOTIFICATION, "all status changes"),
-        (WEBHOOK_GAME_CHANGE_NOTIFICATION, "game changes"),
-        (WEBHOOK_LEVEL_XP_NOTIFICATION, "level/XP changes"),
-        (WEBHOOK_FRIENDS_NOTIFICATION, "friends changes"),
-        (WEBHOOK_GAMES_NOTIFICATION, "games library"),
-        (WEBHOOK_NAME_CHANGE_NOTIFICATION, "name changes"),
+        (WEBHOOK_STATUS_NOTIFICATION, "status"),
+        (WEBHOOK_GAME_CHANGE_NOTIFICATION, "game"),
+        (WEBHOOK_LEVEL_XP_NOTIFICATION, "level/XP"),
+        (WEBHOOK_FRIENDS_NOTIFICATION, "friends"),
+        (WEBHOOK_GAMES_NOTIFICATION, "games"),
+        (WEBHOOK_NAME_CHANGE_NOTIFICATION, "name"),
         (WEBHOOK_ERROR_NOTIFICATION, "errors"),
     )
     return [label for enabled, label in settings if WEBHOOK_ENABLED and enabled]
+
+
+# Formats one notification row with unstarred continuation lines when needed
+def _format_startup_notification_line(label, categories):
+    prefix = f"* {label:<30}"
+    state = "On (" + ", ".join(categories) + ")" if categories else "Off"
+    return textwrap.fill(state, width=100, initial_indent=prefix, subsequent_indent=" " * len(prefix), break_long_words=False, break_on_hyphens=False)
 
 
 # Builds compact startup notification lines for both delivery channels
 def _startup_notification_summary_lines():
     enabled_email = _startup_email_notification_categories()
     enabled_webhook = _startup_webhook_notification_categories()
-    email_state = "On (" + ", ".join(enabled_email) + ")" if enabled_email else "Off"
-    webhook_state = "On (" + ", ".join(enabled_webhook) + ")" if enabled_webhook else "Off"
-    return [f"* {('Notifications (email):'):<30}{email_state}", f"* {('Notifications (webhook):'):<30}{webhook_state}"]
+    return [_format_startup_notification_line("Notifications (email):", enabled_email), _format_startup_notification_line("Notifications (webhook):", enabled_webhook)]
 
 
 # Redacts configured secrets and API key query values from one error-shaped value
