@@ -40,9 +40,31 @@ class SecretInputTests(unittest.TestCase):
             result = steam_monitor.run_set_webhook_url(env_file=str(self.destination), interactive=True, getpass_func=lambda prompt: secret)
 
         self.assertEqual(result, str(self.destination.resolve()))
-        self.assertIn('WEBHOOK_URL="https://discord.com/api/webhooks/123/private-token"', self.destination.read_text(encoding="utf-8"))
+        content = self.destination.read_text(encoding="utf-8")
+        self.assertIn('WEBHOOK_URL="https://discord.com/api/webhooks/123/private-token"', content)
+        self.assertNotIn("WEBHOOK_PROVIDER", content)
         rendered = "\n".join(" ".join(str(item) for item in call.args) for call in output.call_args_list)
         self.assertNotIn(secret, rendered)
+
+    # Verifies public ntfy entry stores only the private URL
+    def test_hidden_ntfy_entry_stores_only_url(self):
+        replacement_prompt = Mock(side_effect=AssertionError("replacement prompt used"))
+        result = steam_monitor.run_set_webhook_url(env_file=str(self.destination), interactive=True, input_func=replacement_prompt, getpass_func=lambda prompt: "https://ntfy.sh/private-topic")
+
+        self.assertEqual(result, str(self.destination.resolve()))
+        content = self.destination.read_text(encoding="utf-8")
+        self.assertIn('WEBHOOK_URL="https://ntfy.sh/private-topic"', content)
+        self.assertNotIn("WEBHOOK_PROVIDER", content)
+        replacement_prompt.assert_not_called()
+
+    # Verifies self-hosted ntfy entry does not mix provider configuration into dotenv
+    def test_hidden_self_hosted_ntfy_entry_stores_only_url(self):
+        replacement_prompt = Mock(side_effect=AssertionError("provider prompt used"))
+        result = steam_monitor.run_set_webhook_url(env_file=str(self.destination), interactive=True, input_func=replacement_prompt, getpass_func=lambda prompt: "https://ntfy.example.test/private-topic")
+
+        self.assertEqual(result, str(self.destination.resolve()))
+        self.assertNotIn("WEBHOOK_PROVIDER", self.destination.read_text(encoding="utf-8"))
+        replacement_prompt.assert_not_called()
 
     # Verifies an invalid webhook URL never changes an existing dotenv file
     def test_invalid_webhook_entry_is_not_saved(self):
