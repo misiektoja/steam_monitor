@@ -4,17 +4,14 @@ This is a high-level summary of the most important changes.
 
 # Changes in 1.9 (TBD)
 
-**Features and Improvements**:
+Version **1.9** adds independent **Discord and ntfy webhook notifications**, safer **Steam API key setup** and customizable delivery for activity and profile alerts.
 
-- **NEW:** Added **Discord and ntfy webhook notifications** for active, inactive, status, game, Steam level/XP, friends list, games library, display name and monitoring error events
-- **NEW:** Added `--set-webhook-url` for private URL storage, automatic runtime detection for Discord and `ntfy.sh` URLs, `--send-test-webhook` for delivery checks, `--webhook-provider {discord,ntfy}` and `--webhook-url URL` for one-run overrides plus matching master and event flags
-- **NEW:** Added `--set-steam-api-key` entry with live Steam Web API validation and atomic dotenv persistence so the key does not need to appear in shell history or process listings
-- **NEW:** Added native **ntfy topic publishing**, optional Bearer authentication through `NTFY_ACCESS_TOKEN` and bounded Steam avatar or game image attachments with text fallback
-- **NEW:** Added advanced Discord-format customization through `WEBHOOK_USERNAME`, `WEBHOOK_AVATAR_URL`, `WEBHOOK_TEMPLATE`, `WEBHOOK_TRANSFORMS` and placeholder-aware `WEBHOOK_HEADERS`
+**Features and improvements**:
 
-**Dependencies**:
-
-- **NEW:** Added the `Pillow` for bounded ntfy image preparation with Python-version-aware dependency constraints
+- **NEW:** Added independent **Discord and ntfy webhook notifications** with per-event controls for activity, game, profile, friends-list, games-library and monitoring-error alerts
+- **NEW:** Added private **webhook URL setup** with `--set-webhook-url`, automatic provider detection, one-run provider and URL overrides plus `--send-test-webhook` for delivery checks
+- **NEW:** Added safe **Steam API key setup** through `--set-steam-api-key` with live validation and atomic dotenv persistence that keeps the key out of shell history and process listings
+- **NEW:** Added **customizable Discord-format payloads** plus native ntfy topic delivery with protected-topic authentication and bounded Steam artwork attachments with text fallback, using Pillow for image preparation
 
 **Bug fixes**:
 
