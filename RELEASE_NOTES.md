@@ -2,6 +2,20 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 1.9 (TBD)
+
+**Features and Improvements**:
+
+- **NEW:** Added **Discord and ntfy webhook notifications** for active, inactive, status, game, Steam level/XP, friends list, games library, display name and monitoring error events
+- **NEW:** Added `--set-webhook-url` for private URL storage, automatic runtime detection for Discord and `ntfy.sh` URLs, `--send-test-webhook` for delivery checks, `--webhook-provider {discord,ntfy}` and `--webhook-url URL` for one-run overrides plus matching master and event flags
+- **NEW:** Added `--set-steam-api-key` entry with live Steam Web API validation and atomic dotenv persistence so the key does not need to appear in shell history or process listings
+- **NEW:** Added native **ntfy topic publishing**, optional Bearer authentication through `NTFY_ACCESS_TOKEN` and bounded Steam avatar or game image attachments with text fallback
+- **NEW:** Added advanced Discord-format customization through `WEBHOOK_USERNAME`, `WEBHOOK_AVATAR_URL`, `WEBHOOK_TEMPLATE`, `WEBHOOK_TRANSFORMS` and placeholder-aware `WEBHOOK_HEADERS`
+
+**Dependencies**:
+
+- **NEW:** Added the `Pillow` for bounded ntfy image preparation with Python-version-aware dependency constraints
+
 # Changes in 1.8.1 (22 Jul 2026)
 
 **Bug fixes**:
