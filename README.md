@@ -33,6 +33,7 @@ pip install steam_monitor
 - **Friends list change tracking** (friends count and when available - added/removed friends)
 - **Games library change tracking** (game count, added/removed games)
 - **Email notifications** for different events (when a player gets online/away/snooze/offline, starts/finishes/changes a game, Steam level and total XP changes, display name changes, friends list changes or errors occur)
+- **Webhook notifications** through **Discord**, **ntfy** and compatible services, independently configurable from email alerts
 - **Saving all user activities and profile changes** with timestamps to a **CSV file**
 - **Status persistence** - automatically saves last status to JSON file to resume monitoring after restart
 - **Smart session continuity** - handles short offline interruptions and preserves session statistics
@@ -55,11 +56,13 @@ pip install steam_monitor
    * [Steam Web API key](#steam-web-api-key)
    * [User Privacy Settings](#user-privacy-settings)
    * [SMTP Settings](#smtp-settings)
+   * [Webhook Settings](#webhook-settings)
    * [Storing Secrets](#storing-secrets)
 5. [Usage](#usage)
    * [Detailed User Information Display Mode](#detailed-user-information-display-mode)
    * [Monitoring Mode](#monitoring-mode)
    * [Email Notifications](#email-notifications)
+   * [Webhook Notifications](#webhook-notifications)
    * [CSV Export](#csv-export)
    * [Check Intervals](#check-intervals)
    * [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix)
@@ -71,7 +74,7 @@ pip install steam_monitor
 ## Requirements
 
 * Python 3.6 or higher
-* Libraries: [steam](https://github.com/ValvePython/steam), `requests`, `python-dateutil`, `python-dotenv`
+* Libraries: [steam](https://github.com/ValvePython/steam), `requests`, `python-dateutil`, `python-dotenv`, `Pillow`
 
 Tested on:
 
@@ -99,7 +102,7 @@ Download the *[steam_monitor.py](https://raw.githubusercontent.com/misiektoja/st
 Install dependencies via pip:
 
 ```sh
-pip install "steam[client]" requests python-dateutil python-dotenv
+pip install "steam[client]" requests python-dateutil python-dotenv Pillow
 ```
 
 Alternatively, from the downloaded *[requirements.txt](https://raw.githubusercontent.com/misiektoja/steam_monitor/refs/heads/main/requirements.txt)*:
@@ -122,16 +125,23 @@ If you installed manually, download the newest *[steam_monitor.py](https://raw.g
 <a id="quick-start"></a>
 ## Quick Start
 
-- Grab your [Steam Web API key](#steam-web-api-key) and track the `steam_user_id` gaming activities:
+First save your [Steam Web API key](#steam-web-api-key) through the hidden prompt:
 
 ```sh
-steam_monitor <steam_user_id> -u "your_steam_web_api_key"
+steam_monitor --set-steam-api-key
+```
+
+Then track the `steam_user_id` gaming activities:
+
+```sh
+steam_monitor <steam_user_id>
 ```
 
 Or if you installed [manually](#manual-installation):
 
 ```sh
-python3 steam_monitor.py <steam_user_id> -u "your_steam_web_api_key"
+python3 steam_monitor.py --set-steam-api-key
+python3 steam_monitor.py <steam_user_id>
 ```
 
 To get the list of all supported command-line arguments / flags:
@@ -168,11 +178,28 @@ Edit the `steam_monitor.conf` file and change any desired configuration options 
 You can get the Steam Web API key here: [http://steamcommunity.com/dev/apikey](http://steamcommunity.com/dev/apikey)
 
 Provide the `STEAM_API_KEY` secret using one of the following methods:
+
+ - Save and validate it through a hidden prompt with `--set-steam-api-key` (recommended)
+ - Set it as an [environment variable](#storing-secrets), for example `export STEAM_API_KEY=...`
+ - Add it to a [.env file](#storing-secrets) as `STEAM_API_KEY=...` for persistent use
  - Pass it at runtime with `-u` / `--steam-api-key`
- - Set it as an [environment variable](#storing-secrets) (e.g. `export STEAM_API_KEY=...`)
- - Add it to [.env file](#storing-secrets) (`STEAM_API_KEY=...`) for persistent use
+
+The recommended command keeps the key out of shell history and process listings. It validates the key against the Steam Web API before atomically updating `.env`:
+
+```sh
+steam_monitor --set-steam-api-key
+```
+
+For a custom private settings file:
+
+```sh
+steam_monitor --set-steam-api-key --env-file /path/.env-steam_monitor
+```
+
+A key passed with `-u` / `--steam-api-key` may remain visible in shell history or process listings.
 
 Fallback:
+
  - Hard-code it in the code or config file
 
 If you store the `STEAM_API_KEY` in a dotenv file you can update its value and send a `SIGHUP` signal to the process to reload the file with the new API key without restarting the tool. More info in [Storing Secrets](#storing-secrets) and [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix).
@@ -197,16 +224,57 @@ Verify your SMTP settings by using `--send-test-email` flag (the tool will try t
 steam_monitor --send-test-email
 ```
 
+<a id="webhook-settings"></a>
+### Webhook Settings
+
+Steam Monitor supports Discord webhooks and native ntfy topics. Webhook alerts are independent from email, so either channel can be enabled alone or both can receive the same event.
+
+Save the private destination through a hidden prompt:
+
+```sh
+steam_monitor --set-webhook-url
+```
+
+The command validates the URL and atomically stores `WEBHOOK_URL` in `.env` without sending a message. Use a custom dotenv destination with `--env-file PATH`. Then select a provider and event switches in `steam_monitor.conf`:
+
+```python
+WEBHOOK_ENABLED = True
+WEBHOOK_PROVIDER = "discord"  # or "ntfy"
+WEBHOOK_ACTIVE_NOTIFICATION = True
+WEBHOOK_INACTIVE_NOTIFICATION = True
+WEBHOOK_STATUS_NOTIFICATION = False
+WEBHOOK_GAME_CHANGE_NOTIFICATION = True
+WEBHOOK_LEVEL_XP_NOTIFICATION = False
+WEBHOOK_FRIENDS_NOTIFICATION = False
+WEBHOOK_GAMES_NOTIFICATION = False
+WEBHOOK_NAME_CHANGE_NOTIFICATION = False
+WEBHOOK_ERROR_NOTIFICATION = True
+```
+
+For Discord, copy the URL from **Edit Channel -> Integrations -> Webhooks**. For ntfy, use a complete private topic URL such as `https://ntfy.sh/your-private-topic`. Protected ntfy topics can use `NTFY_ACCESS_TOKEN` from an environment variable or dotenv file.
+
+Verify delivery without starting monitoring:
+
+```sh
+steam_monitor --send-test-webhook
+```
+
+Advanced integrations can set `WEBHOOK_USERNAME`, `WEBHOOK_AVATAR_URL`, `WEBHOOK_HEADERS`, `WEBHOOK_TEMPLATE` and `WEBHOOK_TRANSFORMS`. Template and header values can use `title`, `description`, `version`, `image_url`, `fields`, `fields_str`, `color`, `timestamp`, `username` and `avatar_url` placeholders. Discord mentions are always disabled.
+
+`NTFY_IMAGES` enables bounded Steam avatar or game artwork attachments. If image preparation or upload fails, delivery falls back to text.
+
 <a id="storing-secrets"></a>
 ### Storing Secrets
 
-It is recommended to store secrets like `STEAM_API_KEY` or `SMTP_PASSWORD` as either an environment variable or in a dotenv file.
+It is recommended to store secrets like `STEAM_API_KEY`, `SMTP_PASSWORD`, `WEBHOOK_URL` or `NTFY_ACCESS_TOKEN` as either an environment variable or in a dotenv file.
 
 Set environment variables using `export` on **Linux/Unix/macOS/WSL** systems:
 
 ```sh
 export STEAM_API_KEY="your_steam_web_api_key"
 export SMTP_PASSWORD="your_smtp_password"
+export WEBHOOK_URL="https://discord.com/api/webhooks/..."
+export NTFY_ACCESS_TOKEN="your_ntfy_access_token"
 ```
 
 On **Windows Command Prompt** use `set` instead of `export` and on **Windows PowerShell** use `$env`.
@@ -216,6 +284,8 @@ Alternatively store them persistently in a dotenv file (recommended):
 ```ini
 STEAM_API_KEY="your_steam_web_api_key"
 SMTP_PASSWORD="your_smtp_password"
+WEBHOOK_URL="https://discord.com/api/webhooks/..."
+NTFY_ACCESS_TOKEN="your_ntfy_access_token"
 ```
 
 By default the tool will auto-search for dotenv file named `.env` in current directory and then upward from it.
@@ -440,6 +510,40 @@ Example email:
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/steam_monitor/refs/heads/main/assets/steam_monitor_email_notifications.png" alt="steam_monitor_email_notifications" width="85%"/>
 </p>
+
+<a id="webhook-notifications"></a>
+### Webhook Notifications
+
+Webhook event switches mirror the email choices while remaining independent:
+
+| Event | Configuration | One-run flag |
+| --- | --- | --- |
+| User becomes active | `WEBHOOK_ACTIVE_NOTIFICATION` | `--webhook-active` |
+| User goes offline | `WEBHOOK_INACTIVE_NOTIFICATION` | `--webhook-inactive` |
+| Any status change | `WEBHOOK_STATUS_NOTIFICATION` | `--webhook-status` |
+| Game starts, changes or stops | `WEBHOOK_GAME_CHANGE_NOTIFICATION` | `--webhook-game-changes` |
+| Steam level or XP changes | `WEBHOOK_LEVEL_XP_NOTIFICATION` | `--webhook-level-xp` |
+| Friends list changes | `WEBHOOK_FRIENDS_NOTIFICATION` | `--webhook-friends` |
+| Games library changes | `WEBHOOK_GAMES_NOTIFICATION` | `--webhook-games` |
+| Display name changes | `WEBHOOK_NAME_CHANGE_NOTIFICATION` | `--webhook-name-change` |
+| Monitoring errors | `WEBHOOK_ERROR_NOTIFICATION` | `--webhook-errors` or `--no-webhook-error-notify` |
+
+Use `--webhook` or `--no-webhook` to override the master switch for one run. Event flags enable the master switch automatically. Level and XP, friends and games alerts require their corresponding tracking options.
+
+For example:
+
+```sh
+steam_monitor <steam_user_id> --webhook-active --webhook-inactive --webhook-game-changes
+steam_monitor <steam_user_id> --check-friends --webhook-friends
+```
+
+Use `--webhook-provider {discord,ntfy}` to override the configured request format. For automation or one-time tests, `--webhook-url URL` overrides the destination without changing `.env`:
+
+```sh
+steam_monitor --webhook-provider ntfy --webhook-url "https://ntfy.sh/your-private-topic" --send-test-webhook
+```
+
+A URL passed on the command line may remain visible in shell history or process listings. Prefer `--set-webhook-url` for persistent private destinations.
 
 <a id="csv-export"></a>
 ### CSV Export
