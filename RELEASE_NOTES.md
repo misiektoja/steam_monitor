@@ -12,7 +12,7 @@ Version **1.9** adds independent **Discord and ntfy webhook notifications**, saf
 - **NEW:** Added private **webhook URL setup** with `--set-webhook-url`, automatic provider detection, one-run provider and URL overrides plus `--send-test-webhook` for delivery checks
 - **NEW:** Added safe **Steam API key setup** through `--set-steam-api-key` with live validation and atomic dotenv persistence that keeps the key out of shell history and process listings
 - **NEW:** Added **customizable Discord-format payloads** plus native ntfy topic delivery with protected-topic authentication and bounded Steam artwork attachments with text fallback, using Pillow for image preparation
-- **IMPROVE:** Added compact **email and webhook category rollups** to the startup summary, showing only enabled notification types on one line per channel
+- **IMPROVE:** Added compact **email and webhook category rollups** to the startup summary with short labels and unstarred continuation lines when needed
 
 **Bug fixes**:
 
