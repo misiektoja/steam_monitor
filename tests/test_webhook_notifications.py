@@ -68,6 +68,7 @@ class WebhookNotificationTests(unittest.TestCase):
         self.assertFalse(hasattr(steam_monitor, "NTFY_SHORT"))
         self.assertIn("WEBHOOK_URL", steam_monitor.SECRET_KEYS)
         self.assertIn("NTFY_ACCESS_TOKEN", steam_monitor.SECRET_KEYS)
+        self.assertNotIn("WEBHOOK_PROVIDER", steam_monitor.SECRET_KEYS)
 
     # Verifies private webhook destinations require complete credential-free HTTPS URLs
     def test_webhook_url_validation(self):
@@ -75,6 +76,14 @@ class WebhookNotificationTests(unittest.TestCase):
         self.assertFalse(steam_monitor.validate_webhook_url("http://ntfy.sh/private-topic"))
         self.assertFalse(steam_monitor.validate_webhook_url("https://user:pass@example.test/topic"))
         self.assertFalse(steam_monitor.validate_webhook_url("https://example.test"))
+
+    # Verifies distinctive Discord and public ntfy URLs select the proper payload provider
+    def test_webhook_provider_detection(self):
+        self.assertEqual(steam_monitor.detect_webhook_provider("https://discord.com/api/webhooks/123/private-token"), "discord")
+        self.assertEqual(steam_monitor.detect_webhook_provider("https://canary.discord.com/api/v10/webhooks/123/private-token"), "discord")
+        self.assertEqual(steam_monitor.detect_webhook_provider("https://ntfy.sh/private-topic"), "ntfy")
+        self.assertEqual(steam_monitor.detect_webhook_provider("https://ntfy.example.test/private-topic"), "")
+        self.assertEqual(steam_monitor.detect_webhook_provider("https://example.test/custom-hook"), "")
 
     # Verifies Discord delivery uses the configured template and disables mentions
     def test_discord_payload_delivery(self):
@@ -180,6 +189,9 @@ class WebhookNotificationTests(unittest.TestCase):
         self.assertTrue(steam_monitor.steam_image_url_is_allowed("https://avatars.akamai.steamstatic.com/avatar_full.jpg"))
         self.assertFalse(steam_monitor.steam_image_url_is_allowed("https://example.test/header.jpg"))
         self.assertFalse(steam_monitor.steam_image_url_is_allowed("http://cdn.akamai.steamstatic.com/steam/apps/10/header.jpg"))
+        self.assertEqual(steam_monitor.normalize_steam_image_url("avatars.steamstatic.com/avatar_full.jpg"), "https://avatars.steamstatic.com/avatar_full.jpg")
+        self.assertEqual(steam_monitor.normalize_steam_image_url("//avatars.steamstatic.com/avatar_full.jpg"), "https://avatars.steamstatic.com/avatar_full.jpg")
+        self.assertEqual(steam_monitor.normalize_steam_image_url("https://example.test/header.jpg"), "")
 
     # Verifies one-run CLI overrides enable only the selected webhook choices
     def test_runtime_overrides(self):
@@ -206,6 +218,43 @@ class WebhookNotificationTests(unittest.TestCase):
         self.assertTrue(steam_monitor.WEBHOOK_ACTIVE_NOTIFICATION)
         self.assertFalse(steam_monitor.WEBHOOK_ERROR_NOTIFICATION)
         parser.error.assert_not_called()
+
+    # Verifies a known URL corrects a mismatched configured provider unless CLI explicitly overrides it
+    def test_runtime_provider_detection_corrects_config_mismatch(self):
+        args = argparse.Namespace(
+            webhook_provider=None,
+            webhook_url="https://ntfy.sh/private-topic",
+            webhook_enabled=None,
+            webhook_active=None,
+            webhook_inactive=None,
+            webhook_status=None,
+            webhook_game_changes=None,
+            webhook_level_xp=None,
+            webhook_friends=None,
+            webhook_games=None,
+            webhook_name_change=None,
+            webhook_errors=None,
+        )
+        parser = Mock()
+        with patch("builtins.print") as output:
+            steam_monitor.apply_webhook_cli_overrides(args, parser)
+
+        self.assertEqual(steam_monitor.WEBHOOK_PROVIDER, "ntfy")
+        self.assertTrue(any("Using ntfy" in str(call.args) for call in output.call_args_list))
+        parser.error.assert_not_called()
+        with patch.object(steam_monitor.WEBHOOK_SESSION, "post", return_value=FakeResponse(200)) as post:
+            self.assertEqual(steam_monitor.send_webhook("Steam title", "Steam body", "status", force=True), 0)
+        self.assertEqual(post.call_args.kwargs["data"], b"Steam body")
+        self.assertNotIn("json", post.call_args.kwargs)
+
+    # Verifies scheme-less Steam avatars become valid Discord thumbnail URLs
+    def test_discord_payload_normalizes_scheme_less_steam_avatar(self):
+        response = FakeResponse(204)
+        with patch.object(steam_monitor.WEBHOOK_SESSION, "post", return_value=response) as post:
+            result = steam_monitor.send_webhook("Status title", "Status body", "status", image_url="avatars.steamstatic.com/avatar_full.jpg")
+
+        self.assertEqual(result, 0)
+        self.assertEqual(post.call_args.kwargs["json"]["embeds"][0]["thumbnail"]["url"], "https://avatars.steamstatic.com/avatar_full.jpg")
 
     # Verifies test webhook delivery does not require a Steam target or API key
     def test_send_test_webhook_cli_is_steam_independent(self):
