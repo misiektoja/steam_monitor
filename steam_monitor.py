@@ -1994,6 +1994,7 @@ def decrease_active_check_signal_handler(sig, frame):
 
 # Signal handler for SIGHUP allowing to reload secrets from .env
 def reload_secrets_signal_handler(sig, frame):
+    global WEBHOOK_PROVIDER
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
 
@@ -2016,13 +2017,21 @@ def reload_secrets_signal_handler(sig, frame):
             env_path = None
             print("* python-dotenv not installed, skipping env-var reload")
 
+    webhook_url_changed = False
     if env_path:
         for secret in SECRET_KEYS:
             old_val = globals().get(secret)
             val = os.getenv(secret)
             if val is not None and val != old_val:
                 globals()[secret] = val
+                if secret == "WEBHOOK_URL":
+                    webhook_url_changed = True
                 print(f"* Reloaded {secret} from {env_path}")
+    if webhook_url_changed:
+        detected_provider = detect_webhook_provider(WEBHOOK_URL)
+        if detected_provider and detected_provider != normalized_webhook_provider():
+            WEBHOOK_PROVIDER = detected_provider
+            print(f"* Updated webhook provider to {detected_provider}")
 
     print_cur_ts("Timestamp:\t\t\t")
 
