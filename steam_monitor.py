@@ -82,6 +82,7 @@ ERROR_NOTIFICATION = True
 WEBHOOK_ENABLED = False
 
 # Service used to deliver webhook notifications: "discord" or "ntfy"
+# Known Discord and ntfy.sh URLs correct a mismatched configured value at runtime
 # Can also be set via the --webhook-provider flag
 WEBHOOK_PROVIDER = "discord"
 
@@ -1231,6 +1232,22 @@ def validate_webhook_url(url=None):
     return parsed.scheme.casefold() == "https" and bool(parsed.hostname) and not parsed.username and not parsed.password and bool(parsed.path.strip("/"))
 
 
+# Detects Discord and public ntfy webhook providers from distinctive URL shapes
+def detect_webhook_provider(url):
+    if not validate_webhook_url(url):
+        return ""
+    try:
+        parsed = urlsplit(str(url).strip())
+    except ValueError:
+        return ""
+    hostname = parsed.hostname.casefold() if parsed.hostname else ""
+    if hostname == "ntfy.sh":
+        return "ntfy"
+    discord_host = hostname in ("discord.com", "discordapp.com") or hostname.endswith(".discord.com") or hostname.endswith(".discordapp.com")
+    discord_path = re.match(r"^/api(?:/v[0-9]+)?/webhooks/[0-9]+/[^/]+/?$", parsed.path) is not None
+    return "discord" if discord_host and discord_path else ""
+
+
 # Privately validates and atomically stores one webhook URL
 def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpass_func=None):
     destination = resolve_secret_env_path(env_file)
@@ -1514,6 +1531,18 @@ def steam_image_url_is_allowed(image_url):
     return parsed_url.scheme.casefold() == "https" and any(hostname == suffix or hostname.endswith(f".{suffix}") for suffix in NTFY_IMAGE_ALLOWED_HOST_SUFFIXES)
 
 
+# Normalizes a Steam image hostname or protocol-relative URL to an allowed HTTPS URL
+def normalize_steam_image_url(image_url):
+    if not isinstance(image_url, str) or not image_url.strip():
+        return ""
+    normalized = image_url.strip()
+    if normalized.startswith("//"):
+        normalized = "https:" + normalized
+    elif "://" not in normalized:
+        normalized = "https://" + normalized.lstrip("/")
+    return normalized if steam_image_url_is_allowed(normalized) else ""
+
+
 # Returns the standard Steam game header image URL for one app ID
 def steam_game_image_url(appid):
     return f"https://cdn.akamai.steamstatic.com/steam/apps/{int(appid)}/header.jpg" if appid else ""
@@ -1596,16 +1625,17 @@ def send_webhook(title, description, notification_type="status", force=False, sl
     if header_error is not None:
         print_webhook_error(header_error)
         return 1
+    normalized_image_url = normalize_steam_image_url(image_url)
     try:
-        webhook_values = build_webhook_values(title, description, notification_type, image_url)
+        webhook_values = build_webhook_values(title, description, notification_type, normalized_image_url)
         request_headers = build_webhook_headers(provider, webhook_values)
-        discord_payload = build_webhook_payload(title, description, notification_type, image_url, webhook_values) if provider == "discord" else None
+        discord_payload = build_webhook_payload(title, description, notification_type, normalized_image_url, webhook_values) if provider == "discord" else None
     except ValueError as exc:
         print_webhook_error(str(exc))
         return 1
     sleep_func = time.sleep if sleeper is None else sleeper
     ntfy_title, ntfy_message = build_ntfy_webhook_message(str(webhook_values["title"]), str(webhook_values["description"])) if provider == "ntfy" else ("", "")
-    ntfy_image = build_ntfy_image(image_url) if provider == "ntfy" and NTFY_IMAGES and image_url else None
+    ntfy_image = build_ntfy_image(normalized_image_url) if provider == "ntfy" and NTFY_IMAGES and normalized_image_url else None
     use_ntfy_image = ntfy_image is not None
     ntfy_params = {"title": ntfy_title}  # type: Dict[str, Any]
     if provider == "ntfy" and ntfy_priority:
@@ -3201,6 +3231,12 @@ def apply_webhook_cli_overrides(args, parser):
         WEBHOOK_ERROR_NOTIFICATION = args.webhook_errors
         if args.webhook_errors:
             WEBHOOK_ENABLED = True
+    if args.webhook_provider is None:
+        detected_provider = detect_webhook_provider(WEBHOOK_URL)
+        configured_provider = normalized_webhook_provider()
+        if detected_provider and detected_provider != configured_provider:
+            WEBHOOK_PROVIDER = detected_provider
+            print(f"* Warning: Configured webhook provider did not match the URL. Using {detected_provider}.")
 
 
 # Rejects unrelated options when a hidden secret-entry action is selected
