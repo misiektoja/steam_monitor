@@ -67,11 +67,15 @@ class WebhookNotificationTests(unittest.TestCase):
         for name, value in self.originals.items():
             setattr(steam_monitor, name, value)
 
-    # Verifies startup email and webhook summaries use compact single-line category rollups
+    # Verifies startup summaries use short labels and unstarred bounded continuation lines
     def test_startup_notification_summaries_use_compact_rollups(self):
-        expected_email = "* Notifications (email):        On (online/offline, game changes, level/XP changes, games library, errors)"
-        expected_webhook = "* Notifications (webhook):      On (all status changes, errors)"
+        for setting in ("ACTIVE_INACTIVE_NOTIFICATION", "STATUS_NOTIFICATION", "GAME_CHANGE_NOTIFICATION", "STEAM_LEVEL_XP_NOTIFICATION", "FRIENDS_NOTIFICATION", "GAMES_LIBRARY_NOTIFICATION", "NAME_CHANGE_NOTIFICATION", "ERROR_NOTIFICATION", "WEBHOOK_ENABLED", "WEBHOOK_ACTIVE_NOTIFICATION", "WEBHOOK_INACTIVE_NOTIFICATION", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_GAME_CHANGE_NOTIFICATION", "WEBHOOK_LEVEL_XP_NOTIFICATION", "WEBHOOK_FRIENDS_NOTIFICATION", "WEBHOOK_GAMES_NOTIFICATION", "WEBHOOK_NAME_CHANGE_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION"):
+            setattr(steam_monitor, setting, True)
+        expected_email = "* Notifications (email):        On (online/offline, status, game, level/XP, friends, games, name,\n                                errors)"
+        expected_webhook = "* Notifications (webhook):      On (active, inactive, status, game, level/XP, friends, games, name,\n                                errors)"
         self.assertEqual(steam_monitor._startup_notification_summary_lines(), [expected_email, expected_webhook])
+        self.assertTrue(all(len(line) <= 100 for summary in (expected_email, expected_webhook) for line in summary.splitlines()))
+        self.assertNotIn("\n*", expected_email + expected_webhook)
 
     # Verifies webhook categories remain off while the master switch is disabled
     def test_startup_webhook_summary_respects_master_switch(self):
