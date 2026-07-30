@@ -577,6 +577,7 @@ _ONLINE_WORD_RE = re.compile(r"(?i)( online| appeared |\bYes\b)")
 _OFFLINE_WORD_RE = re.compile(r"(?i)( offline| away| snooze|\bNo\b)")
 _BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b")
 _BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b")
+_NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \((?:email|webhook)\):\s+)(On|Off)(.*)$")
 # Game names in quotes, but exclude file paths (containing underscores followed by more text, dots, or slashes)
 _GAME_NAME_QUOTED_RE = re.compile(r"(['\"])((?![^'\"]*[._/])[^'\"]+)\1")
 
@@ -671,8 +672,16 @@ def colorize_status(status_text):
 
 
 # Applies colour rules to a single output line
-def _colorize_line(line):
+def _colorize_line(line, notification_summary=False):
     original = line
+
+    if notification_summary:
+        match = _NOTIFICATION_SUMMARY_STATE_RE.match(line)
+        if not match:
+            return line
+        prefix, state, suffix = match.groups()
+        state_style = "boolean_true" if state == "On" else "boolean_false"
+        return f"{prefix}{colorize(state_style, state)}{suffix}"
 
     # Timestamp lines
     m = _TIMESTAMP_LINE_RE.match(line.strip("\n"))
@@ -774,13 +783,18 @@ def apply_color_to_text(text):
         return text
 
     parts = []
+    in_notification_summary = False
     for chunk in text.splitlines(keepends=True):
         if chunk.endswith(("\n", "\r")):
             stripped = chunk.rstrip("\r\n")
             newline = chunk[len(stripped):]
-            parts.append(_colorize_line(stripped) + newline)
         else:
-            parts.append(_colorize_line(chunk))
+            stripped = chunk
+            newline = ""
+        starts_notification_summary = _NOTIFICATION_SUMMARY_STATE_RE.match(stripped) is not None
+        continues_notification_summary = in_notification_summary and stripped.startswith(" " * 32)
+        in_notification_summary = starts_notification_summary or continues_notification_summary
+        parts.append(_colorize_line(stripped, notification_summary=in_notification_summary) + newline)
     return "".join(parts)
 
 
