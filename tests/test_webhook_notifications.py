@@ -265,11 +265,14 @@ class WebhookNotificationTests(unittest.TestCase):
         self.assertEqual(exit_info.exception.code, 0)
         delivery.assert_called_once_with("Steam Monitor test", "Your webhook alerts are set up correctly.", "status", force=True)
 
-    # Verifies UTF-8 ntfy truncation never returns a partial character
-    def test_ntfy_message_utf8_limit(self):
-        title, message = steam_monitor.build_ntfy_webhook_message("Title", ("a" * (steam_monitor.NTFY_MESSAGE_LIMIT_BYTES - 1)) + "\U0001f3ae")
+    # Verifies long ntfy messages stay below the server attachment boundary with a visible truncation marker
+    def test_ntfy_message_stays_below_attachment_boundary(self):
+        title, message = steam_monitor.build_ntfy_webhook_message("Title", ("a" * steam_monitor.NTFY_MESSAGE_LIMIT_BYTES) + "\U0001f3ae")
         self.assertEqual(title, "Title")
-        self.assertEqual(message, "a" * (steam_monitor.NTFY_MESSAGE_LIMIT_BYTES - 1))
+        self.assertTrue(message.endswith(steam_monitor.NTFY_TRUNCATION_SUFFIX))
+        self.assertLessEqual(len(message.encode("utf-8")), steam_monitor.NTFY_MESSAGE_LIMIT_BYTES)
+        self.assertLess(len(message.encode("utf-8")), 4096)
+        self.assertNotIn("\ufffd", message)
 
 
 if __name__ == "__main__":
