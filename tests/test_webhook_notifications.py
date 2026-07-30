@@ -120,6 +120,16 @@ class WebhookNotificationTests(unittest.TestCase):
         self.assertEqual(steam_monitor.detect_webhook_provider("https://ntfy.example.test/private-topic"), "")
         self.assertEqual(steam_monitor.detect_webhook_provider("https://example.test/custom-hook"), "")
 
+    # Verifies SIGHUP redetects ntfy when the private webhook destination changes
+    def test_sighup_reload_updates_webhook_provider(self):
+        replacements = {"WEBHOOK_URL": "https://ntfy.sh/new-private-topic"}
+        steam_monitor.DOTENV_FILE = "test.env"
+        steam_monitor.WEBHOOK_URL = "https://discord.com/api/webhooks/123/old-token"
+        steam_monitor.WEBHOOK_PROVIDER = "discord"
+        with patch("dotenv.load_dotenv"), patch.object(steam_monitor.os, "getenv", side_effect=replacements.get):
+            steam_monitor.reload_secrets_signal_handler(steam_monitor.signal.SIGHUP, None)
+        self.assertEqual(steam_monitor.WEBHOOK_PROVIDER, "ntfy")
+
     # Verifies Discord delivery uses the configured template and disables mentions
     def test_discord_payload_delivery(self):
         response = FakeResponse(204)
