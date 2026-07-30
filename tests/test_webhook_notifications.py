@@ -23,6 +23,14 @@ class WebhookNotificationTests(unittest.TestCase):
     # Saves webhook globals and applies a valid baseline before each test
     def setUp(self):
         self.settings = {
+            "ACTIVE_INACTIVE_NOTIFICATION": True,
+            "STATUS_NOTIFICATION": False,
+            "GAME_CHANGE_NOTIFICATION": True,
+            "STEAM_LEVEL_XP_NOTIFICATION": True,
+            "FRIENDS_NOTIFICATION": False,
+            "GAMES_LIBRARY_NOTIFICATION": True,
+            "NAME_CHANGE_NOTIFICATION": False,
+            "ERROR_NOTIFICATION": True,
             "DOTENV_FILE": "",
             "STEAM_API_KEY": "",
             "stdout_bck": None,
@@ -58,6 +66,17 @@ class WebhookNotificationTests(unittest.TestCase):
     def tearDown(self):
         for name, value in self.originals.items():
             setattr(steam_monitor, name, value)
+
+    # Verifies startup email and webhook summaries use compact single-line category rollups
+    def test_startup_notification_summaries_use_compact_rollups(self):
+        expected_email = "* Notifications (email):        On (online/offline, game changes, level/XP changes, games library, errors)"
+        expected_webhook = "* Notifications (webhook):      On (all status changes, errors)"
+        self.assertEqual(steam_monitor._startup_notification_summary_lines(), [expected_email, expected_webhook])
+
+    # Verifies webhook categories remain off while the master switch is disabled
+    def test_startup_webhook_summary_respects_master_switch(self):
+        steam_monitor.WEBHOOK_ENABLED = False
+        self.assertEqual(steam_monitor._startup_notification_summary_lines()[1], "* Notifications (webhook):      Off")
 
     # Verifies the generated config exposes supported webhook options without compact ntfy mode
     def test_config_block_contains_webhook_options(self):
