@@ -263,6 +263,8 @@ Advanced integrations can set `WEBHOOK_USERNAME`, `WEBHOOK_AVATAR_URL`, `WEBHOOK
 
 `NTFY_IMAGES` enables bounded Steam avatar or game artwork attachments. If image preparation or upload fails, delivery falls back to text.
 
+Long ntfy text messages are visibly truncated below ntfy's 4 KB boundary so they remain notifications instead of temporary attachments. Intentional image attachments through `NTFY_IMAGES` are unchanged.
+
 <a id="storing-secrets"></a>
 ### Storing Secrets
 
