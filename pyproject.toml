@@ -16,6 +16,9 @@ dependencies = [
   "requests>=2.0",
   "python-dateutil>=2.8",
   "python-dotenv>=0.19",
+  "Pillow>=8.0,<9.0; python_version < '3.7'",
+  "Pillow>=9.0,<10.0; python_version == '3.7'",
+  "Pillow>=10.0; python_version >= '3.8'",
   "colorama>=0.4.6; platform_system == 'Windows'",
 ]
 classifiers = [
