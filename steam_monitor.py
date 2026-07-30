@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.8.1
+v1.9
 
 Tool implementing real-time tracking of Steam players activities:
 https://github.com/misiektoja/steam_monitor/
@@ -12,10 +12,11 @@ steam[client]
 requests
 python-dateutil
 python-dotenv (optional)
+Pillow (for ntfy images)
 colorama (optional, for better colours on Windows terminals)
 """
 
-VERSION = "1.8.1"
+VERSION = "1.9"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -26,9 +27,10 @@ CONFIG_BLOCK = """
 # http://steamcommunity.com/dev/apikey
 #
 # Provide the STEAM_API_KEY secret using one of the following methods:
-#   - Pass it at runtime with -u / --steam-api-key
+#   - Validate and save it through a hidden prompt with --set-steam-api-key
 #   - Set it as an environment variable (e.g. export STEAM_API_KEY=...)
 #   - Add it to ".env" file (STEAM_API_KEY=...) for persistent use
+#   - Pass it at runtime with -u / --steam-api-key (may remain in shell history)
 # Fallback:
 #   - Hard-code it in the code or config file
 STEAM_API_KEY = "your_steam_web_api_key"
@@ -69,6 +71,118 @@ NAME_CHANGE_NOTIFICATION = False
 # Whether to send an email on errors
 # Can also be disabled via the -e flag
 ERROR_NOTIFICATION = True
+
+# ----------------------------
+# Webhook Notifications
+# ----------------------------
+
+# Master switch for webhook notifications through Discord or ntfy
+# Event settings below select which notifications are sent
+# Can also be enabled via the --webhook flag
+WEBHOOK_ENABLED = False
+
+# Service used to deliver webhook notifications: "discord" or "ntfy"
+# Can also be set via the --webhook-provider flag
+WEBHOOK_PROVIDER = "discord"
+
+# Private destination used to send webhook notifications
+# Discord: Edit Channel -> Integrations -> Webhooks -> New Webhook -> Copy Webhook URL
+# ntfy: complete topic URL such as https://ntfy.sh/your-private-topic
+# Prefer --set-webhook-url, an environment variable or a dotenv file instead of storing this private URL here
+# The --webhook-url flag is available for one-run overrides but may leave the private URL in shell history
+WEBHOOK_URL = "your_webhook_url"
+
+# Discord display name (leave empty to use the webhook default)
+WEBHOOK_USERNAME = "Steam Monitor"
+
+# Discord avatar URL (leave empty to use the webhook default)
+WEBHOOK_AVATAR_URL = ""
+
+# Whether to send a webhook notification when the user becomes active
+# Can also be enabled via the --webhook-active flag
+WEBHOOK_ACTIVE_NOTIFICATION = False
+
+# Whether to send a webhook notification when the user goes offline
+# Can also be enabled via the --webhook-inactive flag
+WEBHOOK_INACTIVE_NOTIFICATION = False
+
+# Whether to send a webhook notification on any status change
+# Can also be enabled via the --webhook-status flag
+WEBHOOK_STATUS_NOTIFICATION = False
+
+# Whether to send a webhook notification on game start, change or stop
+# Can also be enabled via the --webhook-game-changes flag
+WEBHOOK_GAME_CHANGE_NOTIFICATION = False
+
+# Whether to send a webhook notification when the user's Steam level or total XP changes
+# Requires STEAM_LEVEL_XP_CHECK; can also be enabled via the --webhook-level-xp flag
+WEBHOOK_LEVEL_XP_NOTIFICATION = False
+
+# Whether to send a webhook notification when the user's friends list changes
+# Requires FRIENDS_CHECK; can also be enabled via the --webhook-friends flag
+WEBHOOK_FRIENDS_NOTIFICATION = False
+
+# Whether to send a webhook notification when the user's games library changes
+# Requires GAMES_LIBRARY_CHECK; can also be enabled via the --webhook-games flag
+WEBHOOK_GAMES_NOTIFICATION = False
+
+# Whether to send a webhook notification when the user's display name changes
+# Can also be enabled via the --webhook-name-change flag
+WEBHOOK_NAME_CHANGE_NOTIFICATION = False
+
+# Whether to send a webhook notification on monitoring errors
+# Can also be enabled via --webhook-errors or disabled via --no-webhook-error-notify
+WEBHOOK_ERROR_NOTIFICATION = True
+
+# Optional request headers for advanced webhook integrations
+# Values support the same placeholders as WEBHOOK_TEMPLATE
+WEBHOOK_HEADERS = {}
+
+# ----------------------------
+# Advanced Webhook Settings
+# ----------------------------
+
+# Discord-format webhook request payload template
+# Supported placeholders include title, description, version, image_url, fields, fields_str, color, timestamp,
+# username and avatar_url
+WEBHOOK_TEMPLATE = {
+    "username": "{username}",
+    "avatar_url": "{avatar_url}",
+    "allowed_mentions": {
+        "parse": [],
+    },
+    "embeds": [{
+        "title": "{title}",
+        "description": "{description}",
+        "color": "{color}",
+        "footer": {
+            "text": "Steam Monitor v{version}",
+        },
+        "timestamp": "{timestamp}",
+        "thumbnail": {
+            "url": "{image_url}",
+        },
+    }],
+}
+
+# Optional transformations applied to WEBHOOK_TEMPLATE and WEBHOOK_HEADERS values
+# Tuple format: (field_to_target, method_name, *optional_arguments)
+#
+# Examples:
+#   [
+#       ("title", "upper"),
+#       ("description", "replace", "**", ""),
+#       ("description", "strip"),
+#   ]
+WEBHOOK_TRANSFORMS = []
+
+# Optional ntfy access token for Bearer authentication
+# Prefer an environment variable or dotenv file instead of storing this token here
+NTFY_ACCESS_TOKEN = ""
+
+# Whether to attach a Steam avatar or game image to supported ntfy alerts
+# Image preparation or delivery failures fall back to text
+NTFY_IMAGES = True
 
 # Whether to periodically check the user's Steam level and total XP for changes
 # (disabled by default to avoid extra API usage)
@@ -225,6 +339,25 @@ GAME_CHANGE_NOTIFICATION = False
 STATUS_NOTIFICATION = False
 NAME_CHANGE_NOTIFICATION = False
 ERROR_NOTIFICATION = False
+WEBHOOK_ENABLED = False
+WEBHOOK_PROVIDER = ""
+WEBHOOK_URL = ""
+WEBHOOK_USERNAME = ""
+WEBHOOK_AVATAR_URL = ""
+WEBHOOK_ACTIVE_NOTIFICATION = False
+WEBHOOK_INACTIVE_NOTIFICATION = False
+WEBHOOK_STATUS_NOTIFICATION = False
+WEBHOOK_GAME_CHANGE_NOTIFICATION = False
+WEBHOOK_LEVEL_XP_NOTIFICATION = False
+WEBHOOK_FRIENDS_NOTIFICATION = False
+WEBHOOK_GAMES_NOTIFICATION = False
+WEBHOOK_NAME_CHANGE_NOTIFICATION = False
+WEBHOOK_ERROR_NOTIFICATION = False
+WEBHOOK_HEADERS = {}
+WEBHOOK_TEMPLATE = {}
+WEBHOOK_TRANSFORMS = []
+NTFY_ACCESS_TOKEN = ""
+NTFY_IMAGES = False
 STEAM_LEVEL_XP_CHECK = False
 STEAM_LEVEL_XP_NOTIFICATION = False
 FRIENDS_CHECK = False
@@ -257,7 +390,7 @@ exec(CONFIG_BLOCK, globals())
 DEFAULT_CONFIG_FILENAME = "steam_monitor.conf"
 
 # List of secret keys to load from env/config
-SECRET_KEYS = ("STEAM_API_KEY", "SMTP_PASSWORD")
+SECRET_KEYS = ("STEAM_API_KEY", "SMTP_PASSWORD", "WEBHOOK_URL", "NTFY_ACCESS_TOKEN")
 
 LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / STEAM_CHECK_INTERVAL
 
@@ -297,11 +430,16 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import argparse
 import csv
+import getpass
+from typing import Any, Dict
 import platform
 from platform import system
 import re
 import ipaddress
-from urllib.parse import unquote, urlparse
+import tempfile
+from io import BytesIO
+from email.utils import parsedate_to_datetime
+from urllib.parse import unquote, urlparse, urlsplit
 
 try:
     from colorama import init as colorama_init  # type: ignore[import]
@@ -315,6 +453,30 @@ except ModuleNotFoundError:
     raise SystemExit("Error: Couldn't find the Steam library !\n\nTo install it, run:\n    pip3 install \"steam[client]\"\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://github.com/ValvePython/steam/")
 import shutil
 from pathlib import Path
+
+WEBHOOK_SESSION = req.Session()
+
+# Keep webhook delivery independent from Steam API retries and long server timers
+WEBHOOK_MAX_ATTEMPTS = 2
+WEBHOOK_MAX_RETRY_AFTER_SECONDS = 5.0
+WEBHOOK_FALLBACK_RETRY_SECONDS = 1.0
+WEBHOOK_TIMEOUT_SECONDS = 10
+WEBHOOK_EMBED_TITLE_LIMIT = 256
+WEBHOOK_EMBED_DESCRIPTION_LIMIT = 4096
+NTFY_MESSAGE_LIMIT_BYTES = 4096
+NTFY_IMAGE_DOWNLOAD_LIMIT_BYTES = 5 * 1024 * 1024
+NTFY_IMAGE_DOWNLOAD_CHUNK_BYTES = 64 * 1024
+NTFY_IMAGE_PIXEL_LIMIT = 25_000_000
+NTFY_IMAGE_FILENAME = "steam-image.jpg"
+NTFY_IMAGE_ALLOWED_HOST_SUFFIXES = ("steamstatic.com", "steamusercontent.com", "steamcdn-a.akamaihd.net", "steamuserimages-a.akamaihd.net")
+
+PILImage = None  # type: Any
+try:
+    from PIL import Image as PILImageModule
+    PILImage = PILImageModule
+except ImportError:
+    pass
+NTFY_IMAGES_AVAILABLE = PILImage is not None
 
 
 # ANSI escape sequence helper used for colouring and stripping colour codes
@@ -923,6 +1085,586 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
     return 0
 
 
+# Raised when a private setting cannot be checked or saved safely
+class SecretConfigurationError(Exception):
+    pass
+
+
+# Quotes one secret value for lossless parsing by python-dotenv
+def _format_dotenv_value(value):
+    if not isinstance(value, str):
+        raise TypeError("Dotenv secret values must be strings")
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\r", "\\r").replace("\n", "\\n")
+    return f'"{escaped}"'
+
+
+# Resolves a private dotenv destination without searching parent directories
+def resolve_secret_env_path(env_file=None, cwd=None):
+    if env_file is not None and str(env_file).casefold() == "none":
+        raise SecretConfigurationError("Private secret entry requires a dotenv destination. Replace '--env-file none' with a writable path.")
+    base_directory = Path.cwd() if cwd is None else Path(cwd)
+    destination = base_directory / ".env" if env_file is None else Path(env_file).expanduser()
+    return destination.resolve()
+
+
+# Checks whether a dotenv file already contains one named assignment
+def _dotenv_contains_key(destination, key):
+    destination_path = Path(destination)
+    if not destination_path.exists():
+        return False
+    try:
+        lines = destination_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        raise SecretConfigurationError(f"Could not read dotenv destination '{destination_path}'. Check that it is a readable UTF-8 file.")
+    assignment_pattern = re.compile(rf"^\s*(?:export\s+)?{re.escape(key)}\s*=")
+    return any(assignment_pattern.match(line) for line in lines)
+
+
+# Updates supported secrets in a dotenv file through an atomic replacement
+def update_dotenv_file(destination, updates):
+    if not hasattr(updates, "items"):
+        raise TypeError("Dotenv updates must be a mapping")
+    update_items = list(updates.items())
+    for key, value in update_items:
+        if not isinstance(key, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]*", key) or key not in SECRET_KEYS:
+            raise ValueError(f"Unsupported dotenv key: {key!r}")
+        if not isinstance(value, str):
+            raise TypeError(f"Dotenv value for {key} must be a string")
+
+    destination_path = Path(destination).expanduser()
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    existing_lines = destination_path.read_text(encoding="utf-8").splitlines() if destination_path.exists() else []
+    update_keys = {key for key, _ in update_items}
+    values_by_key = dict(update_items)
+    seen_keys = set()
+    output_lines = []
+    assignment_pattern = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
+    for line in existing_lines:
+        match = assignment_pattern.match(line)
+        key = match.group(1) if match else None
+        if key not in update_keys:
+            output_lines.append(line)
+            continue
+        if key in seen_keys:
+            continue
+        output_lines.append(f"{key}={_format_dotenv_value(values_by_key[key])}")
+        seen_keys.add(key)
+    for key, value in update_items:
+        if key not in seen_keys:
+            output_lines.append(f"{key}={_format_dotenv_value(value)}")
+            seen_keys.add(key)
+
+    content = "\n".join(output_lines)
+    if output_lines:
+        content += "\n"
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n", prefix=f".{destination_path.name}.", suffix=".tmp", dir=str(destination_path.parent), delete=False) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            temporary_file.write(content)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        if os.name == "posix":
+            os.chmod(str(temporary_path), 0o600)
+        os.replace(str(temporary_path), str(destination_path))
+        temporary_path = None
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
+    return {"path": str(destination_path), "updated_keys": tuple(key for key, _ in update_items)}
+
+
+# Validates a Steam Web API key without exposing it in output
+def validate_steam_api_key(api_key, timeout=10):
+    if not isinstance(api_key, str) or not re.fullmatch(r"[A-Fa-f0-9]{32}", api_key.strip()):
+        return False
+    try:
+        response = req.get("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/", params={"key": api_key.strip(), "steamids": "76561197960287930"}, timeout=timeout)
+        if response.status_code != 200:
+            return False
+        payload = response.json()
+        return isinstance(payload, dict) and isinstance(payload.get("response"), dict) and isinstance(payload["response"].get("players"), list)
+    except (ValueError, req.RequestException):
+        return False
+
+
+# Privately validates and atomically stores one Steam Web API key
+def run_set_steam_api_key(env_file=None, interactive=None, input_func=None, getpass_func=None, validator=None):
+    destination = resolve_secret_env_path(env_file)
+    terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
+    if not terminal_is_interactive:
+        raise SecretConfigurationError("--set-steam-api-key requires an interactive terminal. Run it in a terminal window so the API key stays hidden while you paste it.")
+    prompt = input if input_func is None else input_func
+    if _dotenv_contains_key(destination, "STEAM_API_KEY"):
+        try:
+            confirmed = prompt(f"Replace the saved Steam Web API key in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
+        except (EOFError, KeyboardInterrupt):
+            confirmed = False
+        if not confirmed:
+            raise SecretConfigurationError("Steam Web API key setup was cancelled. The private settings file was not changed.")
+    hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
+    try:
+        api_key = hidden_prompt("Paste the Steam Web API key (input hidden): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        raise SecretConfigurationError("Steam Web API key setup was cancelled. The private settings file was not changed.")
+    validate = validate_steam_api_key if validator is None else validator
+    if not validate(api_key):
+        raise SecretConfigurationError("The entered Steam Web API key is invalid or could not be verified. The private settings file was not changed.")
+    try:
+        update_dotenv_file(destination, {"STEAM_API_KEY": api_key})
+    except Exception:
+        raise SecretConfigurationError(f"Could not save the Steam Web API key in '{destination}'. Check file permissions or choose another path with --env-file.")
+    print("* Steam Web API key is valid")
+    print(f"* Updated private settings file: {destination}")
+    return str(destination)
+
+
+# Returns whether a webhook URL is a complete private HTTPS link
+def validate_webhook_url(url=None):
+    selected_url = WEBHOOK_URL if url is None else url
+    if not isinstance(selected_url, str) or not selected_url.strip():
+        return False
+    try:
+        parsed = urlsplit(selected_url.strip())
+    except ValueError:
+        return False
+    return parsed.scheme.casefold() == "https" and bool(parsed.hostname) and not parsed.username and not parsed.password and bool(parsed.path.strip("/"))
+
+
+# Privately validates and atomically stores one webhook URL
+def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpass_func=None):
+    destination = resolve_secret_env_path(env_file)
+    terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
+    if not terminal_is_interactive:
+        raise SecretConfigurationError("--set-webhook-url requires an interactive terminal. Run it in a terminal window so the webhook URL stays hidden while you paste it.")
+    prompt = input if input_func is None else input_func
+    if _dotenv_contains_key(destination, "WEBHOOK_URL"):
+        try:
+            confirmed = prompt(f"Replace the saved webhook URL in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
+        except (EOFError, KeyboardInterrupt):
+            confirmed = False
+        if not confirmed:
+            raise SecretConfigurationError("Webhook setup was cancelled. The private settings file was not changed.")
+    hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
+    try:
+        webhook_url = hidden_prompt("Paste the Discord or ntfy webhook URL (input hidden): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        raise SecretConfigurationError("Webhook setup was cancelled. The private settings file was not changed.")
+    if not validate_webhook_url(webhook_url):
+        raise SecretConfigurationError("That does not look like a complete HTTPS webhook URL. The private settings file was not changed.")
+    try:
+        update_dotenv_file(destination, {"WEBHOOK_URL": webhook_url})
+    except Exception:
+        raise SecretConfigurationError(f"Could not save the webhook URL in '{destination}'. Check file permissions or choose another path with --env-file.")
+    print("* Webhook URL looks valid")
+    print(f"* Updated private settings file: {destination}")
+    print(f"* Send a test webhook with: steam_monitor --send-test-webhook --env-file {destination}")
+    return str(destination)
+
+
+# Returns the normalized configured webhook provider or an empty string when unsupported
+def normalized_webhook_provider(provider=None):
+    selected_provider = WEBHOOK_PROVIDER if provider is None else provider
+    if not isinstance(selected_provider, str):
+        return ""
+    normalized = selected_provider.strip().casefold()
+    return normalized if normalized in ("discord", "ntfy") else ""
+
+
+# Redacts configured secrets and API key query values from one error-shaped value
+def sanitize_error_text(value):
+    text = str(value)
+    for secret_name in SECRET_KEYS:
+        secret_value = globals().get(secret_name)
+        if isinstance(secret_value, str) and secret_value and not secret_value.startswith("your_"):
+            text = text.replace(secret_value, "<redacted>")
+    text = re.sub(r"(?i)([?&]key=)[^&\s]+", r"\1<redacted>", text)
+    text = re.sub(r"(?im)(\b(?:STEAM_API_KEY|SMTP_PASSWORD|WEBHOOK_URL|NTFY_ACCESS_TOKEN)\b\s*=\s*)[^\s]+", r"\1<redacted>", text)
+    return text
+
+
+# Returns whether one configured webhook alert is enabled independently of email settings
+def webhook_event_enabled(notification_type):
+    settings = {
+        "active": WEBHOOK_ACTIVE_NOTIFICATION,
+        "inactive": WEBHOOK_INACTIVE_NOTIFICATION,
+        "status": WEBHOOK_STATUS_NOTIFICATION,
+        "game": WEBHOOK_GAME_CHANGE_NOTIFICATION,
+        "level_xp": WEBHOOK_LEVEL_XP_NOTIFICATION,
+        "friends": WEBHOOK_FRIENDS_NOTIFICATION,
+        "games": WEBHOOK_GAMES_NOTIFICATION,
+        "name": WEBHOOK_NAME_CHANGE_NOTIFICATION,
+        "error": WEBHOOK_ERROR_NOTIFICATION,
+    }
+    return bool(WEBHOOK_ENABLED and settings.get(notification_type, False))
+
+
+# Parses a webhook rate-limit delay and caps untrusted server values to a short wait
+def webhook_retry_after_seconds(response):
+    candidates = []
+    headers = getattr(response, "headers", {}) or {}
+    if hasattr(headers, "get"):
+        candidates.append(headers.get("Retry-After"))
+    try:
+        payload = response.json()
+    except Exception:
+        payload = None
+    if isinstance(payload, dict):
+        candidates.append(payload.get("retry_after"))
+    for candidate in candidates:
+        if candidate is None or candidate == "":
+            continue
+        try:
+            seconds = float(candidate)
+        except (TypeError, ValueError):
+            try:
+                retry_at = parsedate_to_datetime(str(candidate))
+                seconds = (retry_at - datetime.now(retry_at.tzinfo)).total_seconds()
+            except Exception:
+                continue
+        return max(0.0, min(seconds, WEBHOOK_MAX_RETRY_AFTER_SECONDS))
+    return WEBHOOK_FALLBACK_RETRY_SECONDS
+
+
+# Applies configured placeholders recursively to a webhook template
+def format_payload(template, payload):
+    if isinstance(template, dict):
+        return {key: format_payload(value, payload) for key, value in template.items()}
+    if isinstance(template, list):
+        return [format_payload(value, payload) for value in template]
+    if isinstance(template, tuple):
+        return tuple(format_payload(value, payload) for value in template)
+    if isinstance(template, str):
+        if template == "{fields}":
+            return payload.get("fields", [])
+        if template == "{color}":
+            return payload.get("color", 0x1B2838)
+        try:
+            return template.format(**payload)
+        except KeyError:
+            return template
+    return template
+
+
+# Returns a configuration error for unsafe or unsupported webhook customization
+def validate_webhook_customization(provider=None):
+    selected_provider = normalized_webhook_provider(provider)
+    if selected_provider == "discord":
+        if not isinstance(WEBHOOK_USERNAME, str):
+            return "WEBHOOK_USERNAME must be a string"
+        if not isinstance(WEBHOOK_AVATAR_URL, str):
+            return "WEBHOOK_AVATAR_URL must be a string"
+        if WEBHOOK_AVATAR_URL.strip() and not validate_webhook_url(WEBHOOK_AVATAR_URL):
+            return "WEBHOOK_AVATAR_URL must contain a complete HTTPS link without embedded credentials"
+        if not isinstance(WEBHOOK_TEMPLATE, (dict, list, str)):
+            return "WEBHOOK_TEMPLATE must be a dictionary, list or string"
+    if not isinstance(WEBHOOK_TRANSFORMS, (list, tuple)):
+        return "WEBHOOK_TRANSFORMS must be a list or tuple"
+    for index, transform in enumerate(WEBHOOK_TRANSFORMS):
+        if not isinstance(transform, (list, tuple)) or len(transform) < 2 or not isinstance(transform[0], str) or not isinstance(transform[1], str):
+            return f"WEBHOOK_TRANSFORMS entry {index + 1} must contain a field name and string method name"
+        if transform[1].startswith("_") or not callable(getattr("", transform[1], None)):
+            return f"WEBHOOK_TRANSFORMS entry {index + 1} uses an unsupported string method"
+    return None
+
+
+# Applies configured string transformations to one webhook value mapping
+def apply_webhook_transforms(payload):
+    transformed = dict(payload)
+    for index, transform in enumerate(WEBHOOK_TRANSFORMS):
+        field = transform[0]
+        method_name = transform[1]
+        if field not in transformed or not isinstance(transformed[field], str):
+            continue
+        try:
+            transformed[field] = getattr(transformed[field], method_name)(*transform[2:])
+        except Exception:
+            raise ValueError(f"WEBHOOK_TRANSFORMS entry {index + 1} could not apply {field}.{method_name}")
+    return transformed
+
+
+# Builds bounded placeholder values shared by webhook templates and providers
+def build_webhook_values(title, description, notification_type, image_url=""):
+    colors = {"active": 0x57CBDE, "inactive": 0x747F8D, "status": 0x66C0F4, "game": 0x1A9FFF, "level_xp": 0xF5C518, "friends": 0x5C7E10, "games": 0xA4D007, "name": 0x9B59B6, "error": 0xE74C3C}
+    safe_title = re.sub(r"[\r\n]+", " ", sanitize_error_text(title)).strip()[:WEBHOOK_EMBED_TITLE_LIMIT] or "Steam Monitor"
+    safe_description = re.sub(r"\r\n?", "\n", sanitize_error_text(description)).strip()[:WEBHOOK_EMBED_DESCRIPTION_LIMIT]
+    username = WEBHOOK_USERNAME.strip()[:80] if isinstance(WEBHOOK_USERNAME, str) else ""
+    avatar_url = WEBHOOK_AVATAR_URL.strip() if isinstance(WEBHOOK_AVATAR_URL, str) else ""
+    payload = {"title": safe_title, "description": safe_description, "version": VERSION, "image_url": str(image_url or ""), "fields": [], "fields_str": "", "color": colors.get(notification_type, 0x1B2838), "timestamp": datetime.now().astimezone().isoformat(), "username": username, "avatar_url": avatar_url}
+    return apply_webhook_transforms(payload)
+
+
+# Builds one customized Discord-format payload while keeping mentions disabled
+def build_webhook_payload(title, description, notification_type, image_url="", payload_values=None):
+    values = build_webhook_values(title, description, notification_type, image_url) if payload_values is None else payload_values
+    try:
+        payload = format_payload(WEBHOOK_TEMPLATE, values)
+    except Exception:
+        raise ValueError("WEBHOOK_TEMPLATE could not be formatted with the supported placeholders")
+    if isinstance(payload, dict):
+        if payload.get("username") == "":
+            payload.pop("username")
+        if payload.get("avatar_url") == "":
+            payload.pop("avatar_url")
+        payload["allowed_mentions"] = {"parse": []}
+        embeds = payload.get("embeds")
+        if isinstance(embeds, list):
+            for embed in embeds:
+                if isinstance(embed, dict) and isinstance(embed.get("thumbnail"), dict) and not embed["thumbnail"].get("url"):
+                    embed.pop("thumbnail")
+    return payload
+
+
+# Truncates text to a UTF-8 byte limit without returning a partial character
+def truncate_utf8_bytes(text, max_bytes):
+    encoded = text.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return text
+    return encoded[:max_bytes].decode("utf-8", errors="ignore")
+
+
+# Builds one bounded ntfy title and message pair
+def build_ntfy_webhook_message(title, description):
+    safe_title = re.sub(r"[\r\n]+", " ", sanitize_error_text(title)).strip()[:WEBHOOK_EMBED_TITLE_LIMIT] or "Steam Monitor"
+    safe_message = truncate_utf8_bytes(re.sub(r"\r\n?", "\n", sanitize_error_text(description)).strip(), NTFY_MESSAGE_LIMIT_BYTES)
+    return safe_title, safe_message
+
+
+# Returns a validation error for unsupported ntfy priority or tag values
+def validate_ntfy_metadata(priority, tags):
+    if not isinstance(priority, int) or isinstance(priority, bool) or not 0 <= priority <= 5:
+        return "ntfy priority must be 0 to omit it or an integer from 1 through 5"
+    if not isinstance(tags, str):
+        return "ntfy tags must be a comma-separated string"
+    if "\r" in tags or "\n" in tags:
+        return "ntfy tags must not contain line breaks"
+    return None
+
+
+# Returns a safe validation error for one custom webhook header mapping
+def _validate_webhook_header_mapping(headers):
+    if not isinstance(headers, dict):
+        return "WEBHOOK_HEADERS must be a dictionary of string header names and values"
+    normalized_names = set()
+    for name, value in headers.items():
+        if not isinstance(name, str) or not re.fullmatch(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+", name):
+            return "WEBHOOK_HEADERS contains an invalid HTTP header name"
+        normalized_name = name.casefold()
+        if normalized_name in normalized_names:
+            return "WEBHOOK_HEADERS contains duplicate case-insensitive header names"
+        normalized_names.add(normalized_name)
+        if not isinstance(value, str):
+            return f"WEBHOOK_HEADERS value for {name} must be a string"
+        if "\r" in value or "\n" in value:
+            return f"WEBHOOK_HEADERS value for {name} must not contain line breaks"
+    return None
+
+
+# Returns a safe configuration error for custom webhook headers or ntfy access tokens
+def validate_webhook_headers(provider=None):
+    selected_provider = normalized_webhook_provider(provider)
+    header_error = _validate_webhook_header_mapping(WEBHOOK_HEADERS)
+    if header_error is not None:
+        return header_error
+    if selected_provider == "ntfy":
+        if not isinstance(NTFY_ACCESS_TOKEN, str):
+            return "NTFY_ACCESS_TOKEN must be a string"
+        token = NTFY_ACCESS_TOKEN.strip()
+        if "\r" in token or "\n" in token:
+            return "NTFY_ACCESS_TOKEN must not contain line breaks"
+        if token.casefold().startswith(("bearer ", "basic ")):
+            return "NTFY_ACCESS_TOKEN must contain only the access token without an Authorization scheme"
+    return None
+
+
+# Builds provider-specific headers with custom placeholders and private ntfy authentication
+def build_webhook_headers(provider, payload):
+    validation_error = validate_webhook_headers(provider)
+    if validation_error is not None:
+        raise ValueError(validation_error)
+    try:
+        formatted_headers = format_payload(WEBHOOK_HEADERS, payload)
+    except Exception:
+        raise ValueError("WEBHOOK_HEADERS could not be formatted with the supported placeholders")
+    formatted_error = _validate_webhook_header_mapping(formatted_headers)
+    if formatted_error is not None:
+        raise ValueError(formatted_error)
+    if not isinstance(formatted_headers, dict):
+        raise ValueError("WEBHOOK_HEADERS must be a dictionary of string header names and values")
+    headers = {str(name): str(value) for name, value in formatted_headers.items()}
+    if not any(name.casefold() == "user-agent" for name in headers):
+        headers["User-Agent"] = f"SteamMonitor/{VERSION}"
+    if provider == "ntfy":
+        headers = {name: value for name, value in headers.items() if name.casefold() != "content-type"}
+        headers["Content-Type"] = "text/plain; charset=utf-8"
+        token = NTFY_ACCESS_TOKEN.strip()
+        if token:
+            headers = {name: value for name, value in headers.items() if name.casefold() != "authorization"}
+            headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+# Returns whether one image URL is a complete HTTPS URL on a Steam image host
+def steam_image_url_is_allowed(image_url):
+    try:
+        parsed_url = urlsplit(image_url)
+    except ValueError:
+        return False
+    hostname = parsed_url.hostname.casefold() if parsed_url.hostname else ""
+    return parsed_url.scheme.casefold() == "https" and any(hostname == suffix or hostname.endswith(f".{suffix}") for suffix in NTFY_IMAGE_ALLOWED_HOST_SUFFIXES)
+
+
+# Returns the standard Steam game header image URL for one app ID
+def steam_game_image_url(appid):
+    return f"https://cdn.akamai.steamstatic.com/steam/apps/{int(appid)}/header.jpg" if appid else ""
+
+
+# Builds one bounded in-memory JPEG for an ntfy attachment
+def build_ntfy_image(image_url=""):
+    if not NTFY_IMAGES or not image_url or not NTFY_IMAGES_AVAILABLE:
+        return None
+    try:
+        if not steam_image_url_is_allowed(image_url):
+            raise ValueError("ntfy image URL must use a Steam HTTPS image host")
+        response = WEBHOOK_SESSION.get(image_url, headers={"User-Agent": f"SteamMonitor/{VERSION}"}, timeout=WEBHOOK_TIMEOUT_SECONDS, stream=True, allow_redirects=False)
+        with response:
+            response.raise_for_status()
+            content_type = str((response.headers or {}).get("Content-Type", "")).split(";", 1)[0].strip().casefold()
+            if content_type and not content_type.startswith("image/"):
+                raise ValueError("ntfy image response has an unsupported content type")
+            content_length = (response.headers or {}).get("Content-Length")
+            if content_length is not None and int(content_length) > NTFY_IMAGE_DOWNLOAD_LIMIT_BYTES:
+                raise ValueError("ntfy image response is too large")
+            image_bytes = bytearray()
+            for chunk in response.iter_content(chunk_size=NTFY_IMAGE_DOWNLOAD_CHUNK_BYTES):
+                if not chunk:
+                    continue
+                image_bytes.extend(chunk)
+                if len(image_bytes) > NTFY_IMAGE_DOWNLOAD_LIMIT_BYTES:
+                    raise ValueError("ntfy image response is too large")
+        if not image_bytes:
+            raise ValueError("ntfy image response was empty")
+        with PILImage.open(BytesIO(bytes(image_bytes))) as original_img:
+            if original_img.width * original_img.height > NTFY_IMAGE_PIXEL_LIMIT:
+                raise ValueError("ntfy image has too many pixels")
+            original_img.load()
+            resized_img = original_img.convert("RGB")
+        try:
+            resampling = getattr(getattr(PILImage, "Resampling", PILImage), "LANCZOS")
+            resized_img.thumbnail((160, 160), resampling)
+            canvas = PILImage.new("RGB", (400, 160), (27, 32, 35))
+            try:
+                paste_x = (canvas.size[0] - resized_img.size[0]) // 2
+                paste_y = (canvas.size[1] - resized_img.size[1]) // 2
+                canvas.paste(resized_img, (paste_x, paste_y))
+                output = BytesIO()
+                canvas.save(output, format="JPEG", quality=85, optimize=True)
+                return output.getvalue()
+            finally:
+                canvas.close()
+        finally:
+            resized_img.close()
+    except Exception:
+        return None
+
+
+# Prints one webhook error without revealing private URLs, tokens or response bodies
+def print_webhook_error(message):
+    print(f"Error sending webhook: {message}")
+
+
+# Sends one webhook through an isolated bounded retry path
+def send_webhook(title, description, notification_type="status", force=False, sleeper=None, image_url="", ntfy_priority=0, ntfy_tags=""):
+    if not force and not webhook_event_enabled(notification_type):
+        return 1
+    if not validate_webhook_url():
+        print_webhook_error("WEBHOOK_URL must contain a complete HTTPS link")
+        return 1
+    provider = normalized_webhook_provider()
+    if not provider:
+        print_webhook_error("WEBHOOK_PROVIDER must be discord or ntfy")
+        return 1
+    metadata_error = validate_ntfy_metadata(ntfy_priority, ntfy_tags) if provider == "ntfy" else None
+    if metadata_error is not None:
+        print_webhook_error(metadata_error)
+        return 1
+    customization_error = validate_webhook_customization(provider)
+    if customization_error is not None:
+        print_webhook_error(customization_error)
+        return 1
+    header_error = validate_webhook_headers(provider)
+    if header_error is not None:
+        print_webhook_error(header_error)
+        return 1
+    try:
+        webhook_values = build_webhook_values(title, description, notification_type, image_url)
+        request_headers = build_webhook_headers(provider, webhook_values)
+        discord_payload = build_webhook_payload(title, description, notification_type, image_url, webhook_values) if provider == "discord" else None
+    except ValueError as exc:
+        print_webhook_error(str(exc))
+        return 1
+    sleep_func = time.sleep if sleeper is None else sleeper
+    ntfy_title, ntfy_message = build_ntfy_webhook_message(str(webhook_values["title"]), str(webhook_values["description"])) if provider == "ntfy" else ("", "")
+    ntfy_image = build_ntfy_image(image_url) if provider == "ntfy" and NTFY_IMAGES and image_url else None
+    use_ntfy_image = ntfy_image is not None
+    ntfy_params = {"title": ntfy_title}  # type: Dict[str, Any]
+    if provider == "ntfy" and ntfy_priority:
+        ntfy_params["priority"] = ntfy_priority
+    if provider == "ntfy" and ntfy_tags.strip():
+        ntfy_params["tags"] = ntfy_tags.strip()
+    for attempt in range(WEBHOOK_MAX_ATTEMPTS):
+        try:
+            if provider == "ntfy":
+                if use_ntfy_image:
+                    image_params = dict(ntfy_params)
+                    image_params["message"] = ntfy_message
+                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), data=ntfy_image, params=image_params, headers=dict(request_headers, **{"Content-Type": "image/jpeg", "X-Filename": NTFY_IMAGE_FILENAME}), timeout=WEBHOOK_TIMEOUT_SECONDS)
+                else:
+                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), data=ntfy_message.encode("utf-8"), params=ntfy_params, headers=request_headers, timeout=WEBHOOK_TIMEOUT_SECONDS)
+            elif isinstance(discord_payload, str):
+                response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), data=discord_payload, headers=request_headers, timeout=WEBHOOK_TIMEOUT_SECONDS)
+            else:
+                response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), json=discord_payload, headers=request_headers, timeout=WEBHOOK_TIMEOUT_SECONDS)
+            if 200 <= response.status_code <= 299:
+                return 0
+            retryable = response.status_code == 429 or 500 <= response.status_code <= 599
+            if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
+                use_ntfy_image = False
+                delay = webhook_retry_after_seconds(response) if response.status_code == 429 else WEBHOOK_FALLBACK_RETRY_SECONDS if response.status_code >= 500 else 0.0
+                if delay:
+                    sleep_func(delay)
+                continue
+            if not retryable or attempt == WEBHOOK_MAX_ATTEMPTS - 1:
+                print_webhook_error(f"the service returned HTTP {response.status_code}")
+                return 1
+            delay = webhook_retry_after_seconds(response) if response.status_code == 429 else WEBHOOK_FALLBACK_RETRY_SECONDS
+            sleep_func(delay)
+        except req.RequestException:
+            if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
+                use_ntfy_image = False
+                sleep_func(WEBHOOK_FALLBACK_RETRY_SECONDS)
+                continue
+            if attempt == WEBHOOK_MAX_ATTEMPTS - 1:
+                print_webhook_error("the service could not be reached")
+                return 1
+            sleep_func(WEBHOOK_FALLBACK_RETRY_SECONDS)
+    print_webhook_error("delivery failed")
+    return 1
+
+
+# Sends one alert through the enabled email and webhook channels
+def send_notification_channels(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, image_url="", ntfy_priority=0, ntfy_tags=""):
+    email_attempted = bool(email_enabled)
+    webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    if email_attempted:
+        print(f"Sending email notification to {RECEIVER_EMAIL}")
+        send_email(subject, body, body_html, SMTP_SSL)
+    if webhook_attempted:
+        print("Sending webhook notification")
+        send_webhook(subject, body, notification_type, force=True, image_url=image_url, ntfy_priority=ntfy_priority, ntfy_tags=ntfy_tags)
+    return email_attempted, webhook_attempted
+
+
 # Initializes the CSV file
 def init_csv_file(csv_file_name):
     try:
@@ -1418,7 +2160,7 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
         s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
         s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
     except Exception as e:
-        print(f"* Error: {e}")
+        print(f"* Error: {sanitize_error_text(e)}")
         sys.exit(1)
 
     try:
@@ -1636,7 +2378,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
         s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
     except Exception as e:
-        print(f"* Error: {e}")
+        print(f"* Error: {sanitize_error_text(e)}")
         sys.exit(1)
 
     try:
@@ -1654,6 +2396,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     lastlogoff = s_user["response"]["players"][0].get("lastlogoff")
     gameid = s_user["response"]["players"][0].get("gameid")
     gamename = s_user["response"]["players"][0].get("gameextrainfo", "")
+    avatar_url = s_user["response"]["players"][0].get("avatarfull", "")
 
     status_ts_old = int(time.time())
     status_ts_old_bck = status_ts_old
@@ -1890,6 +2633,9 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         current_games_count = None
         current_games_appids = None
         current_username = None
+        current_avatar_url = avatar_url
+        email_sent = False
+        webhook_sent = False
         try:
             s_api = steam.webapi.WebAPI(key=STEAM_API_KEY)
             s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
@@ -1898,7 +2644,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             gameid = s_user["response"]["players"][0].get("gameid")
             gamename = s_user["response"]["players"][0].get("gameextrainfo", "")
             current_username = s_user["response"]["players"][0].get("personaname")
-            email_sent = False
+            current_avatar_url = s_user["response"]["players"][0].get("avatarfull", "") or avatar_url
 
             # Fetch Steam level and total XP if tracking is enabled
             if STEAM_LEVEL_XP_CHECK:
@@ -1955,15 +2701,18 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 time.sleep(retry_after)
                 continue
             else:
-                print(f"* Error, retrying in {display_time(sleep_interval)}{': ' + str(e) if e else ''}")
+                print(f"* Error, retrying in {display_time(sleep_interval)}{': ' + sanitize_error_text(e) if e else ''}")
                 if 'Forbidden' in str(e):
                     print("* API key might not be valid anymore!")
-                    if ERROR_NOTIFICATION and not email_sent:
-                        m_subject = f"steam_monitor: API key error! (user: {username})"
-                        m_body = f"API key might not be valid anymore: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                        print(f"Sending email notification to {RECEIVER_EMAIL}")
-                        send_email(m_subject, m_body, "", SMTP_SSL)
-                        email_sent = True
+                    m_subject = f"steam_monitor: API key error! (user: {username})"
+                    m_body = f"Steam rejected the configured API key. Validate and replace it with --set-steam-api-key.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                else:
+                    m_subject = f"steam_monitor: monitoring error (user: {username})"
+                    m_body = f"Steam Monitor could not refresh the user data and will retry in {display_time(sleep_interval)}.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                if (ERROR_NOTIFICATION and not email_sent) or (webhook_event_enabled("error") and not webhook_sent):
+                    email_attempted, webhook_attempted = send_notification_channels("error", m_subject, m_body, email_enabled=ERROR_NOTIFICATION and not email_sent, webhook_enabled=webhook_event_enabled("error") and not webhook_sent, image_url=current_avatar_url, ntfy_priority=5, ntfy_tags="warning")
+                    email_sent = email_sent or email_attempted
+                    webhook_sent = webhook_sent or webhook_attempted
 
             print_cur_ts("Timestamp:\t\t\t")
 
@@ -2086,9 +2835,10 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
             m_subject = f"Steam user {username} is now {steam_personastates[status]} (after {m_subject_after}{m_subject_was_since})"
             m_body = f"Steam user {username} changed status from {steam_personastates[status_old]} to {steam_personastates[status]}\n\nUser was {steam_personastates[status_old]} for {calculate_timespan(int(status_ts), int(status_ts_old))}{m_body_was_since}{m_body_inactivity_info}{m_body_short_offline_msg}{m_body_user_in_game}{m_body_played_games}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-            if STATUS_NOTIFICATION or (ACTIVE_INACTIVE_NOTIFICATION and act_inact_flag):
-                print(f"Sending email notification to {RECEIVER_EMAIL}")
-                send_email(m_subject, m_body, "", SMTP_SSL)
+            webhook_notification_type = "active" if status_old == 0 and status > 0 else "inactive" if status_old > 0 and status == 0 else "status"
+            webhook_status_enabled = webhook_event_enabled("status") or webhook_event_enabled(webhook_notification_type)
+            if STATUS_NOTIFICATION or (ACTIVE_INACTIVE_NOTIFICATION and act_inact_flag) or webhook_status_enabled:
+                send_notification_channels(webhook_notification_type, m_subject, m_body, email_enabled=STATUS_NOTIFICATION or (ACTIVE_INACTIVE_NOTIFICATION and act_inact_flag), webhook_enabled=webhook_status_enabled, image_url=current_avatar_url)
             status_ts_old = status_ts
             print_cur_ts("Timestamp:\t\t\t")
 
@@ -2122,9 +2872,9 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
             change = True
 
-            if GAME_CHANGE_NOTIFICATION and m_subject and m_body:
-                print(f"Sending email notification to {RECEIVER_EMAIL}")
-                send_email(m_subject, m_body, "", SMTP_SSL)
+            if (GAME_CHANGE_NOTIFICATION or webhook_event_enabled("game")) and m_subject and m_body:
+                game_image_url = steam_game_image_url(gameid or gameid_old)
+                send_notification_channels("game", m_subject, m_body, email_enabled=GAME_CHANGE_NOTIFICATION, image_url=game_image_url)
 
             game_ts_old = game_ts
             print_cur_ts("Timestamp:\t\t\t")
@@ -2157,15 +2907,14 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     except Exception as e:
                         print(f"* Error writing profile CSV: {e}")
 
-                if STEAM_LEVEL_XP_NOTIFICATION:
+                if STEAM_LEVEL_XP_NOTIFICATION or webhook_event_enabled("level_xp"):
                     m_subject = f"Steam user {username} level changed to {level_int}"
                     m_body = (
                         f"Steam user {username} level {direction} from {last_level_int} to {level_int} (delta {delta})"
                         f"\n{xp_info_str}"
                         f"{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                     )
-                    print(f"Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, "", SMTP_SSL)
+                    send_notification_channels("level_xp", m_subject, m_body, email_enabled=STEAM_LEVEL_XP_NOTIFICATION, image_url=current_avatar_url)
 
                 print_cur_ts("Timestamp:\t\t\t")
 
@@ -2194,14 +2943,13 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     except Exception as e:
                         print(f"* Error writing profile CSV: {e}")
 
-                if STEAM_LEVEL_XP_NOTIFICATION:
+                if STEAM_LEVEL_XP_NOTIFICATION or webhook_event_enabled("level_xp"):
                     m_subject = f"Steam user {username} total XP changed to {xp_int}"
                     m_body = (
                         f"Steam user {username} total XP {direction} from {last_xp_int} to {xp_int} (delta {delta})"
                         f"{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                     )
-                    print(f"Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, "", SMTP_SSL)
+                    send_notification_channels("level_xp", m_subject, m_body, email_enabled=STEAM_LEVEL_XP_NOTIFICATION, image_url=current_avatar_url)
 
                 print_cur_ts("Timestamp:\t\t\t")
 
@@ -2298,7 +3046,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                         for line in removed_details:
                             print(line)
 
-                    if FRIENDS_NOTIFICATION:
+                    if FRIENDS_NOTIFICATION or webhook_event_enabled("friends"):
                         m_subject_friends = f"Steam user {username} friends list changed (now {new_count})"
                         body_lines = [
                             f"Steam user {username} friends count changed from {old_count} to {new_count} (delta {delta})",
@@ -2310,8 +3058,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                             body_lines.append("\nFriends removed:")
                             body_lines.extend(removed_details)
                         m_body_friends = "\n".join(body_lines) + get_cur_ts(nl_ch + nl_ch + "Timestamp: ")
-                        print(f"Sending email notification to {RECEIVER_EMAIL}")
-                        send_email(m_subject_friends, m_body_friends, "", SMTP_SSL)
+                        send_notification_channels("friends", m_subject_friends, m_body_friends, email_enabled=FRIENDS_NOTIFICATION, image_url=current_avatar_url)
 
                     print_cur_ts("Timestamp:\t\t\t")
 
@@ -2356,7 +3103,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                         except Exception as e:
                             print(f"* Error writing profile CSV: {e}")
 
-                    if GAMES_LIBRARY_NOTIFICATION:
+                    if GAMES_LIBRARY_NOTIFICATION or webhook_event_enabled("games"):
                         m_subject_games = f"Steam user {username} games library changed (now {new_count})"
                         body_parts = []
                         if delta != 0:
@@ -2369,8 +3116,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                         if removed_appids:
                             body_parts.append(f"Removed: {', '.join(str(a) for a in removed_appids)}")
                         m_body_games = "\n".join(body_parts) + get_cur_ts(nl_ch + nl_ch + "Timestamp: ")
-                        print(f"Sending email notification to {RECEIVER_EMAIL}")
-                        send_email(m_subject_games, m_body_games, "", SMTP_SSL)
+                        send_notification_channels("games", m_subject_games, m_body_games, email_enabled=GAMES_LIBRARY_NOTIFICATION, image_url=current_avatar_url)
 
                     print_cur_ts("Timestamp:\t\t\t")
                     alive_counter = 0
@@ -2389,17 +3135,17 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 except Exception as e:
                     print(f"* Error writing profile CSV: {e}")
 
-            if NAME_CHANGE_NOTIFICATION:
+            if NAME_CHANGE_NOTIFICATION or webhook_event_enabled("name"):
                 m_subject_name = f"Steam user {old_name} changed display name to {new_name}"
                 m_body_name = f"Steam user {old_name} changed display name to {new_name}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                print(f"Sending email notification to {RECEIVER_EMAIL}")
-                send_email(m_subject_name, m_body_name, "", SMTP_SSL)
+                send_notification_channels("name", m_subject_name, m_body_name, email_enabled=NAME_CHANGE_NOTIFICATION, image_url=current_avatar_url)
 
             print_cur_ts("Timestamp:\t\t\t")
             alive_counter = 0
 
             # Adopt the new display name for subsequent notifications and output
             username = current_username
+            avatar_url = current_avatar_url
 
         if change:
             alive_counter = 0
@@ -2425,10 +3171,55 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             time.sleep(STEAM_CHECK_INTERVAL)
 
 
-def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, NAME_CHANGE_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME
+# Applies validated one-run webhook command-line overrides to runtime settings
+def apply_webhook_cli_overrides(args, parser):
+    global WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_PROVIDER, WEBHOOK_ACTIVE_NOTIFICATION, WEBHOOK_INACTIVE_NOTIFICATION, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_GAME_CHANGE_NOTIFICATION, WEBHOOK_LEVEL_XP_NOTIFICATION, WEBHOOK_FRIENDS_NOTIFICATION, WEBHOOK_GAMES_NOTIFICATION, WEBHOOK_NAME_CHANGE_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION
+    if args.webhook_provider is not None:
+        WEBHOOK_PROVIDER = str(args.webhook_provider)
+    if args.webhook_url is not None:
+        if not validate_webhook_url(args.webhook_url):
+            parser.error("--webhook-url must contain a complete HTTPS link without embedded credentials")
+        WEBHOOK_URL = str(args.webhook_url).strip()
+        WEBHOOK_ENABLED = True
+    if args.webhook_enabled is not None:
+        WEBHOOK_ENABLED = args.webhook_enabled
+    event_overrides = (
+        ("webhook_active", "WEBHOOK_ACTIVE_NOTIFICATION"),
+        ("webhook_inactive", "WEBHOOK_INACTIVE_NOTIFICATION"),
+        ("webhook_status", "WEBHOOK_STATUS_NOTIFICATION"),
+        ("webhook_game_changes", "WEBHOOK_GAME_CHANGE_NOTIFICATION"),
+        ("webhook_level_xp", "WEBHOOK_LEVEL_XP_NOTIFICATION"),
+        ("webhook_friends", "WEBHOOK_FRIENDS_NOTIFICATION"),
+        ("webhook_games", "WEBHOOK_GAMES_NOTIFICATION"),
+        ("webhook_name_change", "WEBHOOK_NAME_CHANGE_NOTIFICATION"),
+    )
+    for argument_name, setting_name in event_overrides:
+        if getattr(args, argument_name) is True:
+            WEBHOOK_ENABLED = True
+            globals()[setting_name] = True
+    if args.webhook_errors is not None:
+        WEBHOOK_ERROR_NOTIFICATION = args.webhook_errors
+        if args.webhook_errors:
+            WEBHOOK_ENABLED = True
 
-    if "--generate-config" in sys.argv:
+
+# Rejects unrelated options when a hidden secret-entry action is selected
+def validate_secret_action_args(args, parser, action_dest, action_flag):
+    permitted = {action_dest, "env_file", "no_color"}
+    conflicts = []
+    for name, value in vars(args).items():
+        if name in permitted or value is None or value is False:
+            continue
+        conflicts.append("--" + name.replace("_", "-"))
+    if conflicts:
+        parser.error(f"{action_flag} cannot be combined with " + ", ".join(conflicts))
+
+
+# Parses configuration and starts the selected Steam Monitor action
+def main():
+    global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, NAME_CHANGE_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME, NTFY_IMAGES
+
+    if "--generate-config" in sys.argv and "--set-steam-api-key" not in sys.argv and "--set-webhook-url" not in sys.argv:
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
         # Check if a filename was provided after --generate-config
         try:
@@ -2447,7 +3238,7 @@ def main():
         sys.stdout.buffer.flush()
         sys.exit(0)
 
-    if "--version" in sys.argv:
+    if "--version" in sys.argv and "--set-steam-api-key" not in sys.argv and "--set-webhook-url" not in sys.argv:
         print(f"{os.path.basename(sys.argv[0])} v{VERSION}")
         sys.exit(0)
 
@@ -2468,7 +3259,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="steam_monitor",
-        description=("Monitor a Steam user's playing status and send customizable email alerts [ https://github.com/misiektoja/steam_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter
+        description=("Monitor a Steam user's playing status and send customizable email or webhook alerts [ https://github.com/misiektoja/steam_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter
     )
 
     # Positional
@@ -2489,6 +3280,18 @@ def main():
 
     # Configuration & dotenv files
     conf = parser.add_argument_group("Configuration & dotenv files")
+    conf.add_argument(
+        "--set-steam-api-key",
+        dest="set_steam_api_key",
+        action="store_true",
+        help="Privately validate and save STEAM_API_KEY through a hidden prompt",
+    )
+    conf.add_argument(
+        "--set-webhook-url",
+        dest="set_webhook_url",
+        action="store_true",
+        help="Save a Discord or ntfy webhook URL through a hidden prompt",
+    )
     conf.add_argument(
         "--config-file",
         dest="config_file",
@@ -2590,6 +3393,113 @@ def main():
         dest="send_test_email",
         action="store_true",
         help="Send test email to verify SMTP settings"
+    )
+
+    webhook_notify = parser.add_argument_group("Webhook notifications")
+    webhook_toggle = webhook_notify.add_mutually_exclusive_group()
+    webhook_toggle.add_argument(
+        "--webhook",
+        dest="webhook_enabled",
+        action="store_true",
+        default=None,
+        help="Enable the configured webhook alerts"
+    )
+    webhook_toggle.add_argument(
+        "--no-webhook",
+        dest="webhook_enabled",
+        action="store_false",
+        default=None,
+        help="Disable the configured webhook alerts"
+    )
+    webhook_notify.add_argument(
+        "--webhook-url",
+        dest="webhook_url",
+        metavar="URL",
+        type=str,
+        help="Use one Discord webhook or ntfy topic URL for this run (may remain in shell history)"
+    )
+    webhook_notify.add_argument(
+        "--webhook-provider",
+        dest="webhook_provider",
+        choices=("discord", "ntfy"),
+        help="Webhook request format for this run (default: configured provider)"
+    )
+    webhook_notify.add_argument(
+        "--webhook-active",
+        dest="webhook_active",
+        action="store_true",
+        default=None,
+        help="Send a webhook alert when the user becomes active"
+    )
+    webhook_notify.add_argument(
+        "--webhook-inactive",
+        dest="webhook_inactive",
+        action="store_true",
+        default=None,
+        help="Send a webhook alert when the user goes offline"
+    )
+    webhook_notify.add_argument(
+        "--webhook-status",
+        dest="webhook_status",
+        action="store_true",
+        default=None,
+        help="Send a webhook alert on every status change"
+    )
+    webhook_notify.add_argument(
+        "--webhook-game-changes",
+        dest="webhook_game_changes",
+        action="store_true",
+        default=None,
+        help="Send a webhook alert on game start, change or stop"
+    )
+    webhook_notify.add_argument(
+        "--webhook-level-xp",
+        dest="webhook_level_xp",
+        action="store_true",
+        default=None,
+        help="Send webhook alerts for Steam level or XP changes"
+    )
+    webhook_notify.add_argument(
+        "--webhook-friends",
+        dest="webhook_friends",
+        action="store_true",
+        default=None,
+        help="Send webhook alerts for friends list changes"
+    )
+    webhook_notify.add_argument(
+        "--webhook-games",
+        dest="webhook_games",
+        action="store_true",
+        default=None,
+        help="Send webhook alerts for games library changes"
+    )
+    webhook_notify.add_argument(
+        "--webhook-name-change",
+        dest="webhook_name_change",
+        action="store_true",
+        default=None,
+        help="Send a webhook alert when the display name changes"
+    )
+    webhook_error_toggle = webhook_notify.add_mutually_exclusive_group()
+    webhook_error_toggle.add_argument(
+        "--webhook-errors",
+        dest="webhook_errors",
+        action="store_true",
+        default=None,
+        help="Send webhook alerts when monitoring has a problem"
+    )
+    webhook_error_toggle.add_argument(
+        "--no-webhook-error-notify",
+        dest="webhook_errors",
+        action="store_false",
+        default=None,
+        help="Disable webhook alerts when monitoring has a problem"
+    )
+    webhook_notify.add_argument(
+        "--send-test-webhook",
+        dest="send_test_webhook",
+        action="store_true",
+        help="Send one test webhook without starting monitoring"
     )
 
     # User information
@@ -2710,6 +3620,30 @@ def main():
 
     args = parser.parse_args()
 
+    if args.set_steam_api_key and args.set_webhook_url:
+        parser.error("--set-steam-api-key cannot be combined with --set-webhook-url")
+
+    if args.set_steam_api_key:
+        validate_secret_action_args(args, parser, "set_steam_api_key", "--set-steam-api-key")
+        try:
+            run_set_steam_api_key(env_file=args.env_file)
+        except SecretConfigurationError as exc:
+            print(f"* Error: {exc}")
+            sys.exit(1)
+        sys.exit(0)
+
+    if args.set_webhook_url:
+        validate_secret_action_args(args, parser, "set_webhook_url", "--set-webhook-url")
+        try:
+            run_set_webhook_url(env_file=args.env_file)
+        except SecretConfigurationError as exc:
+            print(f"* Error: {exc}")
+            sys.exit(1)
+        sys.exit(0)
+
+    if args.send_test_email and args.send_test_webhook:
+        parser.error("--send-test-email cannot be combined with --send-test-webhook")
+
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(1)
@@ -2719,15 +3653,17 @@ def main():
         utility_flags = {
             "--no-color", "-h", "--help",
             "--version", "--generate-config",
-            "--send-test-email"
+            "--send-test-email", "--send-test-webhook",
+            "--webhook", "--no-webhook", "--webhook-errors", "--no-webhook-error-notify"
         }
-        complex_args = [a for a in sys.argv[1:] if a not in utility_flags]
+        utility_action = args.send_test_email or args.send_test_webhook
+        complex_args = [] if utility_action else [a for a in sys.argv[1:] if a not in utility_flags]
 
-        if complex_args:
+        if complex_args or not utility_action:
             print("\n* Error: STEAM64_ID needs to be defined !\n", flush=True)
 
-        parser.print_help(sys.stderr)
-        sys.exit(1)
+            parser.print_help(sys.stderr)
+            sys.exit(1)
 
     if args.config_file:
         CLI_CONFIG_PATH = os.path.expanduser(args.config_file)
@@ -2779,6 +3715,8 @@ def main():
             if val is not None:
                 globals()[secret] = val
 
+    apply_webhook_cli_overrides(args, parser)
+
     if not check_internet():
         sys.exit(1)
 
@@ -2786,6 +3724,14 @@ def main():
         print("* Sending test email notification ...\n")
         if send_email("steam_monitor: test email", "This is test email - your SMTP settings seems to be correct !", "", SMTP_SSL, smtp_timeout=5) == 0:
             print("* Email sent successfully !")
+        else:
+            sys.exit(1)
+        sys.exit(0)
+
+    if args.send_test_webhook:
+        print("* Sending test webhook notification ...\n")
+        if send_webhook("Steam Monitor test", "Your webhook alerts are set up correctly.", "status", force=True) == 0:
+            print("* Webhook sent successfully !")
         else:
             sys.exit(1)
         sys.exit(0)
@@ -2923,7 +3869,8 @@ def main():
         GAMES_LIBRARY_NOTIFICATION = False
 
     print(f"* Steam polling intervals:\t[offline: {display_time(STEAM_CHECK_INTERVAL)}] [online: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]")
-    print(f"* Email notifications:\t\t[online/offline status changes = {ACTIVE_INACTIVE_NOTIFICATION}] [game changes = {GAME_CHANGE_NOTIFICATION}]\n*\t\t\t\t[all status changes = {STATUS_NOTIFICATION}] [level/XP changes = {STEAM_LEVEL_XP_NOTIFICATION}]\n*\t\t\t\t[friends changes = {FRIENDS_NOTIFICATION}] [games library = {GAMES_LIBRARY_NOTIFICATION}]\n*\t\t\t\t[name changes = {NAME_CHANGE_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
+    print(f"* Email notifications:\t\t[online/offline status changes = {ACTIVE_INACTIVE_NOTIFICATION}] [game changes = {GAME_CHANGE_NOTIFICATION}]\n\t\t\t\t[all status changes = {STATUS_NOTIFICATION}] [level/XP changes = {STEAM_LEVEL_XP_NOTIFICATION}]\n\t\t\t\t[friends changes = {FRIENDS_NOTIFICATION}] [games library = {GAMES_LIBRARY_NOTIFICATION}]\n\t\t\t\t[name changes = {NAME_CHANGE_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
+    print(f"* Webhook notifications:\t[enabled = {WEBHOOK_ENABLED}] [provider = {normalized_webhook_provider() or 'invalid'}]\n\t\t\t\t[active = {WEBHOOK_ACTIVE_NOTIFICATION}] [inactive = {WEBHOOK_INACTIVE_NOTIFICATION}] [all status changes = {WEBHOOK_STATUS_NOTIFICATION}]\n\t\t\t\t[game changes = {WEBHOOK_GAME_CHANGE_NOTIFICATION}] [level/XP changes = {WEBHOOK_LEVEL_XP_NOTIFICATION}] [friends changes = {WEBHOOK_FRIENDS_NOTIFICATION}]\n\t\t\t\t[games library = {WEBHOOK_GAMES_NOTIFICATION}] [name changes = {WEBHOOK_NAME_CHANGE_NOTIFICATION}] [errors = {WEBHOOK_ERROR_NOTIFICATION}]")
     print(f"* Liveness check:\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
     print(f"* Level/XP tracking enabled:\t{STEAM_LEVEL_XP_CHECK}")
     print(f"* Friends tracking enabled:\t{FRIENDS_CHECK}")
