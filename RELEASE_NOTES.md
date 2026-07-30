@@ -18,6 +18,7 @@ Version **1.9** adds independent **Discord and ntfy webhook notifications**, saf
 
 - **BUGFIX:** Kept long ntfy text notifications below the server's 4 KB attachment boundary and added a visible truncation marker
 - **BUGFIX:** Prevented notification summaries containing **errors** from turning entirely red, keeping only the `On` or `Off` state colored
+- **BUGFIX:** Made `SIGHUP` redetect Discord or ntfy when the private webhook destination changes
 
 # Changes in 1.8.1 (22 Jul 2026)
 
