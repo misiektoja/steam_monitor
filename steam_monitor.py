@@ -1289,6 +1289,46 @@ def normalized_webhook_provider(provider=None):
     return normalized if normalized in ("discord", "ntfy") else ""
 
 
+# Returns enabled email notification category names in display order
+def _startup_email_notification_categories():
+    settings = (
+        (ACTIVE_INACTIVE_NOTIFICATION, "online/offline"),
+        (STATUS_NOTIFICATION, "all status changes"),
+        (GAME_CHANGE_NOTIFICATION, "game changes"),
+        (STEAM_LEVEL_XP_NOTIFICATION, "level/XP changes"),
+        (FRIENDS_NOTIFICATION, "friends changes"),
+        (GAMES_LIBRARY_NOTIFICATION, "games library"),
+        (NAME_CHANGE_NOTIFICATION, "name changes"),
+        (ERROR_NOTIFICATION, "errors"),
+    )
+    return [label for enabled, label in settings if enabled]
+
+
+# Returns enabled webhook notification category names in display order
+def _startup_webhook_notification_categories():
+    settings = (
+        (WEBHOOK_ACTIVE_NOTIFICATION, "active"),
+        (WEBHOOK_INACTIVE_NOTIFICATION, "inactive"),
+        (WEBHOOK_STATUS_NOTIFICATION, "all status changes"),
+        (WEBHOOK_GAME_CHANGE_NOTIFICATION, "game changes"),
+        (WEBHOOK_LEVEL_XP_NOTIFICATION, "level/XP changes"),
+        (WEBHOOK_FRIENDS_NOTIFICATION, "friends changes"),
+        (WEBHOOK_GAMES_NOTIFICATION, "games library"),
+        (WEBHOOK_NAME_CHANGE_NOTIFICATION, "name changes"),
+        (WEBHOOK_ERROR_NOTIFICATION, "errors"),
+    )
+    return [label for enabled, label in settings if WEBHOOK_ENABLED and enabled]
+
+
+# Builds compact startup notification lines for both delivery channels
+def _startup_notification_summary_lines():
+    enabled_email = _startup_email_notification_categories()
+    enabled_webhook = _startup_webhook_notification_categories()
+    email_state = "On (" + ", ".join(enabled_email) + ")" if enabled_email else "Off"
+    webhook_state = "On (" + ", ".join(enabled_webhook) + ")" if enabled_webhook else "Off"
+    return [f"* {('Notifications (email):'):<30}{email_state}", f"* {('Notifications (webhook):'):<30}{webhook_state}"]
+
+
 # Redacts configured secrets and API key query values from one error-shaped value
 def sanitize_error_text(value):
     text = str(value)
@@ -3909,8 +3949,8 @@ def main():
         GAMES_LIBRARY_NOTIFICATION = False
 
     print(f"* Steam polling intervals:\t[offline: {display_time(STEAM_CHECK_INTERVAL)}] [online: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]")
-    print(f"* Email notifications:\t\t[online/offline status changes = {ACTIVE_INACTIVE_NOTIFICATION}] [game changes = {GAME_CHANGE_NOTIFICATION}]\n\t\t\t\t[all status changes = {STATUS_NOTIFICATION}] [level/XP changes = {STEAM_LEVEL_XP_NOTIFICATION}]\n\t\t\t\t[friends changes = {FRIENDS_NOTIFICATION}] [games library = {GAMES_LIBRARY_NOTIFICATION}]\n\t\t\t\t[name changes = {NAME_CHANGE_NOTIFICATION}] [errors = {ERROR_NOTIFICATION}]")
-    print(f"* Webhook notifications:\t[enabled = {WEBHOOK_ENABLED}] [provider = {normalized_webhook_provider() or 'invalid'}]\n\t\t\t\t[active = {WEBHOOK_ACTIVE_NOTIFICATION}] [inactive = {WEBHOOK_INACTIVE_NOTIFICATION}] [all status changes = {WEBHOOK_STATUS_NOTIFICATION}]\n\t\t\t\t[game changes = {WEBHOOK_GAME_CHANGE_NOTIFICATION}] [level/XP changes = {WEBHOOK_LEVEL_XP_NOTIFICATION}] [friends changes = {WEBHOOK_FRIENDS_NOTIFICATION}]\n\t\t\t\t[games library = {WEBHOOK_GAMES_NOTIFICATION}] [name changes = {WEBHOOK_NAME_CHANGE_NOTIFICATION}] [errors = {WEBHOOK_ERROR_NOTIFICATION}]")
+    for notification_summary_line in _startup_notification_summary_lines():
+        print(notification_summary_line)
     print(f"* Liveness check:\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
     print(f"* Level/XP tracking enabled:\t{STEAM_LEVEL_XP_CHECK}")
     print(f"* Friends tracking enabled:\t{FRIENDS_CHECK}")
