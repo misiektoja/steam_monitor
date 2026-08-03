@@ -414,6 +414,8 @@ You can monitor multiple Steam players by running multiple instances of the scri
 
 The tool automatically saves its output to `steam_monitor_<user_steam_id/file_suffix>.log` file. The log file name can be changed via `ST_LOGFILE` configuration option and its suffix via `FILE_SUFFIX` / `-y` flag. Logging can be disabled completely via `DISABLE_LOGGING` / `-d` flag.
 
+Set `ASCII_LOG_SEPARATORS` to `"Auto"` (default) to use ASCII separator-only lines on Windows, `"On"` to use them on every operating system or `"Off"` to preserve Unicode separators in logs everywhere. Terminal separators stay Unicode. Log files and all other logged text remain UTF-8.
+
 The tool also saves the timestamp and last status (after every change) to the `steam_<user_display_name>_last_status.json` file, so the last status is available after the restart of the tool. When games library tracking is enabled, a snapshot of the library (game count and app IDs) is stored in `steam_<user_display_name>_games.json` and only changes are reported.
 
 To track when the user's **Steam level and total XP** changes:
