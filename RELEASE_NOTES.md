@@ -4,9 +4,11 @@ This is a high-level summary of the most important changes.
 
 # Changes in 1.9.1 (TBD)
 
+Version **1.9.1** keeps terminal separators polished while making log separators configurable and portable across viewers.
+
 **Features and improvements**:
 
-- **IMPROVE:** Replaced the remaining ASCII startup separator with the consistent Unicode horizontal line
+- **IMPROVE:** Added `ASCII_LOG_SEPARATORS` with `"Auto"`, `"On"` and `"Off"` modes. The default uses ASCII separator-only log lines on Windows while terminal separators stay Unicode and all log content stays UTF-8
 
 # Changes in 1.9 (31 Jul 2026)
 
