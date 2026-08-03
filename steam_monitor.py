@@ -3992,7 +3992,7 @@ def main():
 
     out = f"\nMonitoring user with Steam64 ID {colorize('steam_id', str(s_id))}"
     print(colorize("header", out))
-    print("-" * len(out))
+    print("─" * len(out))
 
     # We define signal handlers only for Linux, Unix & MacOS since Windows has limited number of signals supported
     if platform.system() != 'Windows':
