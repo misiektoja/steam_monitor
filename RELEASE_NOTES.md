@@ -2,13 +2,14 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 1.9.1 (TBD)
+# Changes in 1.9.1 (04 Aug 2026)
 
-Version **1.9.1** keeps terminal separators polished while making log separators configurable and portable across viewers.
+Version **1.9.1** keeps terminal separators visually consistent and makes saved log separators portable without changing UTF-8 log content.
 
 **Features and improvements**:
 
-- **IMPROVE:** Added `ASCII_LOG_SEPARATORS` with `"Auto"`, `"On"` and `"Off"` modes. The default uses ASCII separator-only log lines on Windows while terminal separators stay Unicode and all log content stays UTF-8
+- **IMPROVE:** **Consistent terminal separators** - The monitoring startup divider now uses the same Unicode separator style as the rest of the terminal output
+- **IMPROVE:** **Portable log separators** - The new `ASCII_LOG_SEPARATORS` setting controls whether separator-only lines saved to log files use ASCII hyphens. `"Auto"` enables them on Windows by default, `"On"` enables them on every operating system and `"Off"` preserves Unicode separators. Terminal separators stay Unicode. Log files and all other logged text remain UTF-8.
 
 # Changes in 1.9 (31 Jul 2026)
 
