@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.9
+v1.9.1
 
 Tool implementing real-time tracking of Steam players activities:
 https://github.com/misiektoja/steam_monitor/
@@ -16,7 +16,7 @@ Pillow (for ntfy images)
 colorama (optional, for better colours on Windows terminals)
 """
 
-VERSION = "1.9"
+VERSION = "1.9.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -267,6 +267,12 @@ ST_LOGFILE = "steam_monitor"
 # Can also be disabled via the -d flag
 DISABLE_LOGGING = False
 
+# Controls conversion of separator-only log lines to ASCII:
+#   "Auto" - enable on Windows only (default)
+#   "On"   - enable on every operating system
+#   "Off"  - preserve Unicode separators in logs
+ASCII_LOG_SEPARATORS = "Auto"
+
 # Width of horizontal line
 HORIZONTAL_LINE = 113
 
@@ -379,6 +385,7 @@ DOTENV_FILE = ""
 FILE_SUFFIX = ""
 ST_LOGFILE = ""
 DISABLE_LOGGING = False
+ASCII_LOG_SEPARATORS = "Auto"
 HORIZONTAL_LINE = 0
 CLEAR_SCREEN = False
 STEAM_ACTIVE_CHECK_SIGNAL_VALUE = 0
@@ -798,6 +805,21 @@ def apply_color_to_text(text):
     return "".join(parts)
 
 
+# Reports whether separator-only log lines should use ASCII on this system
+def ascii_log_separators_enabled():
+    mode = str(ASCII_LOG_SEPARATORS).strip().lower()
+    if mode not in {"auto", "on", "off"}:
+        raise ValueError("ASCII_LOG_SEPARATORS must be 'Auto', 'On' or 'Off'")
+    return mode == "on" or (mode == "auto" and platform.system() == "Windows")
+
+
+# Converts Unicode-only horizontal separator lines to ASCII when configured
+def normalize_log_separators(message):
+    if not ascii_log_separators_enabled():
+        return message
+    return re.sub(r"(?m)^─+$", lambda match: match.group(0).replace("─", "-"), message)
+
+
 # Logger class to output messages to stdout and log file
 class Logger(object):
     def __init__(self, filename, strip_ansi=True):
@@ -813,10 +835,8 @@ class Logger(object):
         expanded_message = message.expandtabs(8)
 
         if self.strip_ansi:
-            clean = ANSI_ESCAPE_RE.sub("", expanded_message)
-            self.logfile.write(clean)
-        else:
-            self.logfile.write(expanded_message)
+            expanded_message = ANSI_ESCAPE_RE.sub("", expanded_message)
+        self.logfile.write(normalize_log_separators(expanded_message))
         self.terminal.flush()
         self.logfile.flush()
 
@@ -3912,6 +3932,12 @@ def main():
     if args.no_color is True:
         COLORED_OUTPUT = False
 
+    try:
+        ascii_log_separators_enabled()
+    except ValueError as e:
+        print(f"* Error: {e}")
+        sys.exit(1)
+
     if args.disable_logging is True:
         DISABLE_LOGGING = True
 
@@ -3987,12 +4013,13 @@ def main():
     print(f"* CSV logging enabled:\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
     print(f"* Profile CSV logging enabled:\t{bool(PROFILE_CSV_FILE)}" + (f" ({PROFILE_CSV_FILE})" if PROFILE_CSV_FILE else ""))
     print(f"* Output logging enabled:\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
+    print(f"* ASCII log separators:\t{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})")
     print(f"* Configuration file:\t\t{cfg_path}")
     print(f"* Dotenv file:\t\t\t{env_path or 'None'}")
 
     out = f"\nMonitoring user with Steam64 ID {colorize('steam_id', str(s_id))}"
     print(colorize("header", out))
-    print("-" * len(out))
+    print("─" * len(out))
 
     # We define signal handlers only for Linux, Unix & MacOS since Windows has limited number of signals supported
     if platform.system() != 'Windows':
