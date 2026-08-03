@@ -2,6 +2,12 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 1.9.1 (TBD)
+
+**Features and improvements**:
+
+- **IMPROVE:** Replaced the remaining ASCII startup separator with the consistent Unicode horizontal line
+
 # Changes in 1.9 (31 Jul 2026)
 
 Version **1.9** adds independent **Discord and ntfy webhook notifications**, safer **Steam API key setup** and customizable delivery for activity and profile alerts.
