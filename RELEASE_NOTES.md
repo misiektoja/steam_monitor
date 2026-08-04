@@ -2,6 +2,12 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 1.9.2 (04 Aug 2026)
+
+**Bug fixes**:
+
+- **BUGFIX:** Fixed indentation of ASCII log separators in summary screen
+
 # Changes in 1.9.1 (04 Aug 2026)
 
 Version **1.9.1** keeps terminal separators visually consistent and makes saved log separators portable without changing UTF-8 log content.
