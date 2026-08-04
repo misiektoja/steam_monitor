@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.9.1
+v1.9.2
 
 Tool implementing real-time tracking of Steam players activities:
 https://github.com/misiektoja/steam_monitor/
@@ -16,7 +16,7 @@ Pillow (for ntfy images)
 colorama (optional, for better colours on Windows terminals)
 """
 
-VERSION = "1.9.1"
+VERSION = "1.9.2"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -4013,7 +4013,7 @@ def main():
     print(f"* CSV logging enabled:\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
     print(f"* Profile CSV logging enabled:\t{bool(PROFILE_CSV_FILE)}" + (f" ({PROFILE_CSV_FILE})" if PROFILE_CSV_FILE else ""))
     print(f"* Output logging enabled:\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
-    print(f"* ASCII log separators:\t{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})")
+    print(f"* ASCII log separators:\t\t{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})")
     print(f"* Configuration file:\t\t{cfg_path}")
     print(f"* Dotenv file:\t\t\t{env_path or 'None'}")
 
