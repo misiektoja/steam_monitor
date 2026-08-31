@@ -3439,8 +3439,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     config_path = Path(config_file).expanduser() if config_file else Path.cwd() / DEFAULT_CONFIG_FILENAME
     env_path = Path(env_file).expanduser() if env_file else Path.cwd() / ".env"
 
-    print(colorize("header", "Setup Wizard"))
-    print()
+    print(colorize("header", "Setup Wizard\n"))
     print("This asks a few questions and writes a ready-to-run configuration.")
     _wizard_print_default_guidance()
     print("Secrets go to the dotenv file. Non-secret settings go to the config file.")

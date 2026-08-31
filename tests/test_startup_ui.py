@@ -1,5 +1,8 @@
 """Tests the startup summary row model, its per-row routing, truncation, the grouped help and the cross-tool wording."""
 
+import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -8,6 +11,12 @@ import steam_monitor as monitor
 
 
 SOURCE = (Path(__file__).resolve().parents[1] / "steam_monitor.py").read_text(encoding="utf-8")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+# Runs one isolated command-line action against the working-tree script
+def run_cli(*arguments):
+    return subprocess.run([sys.executable, str(PROJECT_ROOT / "steam_monitor.py"), *arguments], cwd=PROJECT_ROOT, capture_output=True, text=True, check=False)
 
 
 # Verifies the selected Steam banner remains exact and version independent
@@ -40,6 +49,67 @@ def test_banner_dynamic_version_line(monkeypatch, capsys):
     monkeypatch.setattr(monitor, "COLOR_ENABLED", False)
     monitor.print_startup_banner()
     assert capsys.readouterr().out == monitor.STARTUP_BANNER + "\n" + (" " * 21) + "v9.9-test\n\n"
+
+
+# Verifies Steam, Monitor and the version share the same body column
+def test_banner_version_alignment():
+    banner_lines = monitor.STARTUP_BANNER.splitlines()
+    steam_body_column = banner_lines[2].index("/ ___")
+    monitor_body_indent = len(banner_lines[7]) - len(banner_lines[7].lstrip())
+    version_indent = len(" " * 21) - len((" " * 21).lstrip())
+    assert steam_body_column == monitor_body_indent == version_indent
+
+
+# Verifies version output stays one line and excludes the startup art
+def test_version_output_is_machine_friendly():
+    result = run_cli("--version")
+    assert result.returncode == 0
+    assert result.stdout.splitlines() == [f"steam_monitor.py v{monitor.VERSION}"]
+    assert monitor.STARTUP_BANNER.splitlines()[1] not in result.stdout
+
+
+# Verifies generated config output begins with content and excludes the startup art
+def test_generate_config_output_is_machine_friendly():
+    result = run_cli("--generate-config")
+    assert result.returncode == 0
+    assert result.stdout.startswith("# Get your Steam Web API key")
+    assert monitor.STARTUP_BANNER.splitlines()[1] not in result.stdout
+
+
+# Verifies help shows one startup banner
+def test_help_shows_one_startup_banner():
+    result = run_cli("--help")
+    assert result.returncode == 0
+    assert result.stdout.count(" .---------------.") == 1
+
+
+# Enables colour with a deterministic style map
+@pytest.fixture
+def colored(monkeypatch):
+    styles = {name: monitor._build_ansi_sequence(value) for name, value in monitor.DEFAULT_COLOR_THEME.items() if monitor._build_ansi_sequence(value)}
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", True)
+    monkeypatch.setattr(monitor, "_COLOR_STYLES", styles)
+    return styles
+
+
+# Verifies the startup banner uses only its explicitly selected colours
+def test_startup_banner_uses_only_its_own_colours(colored, capsys):
+    monitor.print_startup_banner()
+    output = capsys.readouterr().out
+    sequences = set(re.findall(r"\x1b\[[0-9;]*m", output))
+    assert sequences <= {colored["header"], colored["info"], monitor.ANSI_RESET}
+    for line in monitor.STARTUP_BANNER.splitlines():
+        if line:
+            assert f"{colored['header']}{line}{monitor.ANSI_RESET}" in output
+
+
+# Verifies the Setup Wizard heading keeps the newline inside the sibling-style header span
+def test_setup_wizard_heading_uses_header_colour(colored, capsys):
+    def interrupt(_prompt):
+        raise KeyboardInterrupt
+
+    assert monitor.run_setup_wizard(input_func=interrupt, interactive=True) == 1
+    assert f"{colored['header']}Setup Wizard\n{monitor.ANSI_RESET}\n" in capsys.readouterr().out
 
 
 @pytest.fixture
