@@ -3166,6 +3166,7 @@ WIZARD_SECTIONS = (
     ("Authentication", "Authentication", "Enter the Steam Web API key again.", (), ("STEAM_API_KEY",)),
     ("Email", "Email notifications", "Change SMTP details and email events.", ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL") + WIZARD_EMAIL_NOTIFICATION_KEYS, ("SMTP_PASSWORD",)),
     ("Webhook", "Webhook alerts", "Change Discord or ntfy details and events.", ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "NTFY_IMAGES") + WIZARD_WEBHOOK_NOTIFICATION_KEYS, ("WEBHOOK_URL", "NTFY_ACCESS_TOKEN")),
+    ("Output", "Output files", "Change log and CSV output settings.", ("DISABLE_LOGGING", "CSV_FILE"), ()),
 )
 
 
@@ -3434,17 +3435,41 @@ def _wizard_edit_setup_section(state, input_func=None, getpass_func=None):
         "Authentication": lambda: _wizard_collect_auth_section(state, input_func=input_func, getpass_func=getpass_func),
         "Email": lambda: _wizard_collect_email_section(state, input_func=input_func, getpass_func=getpass_func),
         "Webhook": lambda: _wizard_collect_webhook_section(state, input_func=input_func, getpass_func=getpass_func),
+        "Output": lambda: _wizard_collect_output_section(state, input_func=input_func),
     }
     collectors[name]()
     if name in ("Target", "Authentication"):
         _wizard_resolve_pending_target(state, input_func=input_func)
 
 
+# The theme part each setup summary row draws its value in, for rows whose value has a known kind
+WIZARD_SUMMARY_VALUE_STYLES = {"Target": "username", "Polling interval while offline": "duration", "Polling interval while online": "duration"}
+
+
+# Colours one setup summary value from its row label
+def _wizard_summary_value(label, value):
+    text = str(value)
+    part = WIZARD_SUMMARY_VALUE_STYLES.get(label)
+    if part:
+        return colorize(part, text)
+    if text.startswith("enabled") or text == "complete":
+        return colorize("boolean_true", text)
+    if text in ("disabled", "incomplete"):
+        return colorize("boolean_false", text)
+    return text
+
+
 # Prints one aligned label and value block, so every summary row lines up
 def _wizard_print_summary_rows(rows):
     width = max(len(label) for label, _ in rows) + 1
     for label, value in rows:
-        print(f"  {(label + ':'):<{width}} {value}")
+        print(f"  {(label + ':'):<{width}} {_wizard_summary_value(label, value)}")
+
+
+# Collects the log and CSV output destinations monitoring would write
+def _wizard_collect_output_section(state, input_func=None):
+    state.config_values["DISABLE_LOGGING"] = not _wizard_ask_yes_no("Write the normal per-target log file?", default=not bool(state.config_values.get("DISABLE_LOGGING")), input_func=input_func)
+    state.config_values["CSV_FILE"] = _wizard_ask_text("Optional CSV output path (blank disables it)", default=str(state.config_values.get("CSV_FILE") or ""), input_func=input_func)
 
 
 # Shows everything that is about to be written, by name and never by secret value
@@ -3465,6 +3490,8 @@ def _wizard_print_setup_summary(state):
         ("Email notifications", ", ".join(enabled_email) if enabled_email else "none"),
         ("Webhook", webhook_state),
         ("Webhook alerts", ", ".join(enabled_webhooks) if enabled_webhooks else "none"),
+        ("Output log", "disabled" if state.config_values.get("DISABLE_LOGGING") else "enabled"),
+        ("CSV output", state.config_values.get("CSV_FILE") or "disabled"),
         ("Config destination", state.config_path),
         ("Dotenv destination", state.env_path),
         ("Install method", install_method()),
@@ -3558,6 +3585,8 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
         _wizard_collect_email_section(state, input_func=input_func, getpass_func=getpass_func)
         print()
         _wizard_collect_webhook_section(state, input_func=input_func, getpass_func=getpass_func)
+        print()
+        _wizard_collect_output_section(state, input_func=input_func)
         if not _wizard_review_setup(state, input_func=input_func, getpass_func=getpass_func):
             print()
             print("Setup cancelled. Destination files were not changed.")

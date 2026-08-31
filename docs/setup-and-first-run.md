@@ -10,7 +10,7 @@ The quickest way to a working configuration is to answer a few questions:
 steam_monitor --setup
 ```
 
-It asks for the profile to monitor, whether to save that profile in the config file, how often to check, your Steam Web API key and whether you want email or webhook alerts. Enter accepts the shown default and Ctrl+C cancels. **Nothing is written until you choose Save**: the answers are held until the end, where a summary shows exactly what is about to be written and lets you go back and change **one section without losing the other answers**.
+It asks for the profile to monitor, whether to save that profile in the config file, how often to check, your Steam Web API key, whether you want email or webhook alerts and where output goes. The output questions cover the per-target log file and an optional CSV path, and leaving the CSV answer blank disables it. Enter accepts the shown default and Ctrl+C cancels. **Nothing is written until you choose Save**: the answers are held until the end, where a summary shows exactly what is about to be written and lets you go back and change **one section without losing the other answers**.
 
 Answers are accepted in the formats people actually paste. The profile takes a **Steam64 ID, a Steam3 identifier, a vanity name or a full profile URL**, and is normalized to one canonical Steam64 ID. During fresh setup, a vanity name is resolved after the API key step. Intervals take **`30s`, `2m`, `1.5h`, `1h 30m`, `1d`** or a plain number of seconds. Supported units are `s`, `m`, `h` and `d`.
 
