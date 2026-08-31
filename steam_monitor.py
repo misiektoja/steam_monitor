@@ -294,6 +294,12 @@ DEBUG_MODE = False
 #   "Off"  - preserve Unicode separators in logs
 ASCII_LOG_SEPARATORS = "Auto"
 
+# Maximum width for a value in the startup summary before it is truncated with a visible marker
+#   0      - never truncate (default)
+#   "Auto" - detect the terminal width and fit the summary to it
+#   <int>  - truncate to that many characters
+TRUNCATE_CHARS = 0
+
 # Width of horizontal line
 HORIZONTAL_LINE = 113
 
@@ -408,6 +414,7 @@ FILE_SUFFIX = ""
 ST_LOGFILE = ""
 DISABLE_LOGGING = False
 ASCII_LOG_SEPARATORS = "Auto"
+TRUNCATE_CHARS = 0
 VERBOSE_MODE = False
 DEBUG_MODE = False
 HORIZONTAL_LINE = 0
@@ -1816,6 +1823,11 @@ def _format_startup_notification_line(label, categories):
     prefix = f"* {label:<30}"
     state = "On (" + ", ".join(categories) + ")" if categories else "Off"
     return textwrap.fill(state, width=100, initial_indent=prefix, subsequent_indent=" " * len(prefix), break_long_words=False, break_on_hyphens=False)
+
+
+# Returns one channel's rollup value, naming the enabled categories rather than only whether the channel is on
+def _startup_notification_state(categories):
+    return "On (" + ", ".join(categories) + ")" if categories else "Off"
 
 
 # Builds compact startup notification lines for both delivery channels
@@ -3252,6 +3264,117 @@ def print_welcome_screen(input_func=None, interactive=None):
         print()
         return run_setup_wizard()
     return 0
+
+
+# One startup summary setting, routed independently to the concise view, the verbose view and the log file
+StartupSummaryRow = namedtuple("StartupSummaryRow", ["label", "value", "concise", "full", "log"])
+StartupSummaryRow.__new__.__defaults__ = (True, True, True)
+
+
+# Returns the width a summary value may occupy, resolving the Auto setting against the real terminal
+def startup_summary_value_width():
+    setting = TRUNCATE_CHARS
+    if isinstance(setting, str):
+        if setting.strip().casefold() != "auto":
+            return 0
+        try:
+            columns = shutil.get_terminal_size(fallback=(0, 0)).columns
+        except OSError:
+            return 0
+        # The label column is a fixed 32 characters, so the value gets whatever is left
+        return max(20, columns - 32) if columns else 0
+    try:
+        return max(0, int(setting))
+    except (TypeError, ValueError):
+        return 0
+
+
+# Truncates one value to the configured width, leaving a visible marker rather than silently cutting it
+def truncate_summary_value(value, width=None):
+    text = str(value)
+    limit = startup_summary_value_width() if width is None else width
+    if not limit or len(text) <= limit:
+        return text
+    return text[:max(1, limit - 3)] + "..."
+
+
+# Prints the startup summary, showing only the concise rows unless the full view was asked for
+def emit_startup_summary(rows, show_full=False, printer=None):
+    write = print if printer is None else printer
+    for row in rows:
+        if not (row.full if show_full else row.concise):
+            continue
+        prefix = f"* {row.label + ':':<30}"
+        width = startup_summary_value_width()
+        if width:
+            write(f"{prefix}{truncate_summary_value(row.value, width)}")
+            continue
+        # Unbounded values wrap into the value column rather than running off the edge of the terminal
+        write(textwrap.fill(str(row.value), width=100, initial_indent=prefix, subsequent_indent=" " * len(prefix), break_long_words=False, break_on_hyphens=False))
+
+
+# Builds every startup summary row, deciding per row whether it belongs in the concise view, the full view and the log
+def build_startup_summary(config_path=None, env_path=None, log_path=None):
+    startup_secret_sources = secret_sources(env_path)
+    dotenv_supplied = sorted(name for name, source in startup_secret_sources.items() if source != "environment")
+    environment_supplied = sorted(name for name, source in startup_secret_sources.items() if source == "environment")
+    rows = [
+        StartupSummaryRow("Steam polling intervals", f"[offline: {display_time(STEAM_CHECK_INTERVAL)}] [online: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]"),
+        StartupSummaryRow("Notifications (email)", _startup_notification_state(_startup_email_notification_categories())),
+        StartupSummaryRow("Notifications (webhook)", _startup_notification_state(_startup_webhook_notification_categories())),
+        StartupSummaryRow("Liveness check", f"{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else "")),
+        StartupSummaryRow("Level/XP tracking enabled", str(STEAM_LEVEL_XP_CHECK)),
+        StartupSummaryRow("Friends tracking enabled", str(FRIENDS_CHECK)),
+        StartupSummaryRow("Games tracking enabled", str(GAMES_LIBRARY_CHECK)),
+        StartupSummaryRow("CSV logging enabled", f"{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else "")),
+        StartupSummaryRow("Profile CSV logging enabled", f"{bool(PROFILE_CSV_FILE)}" + (f" ({PROFILE_CSV_FILE})" if PROFILE_CSV_FILE else "")),
+        StartupSummaryRow("Output logging enabled", f"{not DISABLE_LOGGING}" + (f" ({log_path})" if not DISABLE_LOGGING and log_path else "")),
+        # Only interesting when troubleshooting how a log file renders elsewhere
+        StartupSummaryRow("ASCII log separators", f"{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})", concise=False),
+        StartupSummaryRow("Configuration file", str(config_path)),
+        StartupSummaryRow("Dotenv file", str(env_path or "None")),
+        StartupSummaryRow("Install method", install_method_display_name(), concise=False),
+        StartupSummaryRow("Secrets from dotenv file", ", ".join(dotenv_supplied) if dotenv_supplied else "None", concise=False),
+        StartupSummaryRow("Secrets from environment", ", ".join(environment_supplied) if environment_supplied else "None", concise=False),
+        StartupSummaryRow("Diagnostics", f"[verbose: {VERBOSE_MODE}] [debug: {DEBUG_MODE}]", concise=False),
+    ]
+    return rows
+
+
+# Returns the help epilog, grouped by what the reader is trying to do rather than listed as one flat block
+def help_examples():
+    groups = (
+        ("Getting started", (
+            ("Answer a few questions and write a configuration", ["--setup"]),
+            ("Check the setup before relying on it", ["--doctor", "<steam_user_id>"]),
+            ("Start monitoring", ["<steam_user_id>"]),
+        )),
+        ("Configuration and secrets", (
+            ("Write a configuration template to edit by hand", ["--generate-config", "steam_monitor.conf"]),
+            ("Save the Steam Web API key through a hidden prompt", ["--set-steam-api-key"]),
+            ("Save a Discord or ntfy webhook URL through a hidden prompt", ["--set-webhook-url"]),
+        )),
+        ("Notifications", (
+            ("Email when the user goes online or offline, and on game changes", ["<steam_user_id>", "-a", "-g"]),
+            ("Send one test email", ["--send-test-email"]),
+            ("Send one test webhook", ["--send-test-webhook"]),
+        )),
+        ("Information and diagnostics", (
+            ("Show detailed profile information and exit", ["-i", "<steam_user_id>"]),
+            ("Resolve a profile URL to a Steam64 ID", ["-r", "https://steamcommunity.com/id/<name>/"]),
+            ("Trace what the tool is doing", ["<steam_user_id>", "--debug"]),
+        )),
+    )
+    lines = ["Examples:"]
+    for title, entries in groups:
+        lines.append("")
+        lines.append(f"  {title}")
+        for description, arguments in entries:
+            lines.append(f"    {description}:")
+            lines.append(f"      {render_command(arguments, include_paths=False)}")
+    lines.append("")
+    lines.append(f"Guide: {GUIDE_URL}")
+    return "\n".join(lines)
 
 
 # Initializes the CSV file
@@ -4998,7 +5121,9 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="steam_monitor",
-        description=("Monitor a Steam user's playing status and send customizable email or webhook alerts [ https://github.com/misiektoja/steam_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter
+        description=(f"Monitor a Steam user's playing status and send customizable email or webhook alerts [ {PROJECT_URL} ]"),
+        epilog=help_examples(),
+        formatter_class=argparse.RawTextHelpFormatter
     )
 
     # Positional
@@ -5657,28 +5782,7 @@ def main():
         FRIENDS_NOTIFICATION = False
         GAMES_LIBRARY_NOTIFICATION = False
 
-    print(f"* Steam polling intervals:\t[offline: {display_time(STEAM_CHECK_INTERVAL)}] [online: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]")
-    for notification_summary_line in _startup_notification_summary_lines():
-        print(notification_summary_line)
-    print(f"* Liveness check:\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
-    print(f"* Level/XP tracking enabled:\t{STEAM_LEVEL_XP_CHECK}")
-    print(f"* Friends tracking enabled:\t{FRIENDS_CHECK}")
-    print(f"* Games tracking enabled:\t{GAMES_LIBRARY_CHECK}")
-    print(f"* CSV logging enabled:\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
-    print(f"* Profile CSV logging enabled:\t{bool(PROFILE_CSV_FILE)}" + (f" ({PROFILE_CSV_FILE})" if PROFILE_CSV_FILE else ""))
-    print(f"* Output logging enabled:\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
-    print(f"* ASCII log separators:\t\t{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})")
-    print(f"* Configuration file:\t\t{cfg_path}")
-    print(f"* Dotenv file:\t\t\t{env_path or 'None'}")
-
-    if full_startup_summary_enabled():
-        startup_secret_sources = secret_sources(env_path)
-        dotenv_supplied = sorted(name for name, source in startup_secret_sources.items() if source != "environment")
-        environment_supplied = sorted(name for name, source in startup_secret_sources.items() if source == "environment")
-        print(f"* Install method:\t\t{install_method_display_name()}")
-        print(f"* Secrets from dotenv file:\t{', '.join(dotenv_supplied) if dotenv_supplied else 'None'}")
-        print(f"* Secrets from environment:\t{', '.join(environment_supplied) if environment_supplied else 'None'}")
-        print(f"* Diagnostics:\t\t\t[verbose: {VERBOSE_MODE}] [debug: {DEBUG_MODE}]")
+    emit_startup_summary(build_startup_summary(cfg_path, env_path, FINAL_LOG_PATH), show_full=full_startup_summary_enabled())
 
     if NTFY_IMAGES and not NTFY_IMAGES_AVAILABLE:
         NTFY_IMAGES = False

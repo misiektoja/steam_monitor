@@ -729,7 +729,9 @@ steam_monitor <steam_user_id> --verbose
 steam_monitor <steam_user_id> --debug
 ```
 
-The two modes are independent, so pass both to see everything. Either one on its own expands the startup summary. Both can also be enabled permanently with the `VERBOSE_MODE` and `DEBUG_MODE` configuration settings. A flag on the command line always wins, so `--debug` still applies when the configuration file sets `DEBUG_MODE = False`.
+The two modes are independent, so pass both to see everything. Either one on its own expands the startup summary, adding the detected install method, which secrets came from where, and the diagnostic state.
+
+If long paths make the startup summary hard to read, `TRUNCATE_CHARS` bounds each value: set it to a number of characters, or to `"Auto"` to fit the summary to the terminal width. Truncated values end with a visible `...` marker. It is off by default. Both can also be enabled permanently with the `VERBOSE_MODE` and `DEBUG_MODE` configuration settings. A flag on the command line always wins, so `--debug` still applies when the configuration file sets `DEBUG_MODE = False`.
 
 Debug mode is the fastest way to find out why a tracked feature reports nothing. Steam level, XP, friends list and games library lookups each degrade quietly when Steam refuses them, usually because the profile is private. Debug names the endpoint that failed and verbose adds a line saying the matching alert cannot fire this cycle.
 

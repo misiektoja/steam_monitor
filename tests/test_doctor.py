@@ -545,3 +545,61 @@ def test_piped_output_has_no_progress_line(monkeypatch, doctor_globals, capsys):
     output = capsys.readouterr().out
     assert "* Checking " not in output
     assert "\r" not in output
+
+
+# The user-visible strings that must read identically across the sibling tools, since users learn them once
+SHARED_CONTRACT = {
+    "preflight_notice": "Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval.",
+    "all_passed": "All checks passed. You are good to go!",
+    "with_warnings": "All critical checks passed with {count} warning(s). Review the warnings above.",
+    "with_failures": "{failures} check(s) failed, {warnings} warning(s). Fix the failures above before relying on the tool.",
+    "doctor_prompt": "Run doctor now? It writes no files and offers real delivery tests only with separate approval.",
+    "email_prompt": "Send one test email now? This will deliver a real message",
+    "webhook_prompt": "Send one test webhook through {provider} now? This will publish a real notification",
+    "delivery_heading": "Optional delivery tests",
+    "delivery_notice": "Doctor will not write files. Each approved test sends one real message.",
+}
+
+
+# Verifies the shared wording is produced verbatim, so drift from the sibling tools fails here
+def test_the_shared_output_contract_is_produced_verbatim(monkeypatch, doctor_globals, capsys):
+    report = monitor.DoctorReport()
+    report.email_ready = True
+    report.webhook_ready = True
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "ntfy")
+    monkeypatch.setattr(monitor.sys.stdin, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(monitor.sys.stdout, "isatty", lambda: True, raising=False)
+    asked = []
+    monkeypatch.setattr("builtins.input", lambda prompt: asked.append(prompt) or "n")
+
+    monitor.render_doctor_notice()
+    monitor._doctor_offer_notification_tests(report)
+    output = capsys.readouterr().out
+
+    assert SHARED_CONTRACT["preflight_notice"] in output
+    assert SHARED_CONTRACT["delivery_heading"] in output
+    assert SHARED_CONTRACT["delivery_notice"] in output
+    assert any(prompt.startswith(SHARED_CONTRACT["email_prompt"]) for prompt in asked)
+    assert any(prompt.startswith(SHARED_CONTRACT["webhook_prompt"].format(provider="ntfy")) for prompt in asked)
+
+
+# Verifies each summary sentence renders exactly as the contract states it, including its punctuation
+def test_the_summary_sentences_render_verbatim():
+    passing = monitor.DoctorReport()
+    passing.checks.append(monitor.make_doctor_check("Environment", "PASS", "fine"))
+    assert SHARED_CONTRACT["all_passed"] in monitor.render_doctor_report(passing)
+
+    warned = monitor.DoctorReport()
+    warned.checks.extend([monitor.make_doctor_check("Environment", "WARN", "a"), monitor.make_doctor_check("Environment", "WARN", "b")])
+    assert SHARED_CONTRACT["with_warnings"].format(count=2) in monitor.render_doctor_report(warned)
+
+    failed = monitor.DoctorReport()
+    failed.checks.extend([monitor.make_doctor_check("Environment", "FAIL", "a"), monitor.make_doctor_check("Environment", "WARN", "b")])
+    assert SHARED_CONTRACT["with_failures"].format(failures=1, warnings=1) in monitor.render_doctor_report(failed)
+
+
+# Verifies the wizard prompt shared with the sibling tools is used verbatim
+def test_the_wizard_doctor_prompt_is_shared():
+    source = (REPO_ROOT / "steam_monitor.py").read_text(encoding="utf-8")
+
+    assert SHARED_CONTRACT["doctor_prompt"] in source
