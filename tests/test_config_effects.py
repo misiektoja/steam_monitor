@@ -128,6 +128,7 @@ def test_verbose_flag_survives_a_config_that_disables_it(tmp_path, monkeypatch, 
     assert observed["verbose_during_config_load"] is True
     assert observed["verbose_during_connectivity_check"] is True
     assert observed["verbose_at_monitoring_start"] is True
+    # Verbose does not turn debug on either, so the two flags stay independent in both directions
     assert observed["debug_at_monitoring_start"] is False
 
 
@@ -139,7 +140,8 @@ def test_config_file_can_enable_debug_mode_without_a_flag(tmp_path, monkeypatch,
 
     assert observed["debug_during_config_load"] is False
     assert observed["debug_during_connectivity_check"] is True
-    assert monitor.verbose_enabled() is True
+    # Debug and verbose are independent, so a config that enables only debug leaves verbose off
+    assert observed["verbose_during_connectivity_check"] is False
 
 
 # Verifies neither mode turns itself on when nothing asks for it

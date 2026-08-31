@@ -653,17 +653,17 @@ Two flags control how much the tool explains about itself.
 steam_monitor <steam_user_id> --verbose
 ```
 
-`--debug` traces the whole run: the configuration file being loaded, the connectivity endpoint being probed, every Steam Web API call each polling cycle makes, the SMTP host an email is sent through, each webhook attempt with its HTTP status and retry decision, the state files being read and written, and the technical cause of any failure. It implies `--verbose`:
+`--debug` traces the whole run in timestamped `[DEBUG HH:MM:SS]` lines: the configuration file being loaded, the connectivity endpoint being probed, every Steam Web API call each polling cycle makes, the SMTP host an email is sent through, each webhook attempt with its HTTP status and retry decision, the state files being read and written, and the technical cause of any failure:
 
 ```sh
 steam_monitor <steam_user_id> --debug
 ```
 
-Both can also be enabled permanently with the `VERBOSE_MODE` and `DEBUG_MODE` configuration settings. A flag on the command line always wins, so `--debug` still applies when the configuration file sets `DEBUG_MODE = False`.
+The two modes are independent, so pass both to see everything. Either one on its own expands the startup summary. Both can also be enabled permanently with the `VERBOSE_MODE` and `DEBUG_MODE` configuration settings. A flag on the command line always wins, so `--debug` still applies when the configuration file sets `DEBUG_MODE = False`.
 
 Debug mode is the fastest way to find out why a tracked feature reports nothing. Steam level, XP, friends list and games library lookups each degrade quietly when Steam refuses them, usually because the profile is private. Debug names the endpoint that failed and verbose adds a line saying the matching alert cannot fire this cycle.
 
-Secret values are never printed by either mode. Where a secret has to be identified, only a short masked prefix and suffix are shown, the webhook destination is traced by host name alone, and known secret values are redacted from every error message before it reaches the console or the log.
+Secret values are never printed by either mode. Redaction happens inside both printers rather than at each call site, so a known secret is replaced with `<redacted>` no matter which line interpolates it. Where a secret has to be identified, only a short masked prefix and suffix are shown, and the webhook destination is traced by host name alone. Debug output is switched off entirely for the duration of `--set-steam-api-key` and `--set-webhook-url`, so a pasted value cannot reach the console or the log.
 
 <a id="coloring-log-output-with-grc"></a>
 ### Coloring Log Output with GRC

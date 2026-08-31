@@ -158,6 +158,6 @@ def test_a_degraded_cycle_stays_quiet_without_diagnostics(tmp_path, monkeypatch,
     run_one_cycle(tmp_path, monkeypatch, failing_endpoints={"IPlayerService.GetSteamLevel", "ISteamUser.GetFriendList"}, diagnostics=False)
 
     output = capsys.readouterr().out
-    assert "* Debug:" not in output
+    assert "[DEBUG" not in output
     assert "was unavailable this cycle" not in output
     assert "Polling Steam for" not in output

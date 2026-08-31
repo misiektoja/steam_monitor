@@ -1,5 +1,7 @@
 """Tests that verbose and debug modes explain the runtime paths without disclosing secrets."""
 
+import re
+
 import pytest
 import requests as req
 
@@ -78,15 +80,123 @@ def test_diagnostic_printers_stay_silent_when_disabled(capsys, restored_globals)
     assert capsys.readouterr().out == ""
 
 
-# Verifies debug mode implies verbose, so a single flag is enough to see everything
-def test_debug_mode_implies_verbose(capsys, restored_globals):
+# Verifies the two modes stay independent, matching the sibling tools so a user reads one behaviour everywhere
+def test_debug_and_verbose_are_independent(capsys, restored_globals):
     monitor.DEBUG_MODE = True
     monitor.VERBOSE_MODE = False
+    monitor.print_verbose("verbose line")
+    monitor.print_debug("debug line")
 
-    monitor.print_verbose("visible verbose line")
+    output = capsys.readouterr().out
+    assert "verbose line" not in output
+    assert "debug line" in output
 
-    assert "visible verbose line" in capsys.readouterr().out
-    assert monitor.verbose_enabled() is True
+    monitor.DEBUG_MODE = False
+    monitor.VERBOSE_MODE = True
+    monitor.print_verbose("verbose line")
+    monitor.print_debug("debug line")
+
+    output = capsys.readouterr().out
+    assert "verbose line" in output
+    assert "debug line" not in output
+
+
+# Verifies the full startup summary still appears under either mode, which is where the two do overlap
+def test_the_full_startup_summary_appears_under_either_mode(restored_globals):
+    monitor.DEBUG_MODE = True
+    monitor.VERBOSE_MODE = False
+    assert monitor.full_startup_summary_enabled() is True
+
+    monitor.DEBUG_MODE = False
+    monitor.VERBOSE_MODE = True
+    assert monitor.full_startup_summary_enabled() is True
+
+    monitor.DEBUG_MODE = False
+    monitor.VERBOSE_MODE = False
+    assert monitor.full_startup_summary_enabled() is False
+
+
+# Verifies every debug line carries a timestamp and the shared prefix used by the sibling tools
+def test_debug_lines_are_timestamped(capsys, diagnostics_on):
+    monitor.print_debug("a traced step")
+
+    output = capsys.readouterr().out
+    assert re.match(r"^\[DEBUG \d{2}:\d{2}:\d{2}\] a traced step\n$", output), output
+
+
+# Verifies a secret interpolated by any caller is redacted inside the printer rather than at the call site
+def test_a_secret_interpolated_into_a_debug_line_is_redacted(capsys, restored_globals):
+    monitor.DEBUG_MODE = True
+    monitor.SMTP_PASSWORD = SECRET_SMTP_PASSWORD
+
+    monitor.print_debug(f"careless caller leaked {SECRET_SMTP_PASSWORD}")
+
+    output = capsys.readouterr().out
+    assert SECRET_SMTP_PASSWORD not in output
+    assert "<redacted>" in output
+
+
+# Verifies the same protection covers the verbose printer, which callers reach just as easily
+def test_a_secret_interpolated_into_a_verbose_line_is_redacted(capsys, restored_globals):
+    monitor.VERBOSE_MODE = True
+    monitor.WEBHOOK_URL = SECRET_WEBHOOK_URL
+
+    monitor.print_verbose(f"careless caller leaked {SECRET_WEBHOOK_URL}")
+
+    output = capsys.readouterr().out
+    assert SECRET_WEBHOOK_URL not in output
+    assert "<redacted>" in output
+
+
+# Verifies debug output is silenced while a raw secret is handled, then restored afterwards
+def test_debug_output_is_suppressed_around_a_raw_secret(capsys, restored_globals):
+    monitor.DEBUG_MODE = True
+
+    with monitor.debug_output_suppressed():
+        monitor.print_debug("must not appear")
+        assert monitor.DEBUG_MODE is False
+
+    monitor.print_debug("must appear again")
+
+    output = capsys.readouterr().out
+    assert "must not appear" not in output
+    assert "must appear again" in output
+    assert monitor.DEBUG_MODE is True
+
+
+# Verifies the suppression is restored even when the guarded operation raises
+def test_debug_suppression_survives_an_exception(restored_globals):
+    monitor.DEBUG_MODE = True
+
+    with pytest.raises(ValueError):
+        with monitor.debug_output_suppressed():
+            raise ValueError("cancelled")
+
+    assert monitor.DEBUG_MODE is True
+
+
+# Verifies the Steam API key entry path cannot emit debug output while the pasted value is in hand
+def test_the_api_key_entry_path_emits_no_debug_output(capsys, monkeypatch, restored_globals):
+    monitor.DEBUG_MODE = True
+    observed = {}
+
+    def record_and_reject(api_key, timeout=10):
+        observed["debug_during_entry"] = monitor.DEBUG_MODE
+        monitor.print_debug(f"validating {api_key}")
+        return False
+
+    with pytest.raises(monitor.SecretConfigurationError):
+        monitor.run_set_steam_api_key(
+            env_file="/dev/null",
+            interactive=True,
+            input_func=lambda _prompt: "y",
+            getpass_func=lambda _prompt: "PASTED-SECRET-KEY",
+            validator=record_and_reject,
+        )
+
+    assert observed["debug_during_entry"] is False
+    assert "PASTED-SECRET-KEY" not in capsys.readouterr().out
+    assert monitor.DEBUG_MODE is True
 
 
 # Verifies a swallowed exception is named together with the operation it broke

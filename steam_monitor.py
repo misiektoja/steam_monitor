@@ -277,8 +277,9 @@ DISABLE_LOGGING = False
 # Can also be enabled via the --verbose flag, which always wins over this setting
 VERBOSE_MODE = False
 
-# Whether to print diagnostic detail, including the technical cause of failures
-# Implies verbose output
+# Whether to print timestamped diagnostic detail, including every outbound call,
+# each notification delivery attempt and the technical cause of failures
+# Independent of VERBOSE_MODE, so enable both to see everything
 # Can also be enabled via the --debug flag, which always wins over this setting
 DEBUG_MODE = False
 
@@ -469,6 +470,8 @@ from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import argparse
+import functools
+from contextlib import contextmanager
 import ast
 import csv
 import getpass
@@ -587,27 +590,48 @@ def render_command(arguments=None, include_paths=True, config_path=None, env_pat
     return " ".join(quote_command_argument(part) for part in parts)
 
 
-# Prints a diagnostic line only when debug mode is enabled
+# Prints one timestamped and sanitized diagnostic line only when debug mode is enabled
 def print_debug(message):
     if DEBUG_MODE:
-        print(f"* Debug: {message}")
+        # Sanitized here rather than at each call site, since one caller interpolating a secret is enough to leak it
+        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] {sanitize_error_text(message)}")
 
 
-# Returns whether extra detail should be printed, which debug mode always implies
-def verbose_enabled():
+# Returns whether the full startup summary should be shown, which debug mode also implies
+def full_startup_summary_enabled():
     return bool(VERBOSE_MODE or DEBUG_MODE)
 
 
-# Prints an additional detail line only when verbose or debug mode is enabled
+# Prints one sanitized operational detail only when verbose mode is enabled
 def print_verbose(message):
-    if verbose_enabled():
-        print(f"* {message}")
+    if VERBOSE_MODE:
+        print(f"* {sanitize_error_text(message)}")
 
 
 # Records a swallowed exception in debug output so a silently degraded feature can still be diagnosed
 def print_debug_exception(context, exc):
-    if DEBUG_MODE:
-        print(f"* Debug: {context} failed with {type(exc).__name__}: {sanitize_error_text(exc)}")
+    print_debug(f"{context} failed with {type(exc).__name__}: {exc}")
+
+
+# Silences debug output while a raw secret is entered or validated, then restores the previous mode
+@contextmanager
+def debug_output_suppressed():
+    global DEBUG_MODE
+    previous_debug_mode = DEBUG_MODE
+    DEBUG_MODE = False
+    try:
+        yield
+    finally:
+        DEBUG_MODE = previous_debug_mode
+
+
+# Silences debug output for the whole of a function that handles a raw secret
+def suppresses_debug_output(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        with debug_output_suppressed():
+            return func(*args, **kwargs)
+    return wrapper
 
 
 # Returns the webhook destination host on its own, so delivery can be traced without printing the private URL
@@ -625,7 +649,6 @@ def apply_diagnostic_cli_flags(args):
         VERBOSE_MODE = True
     if getattr(args, "debug", None):
         DEBUG_MODE = True
-        VERBOSE_MODE = True
 
 
 # Returns a secret rendered as a short prefix and suffix so it can be shown without disclosing the value
@@ -1444,6 +1467,7 @@ def validate_steam_api_key(api_key, timeout=10):
 
 
 # Privately validates and atomically stores one Steam Web API key
+@suppresses_debug_output
 def run_set_steam_api_key(env_file=None, interactive=None, input_func=None, getpass_func=None, validator=None):
     destination = resolve_secret_env_path(env_file)
     terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
@@ -1503,6 +1527,7 @@ def detect_webhook_provider(url):
 
 
 # Privately validates and atomically stores one webhook URL
+@suppresses_debug_output
 def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpass_func=None):
     destination = resolve_secret_env_path(env_file)
     terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
@@ -4119,7 +4144,7 @@ def main():
         dest="debug",
         action="store_true",
         default=None,
-        help="Print diagnostic detail including the technical cause of failures, implies --verbose (overrides DEBUG_MODE)"
+        help="Print timestamped diagnostic detail including outbound calls and failure causes (overrides DEBUG_MODE)"
     )
 
     args = parser.parse_args()
@@ -4400,14 +4425,14 @@ def main():
     print(f"* Configuration file:\t\t{cfg_path}")
     print(f"* Dotenv file:\t\t\t{env_path or 'None'}")
 
-    if verbose_enabled():
+    if full_startup_summary_enabled():
         startup_secret_sources = secret_sources(env_path)
         dotenv_supplied = sorted(name for name, source in startup_secret_sources.items() if source != "environment")
         environment_supplied = sorted(name for name, source in startup_secret_sources.items() if source == "environment")
         print(f"* Install method:\t\t{install_method_display_name()}")
         print(f"* Secrets from dotenv file:\t{', '.join(dotenv_supplied) if dotenv_supplied else 'None'}")
         print(f"* Secrets from environment:\t{', '.join(environment_supplied) if environment_supplied else 'None'}")
-        print(f"* Diagnostics:\t\t\t[verbose: {verbose_enabled()}] [debug: {DEBUG_MODE}]")
+        print(f"* Diagnostics:\t\t\t[verbose: {VERBOSE_MODE}] [debug: {DEBUG_MODE}]")
 
     if NTFY_IMAGES and not NTFY_IMAGES_AVAILABLE:
         NTFY_IMAGES = False
