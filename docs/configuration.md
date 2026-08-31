@@ -22,6 +22,22 @@ Passing a filename that already exists copies the previous file to a timestamped
 
 By default every outbound request verifies TLS certificates. Set `VERIFY_SSL = False` only on a network that intercepts TLS with its own certificate authority, and understand that it removes protection against an intercepted connection.
 
+## Target Profile
+
+Save the monitored profile in the configuration file so you do not have to repeat it on every run:
+
+```ini
+TARGET_STEAM_ID = "76561197960435530"
+```
+
+`TARGET_STEAM_ID` accepts the same forms as the command line: a Steam64 ID, a Steam3 identifier, a vanity name or a full profile URL. A target written directly after the command takes precedence. With a saved target, start monitoring with:
+
+```sh
+steam_monitor
+```
+
+[`--setup`](setup-and-first-run.md#guided-setup) asks whether to save the target. Declining leaves `TARGET_STEAM_ID` empty and the printed start commands include the profile instead.
+
 ## SMTP Settings
 
 [`--setup`](setup-and-first-run.md#guided-setup) collects these for you. To configure them by hand, set the SMTP settings in the `steam_monitor.conf` file.

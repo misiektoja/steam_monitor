@@ -73,6 +73,12 @@ To monitor specific user activity, pass a Steam64 ID, Steam3 identifier, vanity 
 steam_monitor <steam_target>
 ```
 
+You can also save any of these forms as `TARGET_STEAM_ID` in `steam_monitor.conf`. A positional target takes precedence. With a saved target no positional value is needed:
+
+```sh
+steam_monitor
+```
+
 If you have not set `STEAM_API_KEY` secret, you can use `-u` flag:
 
 ```sh

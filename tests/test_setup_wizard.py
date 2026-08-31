@@ -68,7 +68,7 @@ def run_wizard(tmp_path, monkeypatch, answers, secrets=None, transcript=None, in
 
 # The shortest answer script that reaches Save: target, two intervals, no email, no webhook, save, no doctor
 def minimal_answers(target=str(STEAM64)):
-    return [target, "5m", "45s", "n", "n", "1", "n"]
+    return [target, "y", "5m", "45s", "n", "n", "1", "n", "n"]
 
 
 # Verifies a duration is accepted in the formats people actually type
@@ -127,7 +127,7 @@ def test_an_unusable_target_is_refused(value):
 # Verifies the wizard writes nothing at all until Save is chosen
 def test_nothing_is_written_before_save(tmp_path, monkeypatch, wizard_globals):
     # Discard, confirm the discard
-    answers = [str(STEAM64), "5m", "45s", "n", "n", "3", "y"]
+    answers = [str(STEAM64), "y", "5m", "45s", "n", "n", "3", "y"]
 
     code = run_wizard(tmp_path, monkeypatch, answers)
 
@@ -139,7 +139,7 @@ def test_nothing_is_written_before_save(tmp_path, monkeypatch, wizard_globals):
 # Verifies declining the discard keeps every answer rather than restarting
 def test_declining_the_discard_keeps_the_answers(tmp_path, monkeypatch, wizard_globals, capsys):
     # Discard, decline the discard, then save, then decline doctor
-    answers = [str(STEAM64), "5m", "45s", "n", "n", "3", "n", "1", "n"]
+    answers = [str(STEAM64), "y", "5m", "45s", "n", "n", "3", "n", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers) == 0
 
@@ -188,9 +188,9 @@ def test_the_secret_never_reaches_the_configuration(tmp_path, monkeypatch, wizar
 # Verifies editing one section reverts only that section and leaves the other answers standing
 def test_editing_one_section_keeps_the_others(tmp_path, monkeypatch, wizard_globals):
     answers = [
-        str(STEAM64), "5m", "45s", "n", "n",   # target, polling, no email, no webhook
-        "2", "2", "9m", "70s",                 # review, choose Polling, new intervals
-        "1", "n",                              # save, decline doctor
+        str(STEAM64), "y", "5m", "45s", "n", "n",   # target, persist, polling, no email, no webhook
+        "2", "2", "9m", "70s",                      # review, choose Polling, new intervals
+        "1", "n", "n",                              # save, decline doctor, decline monitoring
     ]
 
     assert run_wizard(tmp_path, monkeypatch, answers) == 0
@@ -206,9 +206,9 @@ def test_editing_one_section_keeps_the_others(tmp_path, monkeypatch, wizard_glob
 def test_editing_the_target_section_asks_again(tmp_path, monkeypatch, wizard_globals, capsys):
     other_id = "76561197960287930"
     answers = [
-        str(STEAM64), "5m", "45s", "n", "n",
-        "2", "1", other_id,   # review, choose Target, give a different profile
-        "1", "n",
+        str(STEAM64), "y", "5m", "45s", "n", "n",
+        "2", "1", other_id, "y",   # review, choose Target, give a different profile, persist it
+        "1", "n", "n",
     ]
 
     run_wizard(tmp_path, monkeypatch, answers)
@@ -227,7 +227,7 @@ def test_declining_email_turns_every_email_alert_off(tmp_path, monkeypatch, wiza
 
 # Verifies the webhook service is chosen before the URL is pasted, the shared order across these tools
 def test_the_webhook_service_is_chosen_before_the_url(tmp_path, monkeypatch, wizard_globals, capsys):
-    answers = [str(STEAM64), "5m", "45s", "n", "y", "1", "1", "1", "n"]
+    answers = [str(STEAM64), "y", "5m", "45s", "n", "y", "1", "1", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers, secrets=[API_KEY, WEBHOOK_URL]) == 0
 
@@ -241,7 +241,7 @@ def test_the_webhook_service_is_chosen_before_the_url(tmp_path, monkeypatch, wiz
 
 # Verifies a bare ntfy topic name is expanded to a full ntfy.sh URL, as the shared prompt promises
 def test_a_bare_ntfy_topic_becomes_a_full_url(tmp_path, monkeypatch, wizard_globals):
-    answers = [str(STEAM64), "5m", "45s", "n", "y", "2", "n", "n", "1", "1", "n"]
+    answers = [str(STEAM64), "y", "5m", "45s", "n", "y", "2", "n", "n", "1", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers, secrets=[API_KEY, "my-topic"]) == 0
 
@@ -250,7 +250,7 @@ def test_a_bare_ntfy_topic_becomes_a_full_url(tmp_path, monkeypatch, wizard_glob
 
 # Verifies a rejected duration is asked again instead of being stored as something else
 def test_a_rejected_duration_is_asked_again(tmp_path, monkeypatch, wizard_globals, capsys):
-    answers = [str(STEAM64), "banana", "5m", "45s", "n", "n", "1", "n"]
+    answers = [str(STEAM64), "y", "banana", "5m", "45s", "n", "n", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers) == 0
 
@@ -260,7 +260,7 @@ def test_a_rejected_duration_is_asked_again(tmp_path, monkeypatch, wizard_global
 
 # Verifies a rejected target is asked again with the guidance the reader needs
 def test_a_rejected_target_is_asked_again(tmp_path, monkeypatch, wizard_globals, capsys):
-    answers = ["https://example.com/nope", str(STEAM64), "5m", "45s", "n", "n", "1", "n"]
+    answers = ["https://example.com/nope", str(STEAM64), "y", "5m", "45s", "n", "n", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers) == 0
     assert "Enter a Steam64 ID" in capsys.readouterr().out
@@ -297,6 +297,73 @@ def test_the_shared_prompt_wording_is_used(tmp_path, monkeypatch, wizard_globals
     run_wizard(tmp_path, monkeypatch, minimal_answers(), transcript=transcript)
 
     assert any(prompt.startswith("Run doctor now? It writes no files and offers real delivery tests only with separate approval.") for prompt in transcript)
+
+
+# Verifies the persist answer puts the target in the config file, so the tool runs without arguments
+def test_a_persisted_target_reaches_the_config_file(tmp_path, monkeypatch, wizard_globals):
+    assert run_wizard(tmp_path, monkeypatch, minimal_answers()) == 0
+
+    values = monitor.parse_config_content((tmp_path / "steam_monitor.conf").read_text(encoding="utf-8"))
+    assert values["TARGET_STEAM_ID"] == str(STEAM64)
+
+
+# Verifies declining the persist question leaves the target out of the written config
+def test_a_declined_persist_leaves_the_target_out_of_the_config(tmp_path, monkeypatch, wizard_globals, capsys):
+    answers = [str(STEAM64), "n", "5m", "45s", "n", "n", "1", "n", "n"]
+
+    assert run_wizard(tmp_path, monkeypatch, answers) == 0
+
+    values = monitor.parse_config_content((tmp_path / "steam_monitor.conf").read_text(encoding="utf-8"))
+    assert values["TARGET_STEAM_ID"] == ""
+    # Without a persisted target the printed commands have to carry it
+    assert str(STEAM64) in capsys.readouterr().out
+
+
+# Verifies the persist question is asked with the wording the sibling monitors use
+def test_the_target_section_asks_whether_to_persist(tmp_path, monkeypatch, wizard_globals):
+    transcript = []
+
+    run_wizard(tmp_path, monkeypatch, minimal_answers(), transcript=transcript)
+
+    assert any(prompt.startswith("Persist this target in the generated config? [Y/n]") for prompt in transcript)
+
+
+# Verifies duration prompts name the accepted units and show the stored seconds beside a readable form
+def test_duration_prompts_show_the_units_and_the_stored_seconds(tmp_path, monkeypatch, wizard_globals):
+    transcript = []
+
+    run_wizard(tmp_path, monkeypatch, minimal_answers(), transcript=transcript)
+
+    polling = [prompt for prompt in transcript if "polling interval" in prompt]
+    assert len(polling) == 2
+    for prompt in polling:
+        assert "(seconds or use s/m/h/d)" in prompt
+    assert "[120s - 2m]" in polling[0]
+    assert "[60s - 1m]" in polling[1]
+
+
+# Verifies a wizard duration is rendered as raw seconds plus a readable form, the way the siblings render it
+@pytest.mark.parametrize("seconds,expected", [
+    (60, "60s - 1m"), (120, "120s - 2m"), (3600, "3600s - 1h"), (5400, "5400s - 1h 30m"), (86400, "86400s - 1d"),
+])
+def test_wizard_durations_show_seconds_and_a_readable_form(seconds, expected):
+    assert monitor._wizard_format_duration(seconds) == expected
+
+
+# Verifies prompts go through the shared colorized reader rather than a bare input call
+@pytest.mark.parametrize("ask,arguments", [
+    (lambda: monitor._wizard_ask_text("Question"), ()),
+    (lambda: monitor._wizard_ask_yes_no("Question?"), ()),
+    (lambda: monitor._wizard_ask_duration("Question", 60), ()),
+])
+def test_wizard_prompts_are_colorized(monkeypatch, ask, arguments):
+    parts = []
+    monkeypatch.setattr(monitor, "colorize", lambda part, text: parts.append(part) or f"<{part}>{text}")
+    monkeypatch.setattr("builtins.input", lambda _prompt: "")
+
+    ask()
+
+    assert "info" in parts
 
 
 # Verifies a non-interactive run explains itself and names the alternative instead of hanging
@@ -451,9 +518,9 @@ def capture_wizard_pty(tmp_path, script):
 @pytest.mark.skipif(sys.platform == "win32", reason="pty is not available on Windows")
 # Verifies the wizard layout holds on the path a user walks, which is the seam unit tests cannot see
 def test_the_wizard_transcript_holds_the_output_contract(tmp_path):
-    # Target, offline interval, online interval, no email, no webhook, save, decline doctor
-    # Target, intervals, keep the existing key, no email, no webhook, save, decline doctor
-    raw = capture_wizard_pty(tmp_path, b"76561197960435530\n5m\n45s\nn\nn\nn\n1\nn\n")
+    # Target, persist it, both intervals, keep the existing key, no email, no webhook,
+    # save, decline doctor, decline monitoring
+    raw = capture_wizard_pty(tmp_path, b"76561197960435530\ny\n5m\n45s\nn\nn\nn\n1\nn\nn\n")
     text = re.sub(r"\x1B\[[0-9;]*[A-Za-z]", "", raw)
     lines = [line[:-1] if line.endswith("\r") else line for line in text.split("\n")]
 

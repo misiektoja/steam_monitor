@@ -35,6 +35,10 @@ CONFIG_BLOCK = """
 #   - Hard-code it in the code or config file
 STEAM_API_KEY = "your_steam_web_api_key"
 
+# Steam profile to monitor by Steam64 ID, Steam3 identifier, vanity name or profile URL
+# A positional command-line target overrides this value
+TARGET_STEAM_ID = ""
+
 # SMTP settings for sending email notifications
 # If left as-is, no notifications will be sent
 #
@@ -362,6 +366,7 @@ STEAM_ACTIVE_CHECK_SIGNAL_VALUE = 30  # 30 seconds
 # Default dummy values so linters shut up
 # Do not change values below - modify them in the configuration section or config file instead
 STEAM_API_KEY = ""
+TARGET_STEAM_ID = ""
 SMTP_HOST = ""
 SMTP_PORT = 0
 SMTP_USER = ""
@@ -515,6 +520,7 @@ import importlib.util
 import math
 import re
 import shlex
+import subprocess
 from collections import namedtuple
 import unicodedata
 import ipaddress
@@ -2893,14 +2899,25 @@ def _wizard_default(value):
     return str(value) if doctor_value_is_set(value if isinstance(value, str) else str(value or "")) else ""
 
 
+# Prints the shared line telling the user how defaults and cancelling work
+def _wizard_print_default_guidance():
+    print("Press Enter to accept the shown default. Ctrl+C cancels.\n")
+
+
+# Reads one setup line, colorized like the sibling monitors. Cancelling propagates to the one
+# handler in run_setup_wizard, which reports that nothing was written
+def _wizard_input(prompt_text, input_func=None):
+    prompt = input if input_func is None else input_func
+    return prompt(colorize("info", prompt_text))
+
+
 # Asks one free-text question, returning the shown default when the answer is empty
 def _wizard_ask_text(question, default="", required=False, input_func=None):
-    prompt = input if input_func is None else input_func
+    suffix = f" [{default}]" if default else ""
     while True:
-        suffix = f" [{default}]" if default else ""
-        answer = prompt(f"{question}{suffix}: ").strip()
-        if not answer and default:
-            return default
+        answer = _wizard_input(f"{question}{suffix}: ", input_func=input_func).strip()
+        if not answer:
+            answer = default
         if answer or not required:
             return answer
         print("  This value is required.")
@@ -2908,10 +2925,9 @@ def _wizard_ask_text(question, default="", required=False, input_func=None):
 
 # Asks one yes or no question with a visible default
 def _wizard_ask_yes_no(question, default=True, input_func=None):
-    prompt = input if input_func is None else input_func
     hint = "[Y/n]" if default else "[y/N]"
     while True:
-        answer = prompt(f"{question} {hint}: ").strip().casefold()
+        answer = _wizard_input(f"{question} {hint}: ", input_func=input_func).strip().casefold()
         if not answer:
             return default
         if answer in ("y", "yes"):
@@ -2923,16 +2939,16 @@ def _wizard_ask_yes_no(question, default=True, input_func=None):
 
 # Asks one numbered multiple-choice question and returns the chosen index
 def _wizard_ask_choice(question, options, default_index=0, input_func=None):
-    prompt = input if input_func is None else input_func
     print()
     print(question)
     for index, (label, description) in enumerate(options, 1):
         marker = " (default)" if index - 1 == default_index else ""
         print(f"  {colorize('username', str(index))}. {label}{colorize('info', marker)}")
         if description:
-            print(f"     {description}")
+            for line in description.splitlines():
+                print(f"     {line}")
     while True:
-        answer = prompt(f"Choose [1-{len(options)}]: ").strip()
+        answer = _wizard_input(f"Choose [1-{len(options)}]: ", input_func=input_func).strip()
         if not answer:
             return default_index
         if answer.isdigit() and 1 <= int(answer) <= len(options):
@@ -2940,16 +2956,41 @@ def _wizard_ask_choice(question, options, default_index=0, input_func=None):
         print(f"  Enter a number between 1 and {len(options)}.")
 
 
-# Asks one duration, accepting the formats people actually type and echoing back the normalized value
-def _wizard_ask_duration(question, default, input_func=None):
-    prompt = input if input_func is None else input_func
+# Asks until the user provides a positive whole number or accepts the default
+def _wizard_ask_positive_int(question, default, input_func=None):
     while True:
-        answer = prompt(f"{question} [{display_time(default)}]: ").strip()
+        answer = _wizard_ask_text(question, default=str(default), required=True, input_func=input_func)
+        try:
+            parsed = int(answer)
+        except ValueError:
+            parsed = 0
+        if parsed > 0:
+            return parsed
+        print("  Enter a positive whole number.")
+
+
+# Renders a wizard duration as raw seconds plus a readable form, so the stored config value stays visible
+def _wizard_format_duration(seconds):
+    remaining = seconds
+    parts = []
+    for suffix, count in (("d", 86400), ("h", 3600), ("m", 60), ("s", 1)):
+        value, remaining = divmod(remaining, count)
+        if value:
+            parts.append(f"{value}{suffix}")
+    raw = f"{seconds}s"
+    readable = " ".join(parts) or raw
+    return raw if readable == raw else f"{raw} - {readable}"
+
+
+# Asks one duration, accepting the formats people actually type
+def _wizard_ask_duration(question, default, input_func=None):
+    prompt_text = f"{question} [{_wizard_format_duration(default)}]: "
+    while True:
+        answer = _wizard_input(prompt_text, input_func=input_func).strip()
         if not answer:
             return default
         seconds = parse_duration_input(answer)
         if seconds is not None:
-            print(f"  Using {display_time(seconds)}.")
             return seconds
         print("  Enter a positive duration such as 120, 2m, 1.5h, 1h 30m or 1d.")
 
@@ -3015,7 +3056,7 @@ WIZARD_WEBHOOK_NOTIFICATION_KEYS = ("WEBHOOK_ACTIVE_NOTIFICATION", "WEBHOOK_INAC
 
 # Each editable section: internal name, menu label and description, then the keys reverted when it is re-entered
 WIZARD_SECTIONS = (
-    ("Target", "Target", "Change the Steam profile that is monitored.", (), ()),
+    ("Target", "Target", "Change the Steam profile that is monitored.", ("TARGET_STEAM_ID",), ()),
     ("Polling", "Polling interval", "Change how often Steam is checked.", ("STEAM_CHECK_INTERVAL", "STEAM_ACTIVE_CHECK_INTERVAL"), ()),
     ("Authentication", "Authentication", "Enter the Steam Web API key again.", (), ("STEAM_API_KEY",)),
     ("Email", "Email notifications", "Change SMTP details and email events.", ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL") + WIZARD_EMAIL_NOTIFICATION_KEYS, ("SMTP_PASSWORD",)),
@@ -3047,7 +3088,7 @@ def _wizard_collect_target_section(state, initial_target=None, input_func=None):
         if steam64 is not None:
             state.target = str(steam64)
             print(f"  Using Steam64 ID {steam64}.")
-            return
+            break
         resolved = None
         if doctor_value_is_set(state.secret_updates.get("STEAM_API_KEY") or state.config_values.get("STEAM_API_KEY")):
             api_key = state.secret_updates.get("STEAM_API_KEY") or state.config_values.get("STEAM_API_KEY")
@@ -3058,10 +3099,17 @@ def _wizard_collect_target_section(state, initial_target=None, input_func=None):
         if resolved is not None:
             state.target = str(resolved)
             print(f"  Resolved '{vanity}' to Steam64 ID {resolved}.")
-            return
+            break
         state.pending_vanity = vanity
         print(f"  '{vanity}' will be resolved after the Steam Web API key is set up.")
-        return
+        break
+    state.persist_target = _wizard_ask_yes_no("Persist this target in the generated config?", default=state.persist_target, input_func=input_func)
+    _wizard_apply_target(state)
+
+
+# Mirrors the settled target into the config values, so an unpersisted target is left out of the file
+def _wizard_apply_target(state):
+    state.config_values["TARGET_STEAM_ID"] = state.target if state.persist_target and state.target else ""
 
 
 # Resolves a vanity target after authentication or asks for another target when resolution is unavailable
@@ -3075,6 +3123,7 @@ def _wizard_resolve_pending_target(state, input_func=None):
                 state.target = str(resolved)
                 state.pending_vanity = ""
                 print(f"  Resolved '{vanity}' to Steam64 ID {resolved}.")
+                _wizard_apply_target(state)
                 return
             except ValueError as exc:
                 print(f"  Could not resolve '{vanity}': {exc}")
@@ -3086,8 +3135,8 @@ def _wizard_resolve_pending_target(state, input_func=None):
 
 # Asks how often the tool checks, in whichever duration format the user prefers
 def _wizard_collect_polling_section(state, input_func=None):
-    state.config_values["STEAM_CHECK_INTERVAL"] = _wizard_ask_duration("How often to check while the user is offline", int(state.config_values.get("STEAM_CHECK_INTERVAL") or STEAM_CHECK_INTERVAL), input_func=input_func)
-    state.config_values["STEAM_ACTIVE_CHECK_INTERVAL"] = _wizard_ask_duration("How often to check while the user is online", int(state.config_values.get("STEAM_ACTIVE_CHECK_INTERVAL") or STEAM_ACTIVE_CHECK_INTERVAL), input_func=input_func)
+    state.config_values["STEAM_CHECK_INTERVAL"] = _wizard_ask_duration("Steam polling interval while offline (seconds or use s/m/h/d)", int(state.config_values.get("STEAM_CHECK_INTERVAL") or STEAM_CHECK_INTERVAL), input_func=input_func)
+    state.config_values["STEAM_ACTIVE_CHECK_INTERVAL"] = _wizard_ask_duration("Steam polling interval while online (seconds or use s/m/h/d)", int(state.config_values.get("STEAM_ACTIVE_CHECK_INTERVAL") or STEAM_ACTIVE_CHECK_INTERVAL), input_func=input_func)
 
 
 # Asks for the Steam Web API key through a hidden prompt and validates it against Steam before accepting it
@@ -3117,8 +3166,7 @@ def _wizard_collect_email_section(state, input_func=None, getpass_func=None):
             state.config_values[key] = False
         return
     state.config_values["SMTP_HOST"] = _wizard_ask_text("SMTP host", default=_wizard_default(state.config_values.get("SMTP_HOST")), required=True, input_func=input_func)
-    port_answer = _wizard_ask_text("SMTP port", default=str(state.config_values.get("SMTP_PORT") or 587), input_func=input_func)
-    state.config_values["SMTP_PORT"] = int(port_answer) if port_answer.isdigit() else 587
+    state.config_values["SMTP_PORT"] = _wizard_ask_positive_int("SMTP port", int(state.config_values.get("SMTP_PORT") or 587), input_func=input_func)
     state.config_values["SMTP_SSL"] = _wizard_ask_yes_no("Enable TLS/SSL for SMTP?", default=True, input_func=input_func)
     state.config_values["SMTP_USER"] = _wizard_ask_text("SMTP username", default=_wizard_default(state.config_values.get("SMTP_USER")), required=True, input_func=input_func)
     state.config_values["SENDER_EMAIL"] = _wizard_ask_text("Sender email", default=_wizard_default(state.config_values.get("SENDER_EMAIL")), required=True, input_func=input_func)
@@ -3296,17 +3344,16 @@ def _wizard_print_setup_summary(state):
     api_key_set = "STEAM_API_KEY" in state.secret_updates or doctor_value_is_set(state.config_values.get("STEAM_API_KEY"))
     print(colorize("header", "\nSetup summary\n"))
     print(f"  Target: {state.target}" if state.target else "  Target: not set")
-    print(f"  Offline polling interval: {display_time(int(state.config_values.get('STEAM_CHECK_INTERVAL') or 0))}")
-    print(f"  Online polling interval: {display_time(int(state.config_values.get('STEAM_ACTIVE_CHECK_INTERVAL') or 0))}")
-    print(f"  Steam Web API key: {'set' if api_key_set else 'not set'}")
+    print(f"  Persist target: {'yes' if state.persist_target else 'no'}")
+    print(f"  Polling interval while offline: {_wizard_format_duration(int(state.config_values.get('STEAM_CHECK_INTERVAL') or 0))}")
+    print(f"  Polling interval while online: {_wizard_format_duration(int(state.config_values.get('STEAM_ACTIVE_CHECK_INTERVAL') or 0))}")
+    print(f"  Authentication status: {'complete' if api_key_set else 'incomplete'}")
     print(f"  Email: {'enabled' if enabled_email else 'disabled'}")
     print(f"  Email notifications: {', '.join(enabled_email) if enabled_email else 'none'}")
     print(f"  Webhook: {'enabled' if state.config_values.get('WEBHOOK_ENABLED') else 'disabled'}")
     print(f"  Webhook alerts: {', '.join(enabled_webhooks) if enabled_webhooks else 'none'}")
     print(f"  Config destination: {state.config_path}")
     print(f"  Dotenv destination: {state.env_path}")
-    if state.secret_updates:
-        print(f"  Secrets to save: {', '.join(sorted(state.secret_updates))}")
     print(f"  Install method: {install_method()}")
 
 
@@ -3362,7 +3409,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
     if not terminal_is_interactive:
         print("The setup wizard needs an interactive terminal (TTY).")
-        print(f"Run it from an interactive shell, or write a configuration to edit by hand with '{render_command(['--generate-config', 'steam_monitor.conf'], include_paths=False)}'")
+        print("Run --setup from an interactive shell or use --generate-config and edit the files manually.")
         print(f"Guide: {QUICK_START_GUIDE_URL}")
         return 1
 
@@ -3376,8 +3423,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     print(colorize("header", "Setup Wizard"))
     print()
     print("This asks a few questions and writes a ready-to-run configuration.")
-    print("Press Enter to accept the shown default. Ctrl+C cancels.")
-    print()
+    _wizard_print_default_guidance()
     print("Secrets go to the dotenv file. Non-secret settings go to the config file.")
     print()
     _wizard_print_setup_destinations(install_method(), config_path, env_path)
@@ -3444,12 +3490,44 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
         print()
 
     env_argument = str(state.env_path) if secret_result else ""
-    target_arguments = [state.target] if state.target else []
+    # A persisted target is already in the config file, so the printed commands stay short
+    target_arguments = [] if state.persist_target or not state.target else [state.target]
     print(colorize("header", "\nNext steps\n"))
     _wizard_print_command("Check setup again:", render_command(["--doctor"] + target_arguments, config_path=str(state.config_path), env_path=env_argument))
     _wizard_print_command("Start monitoring:", render_command(target_arguments, config_path=str(state.config_path), env_path=env_argument))
     _wizard_print_command("See every option:", render_command(["--help"], include_paths=False))
-    print(f"Guide: {QUICK_START_GUIDE_URL}")
+    print(f"Guide: {QUICK_START_GUIDE_URL}\n")
+
+    api_key_ready = "STEAM_API_KEY" in state.secret_updates or doctor_value_is_set(state.config_values.get("STEAM_API_KEY"))
+    if state.target and api_key_ready and _wizard_ask_yes_no("Start monitoring now? Monitoring will continue until Ctrl+C.", default=True, input_func=input_func):
+        launch_arguments = _wizard_local_command_args(target=None if state.persist_target else state.target, config_path=state.config_path, env_path=state.env_path if secret_result else None)
+        sys.stdout.flush()
+        return _wizard_launch_monitor(launch_arguments)
+    return 0
+
+
+# Builds the exact local command that starts this monitor, used when setup offers to launch it
+def _wizard_local_command_args(target=None, config_path=None, env_path=None):
+    executable = sys.executable or ("python" if system() == "Windows" else "python3")
+    arguments = [executable, "-m", "steam_monitor"] if install_method() == INSTALL_METHOD_PYPI else [executable, str(Path(__file__).resolve())]
+    if target:
+        arguments.append(str(target))
+    if config_path:
+        arguments.extend(["--config-file", str(config_path)])
+    if env_path:
+        arguments.extend(["--env-file", str(env_path)])
+    return arguments
+
+
+# Hands the terminal to the monitor, replacing this process where the platform allows it
+def _wizard_launch_monitor(arguments):
+    command = [str(argument) for argument in arguments]
+    if system() == "Windows":
+        try:
+            return subprocess.run(command, check=False).returncode
+        except KeyboardInterrupt:
+            return 0
+    os.execv(command[0], command)
     return 0
 
 
@@ -5764,26 +5842,6 @@ def main():
     if args.send_test_email and args.send_test_webhook:
         parser.error("--send-test-email cannot be combined with --send-test-webhook")
 
-    if len(sys.argv) == 1:
-        sys.exit(print_welcome_screen())
-
-    # Allow empty targets if utility flags are used
-    if not args.steam64_id and not args.resolve_community_url:
-        utility_flags = {
-            "--no-color", "-h", "--help",
-            "--version", "--generate-config",
-            "--send-test-email", "--send-test-webhook", "--doctor", "--setup",
-            "--webhook", "--no-webhook", "--webhook-errors", "--no-webhook-error-notify"
-        }
-        utility_action = args.send_test_email or args.send_test_webhook or args.doctor or args.setup
-        complex_args = [] if utility_action else [a for a in sys.argv[1:] if a not in utility_flags]
-
-        if complex_args or not utility_action:
-            print("\n* Error: A Steam profile target needs to be defined !\n", flush=True)
-
-            parser.print_help(sys.stderr)
-            sys.exit(1)
-
     if args.config_file:
         CLI_CONFIG_PATH = os.path.expanduser(args.config_file)
 
@@ -5803,6 +5861,27 @@ def main():
 
     # Reapplied because the config file may carry VERBOSE_MODE or DEBUG_MODE values that must not beat an explicit flag
     apply_diagnostic_cli_flags(args)
+
+    # Runs after the config file is read so a persisted TARGET_STEAM_ID counts as a target
+    if len(sys.argv) == 1 and not TARGET_STEAM_ID:
+        sys.exit(print_welcome_screen())
+
+    # Allow empty targets if utility flags are used or the config file names one
+    if not args.steam64_id and not args.resolve_community_url and not TARGET_STEAM_ID:
+        utility_flags = {
+            "--no-color", "-h", "--help",
+            "--version", "--generate-config",
+            "--send-test-email", "--send-test-webhook", "--doctor", "--setup",
+            "--webhook", "--no-webhook", "--webhook-errors", "--no-webhook-error-notify"
+        }
+        utility_action = args.send_test_email or args.send_test_webhook or args.doctor or args.setup
+        complex_args = [] if utility_action else [a for a in sys.argv[1:] if a not in utility_flags]
+
+        if complex_args or not utility_action:
+            print("\n* Error: A Steam profile target needs to be defined !\n", flush=True)
+
+            parser.print_help(sys.stderr)
+            sys.exit(1)
 
     if args.env_file:
         DOTENV_FILE = os.path.expanduser(args.env_file)
@@ -5846,11 +5925,11 @@ def main():
 
     if args.setup:
         # Runs here rather than earlier so the values already in effect become the defaults it offers
-        setup_target = args.resolve_community_url or args.steam64_id
+        setup_target = args.resolve_community_url or args.steam64_id or TARGET_STEAM_ID
         sys.exit(run_setup_wizard(initial_target=setup_target, config_file=args.config_file or cfg_path, env_file=args.env_file or env_path))
 
     if args.doctor:
-        doctor_target = args.resolve_community_url or args.steam64_id
+        doctor_target = args.resolve_community_url or args.steam64_id or TARGET_STEAM_ID
         sys.exit(run_doctor(target_value=doctor_target, config_path=cfg_path, env_path=env_path))
 
     if not check_internet():
@@ -5890,8 +5969,8 @@ def main():
         if args.resolve_community_url:
             print(f"* Resolving Steam community URL to Steam64 ID: {args.resolve_community_url}\n")
             s_id = resolve_steam_community_url(args.resolve_community_url, STEAM_API_KEY)
-        elif args.steam64_id:
-            s_id = resolve_steam_target(args.steam64_id, STEAM_API_KEY)
+        elif args.steam64_id or TARGET_STEAM_ID:
+            s_id = resolve_steam_target(args.steam64_id or TARGET_STEAM_ID, STEAM_API_KEY)
     except ValueError as e:
         print_recovery_error(e, context="target")
         sys.exit(1)

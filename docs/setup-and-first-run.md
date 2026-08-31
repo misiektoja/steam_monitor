@@ -10,15 +10,15 @@ The quickest way to a working configuration is to answer a few questions:
 steam_monitor --setup
 ```
 
-It asks for the profile to monitor, how often to check, your Steam Web API key and whether you want email or webhook alerts. **Nothing is written until you choose Save**: the answers are held until the end, where a summary shows exactly what is about to be written and lets you go back and change **one section without losing the other answers**.
+It asks for the profile to monitor, whether to save that profile in the config file, how often to check, your Steam Web API key and whether you want email or webhook alerts. Enter accepts the shown default and Ctrl+C cancels. **Nothing is written until you choose Save**: the answers are held until the end, where a summary shows exactly what is about to be written and lets you go back and change **one section without losing the other answers**.
 
-Answers are accepted in the formats people actually paste. The profile takes a **Steam64 ID, a Steam3 identifier, a vanity name or a full profile URL**, and is normalized to one canonical Steam64 ID. During fresh setup, a vanity name is resolved after the API key step. Intervals take **`30s`, `2m`, `1.5h`, `1h 30m`, `1d`** or a plain number of seconds, and the normalized value is echoed back.
+Answers are accepted in the formats people actually paste. The profile takes a **Steam64 ID, a Steam3 identifier, a vanity name or a full profile URL**, and is normalized to one canonical Steam64 ID. During fresh setup, a vanity name is resolved after the API key step. Intervals take **`30s`, `2m`, `1.5h`, `1h 30m`, `1d`** or a plain number of seconds. Supported units are `s`, `m`, `h` and `d`.
 
 For webhook alerts, setup asks which service receives them, then takes the Discord webhook URL or an ntfy topic. A bare ntfy.sh topic name is expanded to its full URL. For ntfy it also offers a separate access token and artwork attachments.
 
-Secrets are typed at a hidden prompt and go to the dotenv file. Non-secret settings go to the config file. Existing files are backed up before being replaced. When it finishes, setup offers to run [`--doctor`](troubleshooting.md#doctor-preflight) and prints the exact commands to start monitoring.
+Secrets are typed at a hidden prompt and go to the dotenv file. Non-secret settings go to the config file. Existing files are backed up before being replaced. When it finishes, setup offers to run [`--doctor`](troubleshooting.md#doctor-preflight) and prints the exact commands to start monitoring. For a local install it then offers to **start monitoring right away**.
 
-Running the tool **with no arguments at all** prints the same four commands and offers to start the wizard.
+If the config file names a target in [`TARGET_STEAM_ID`](configuration.md#target-profile), running the tool with no arguments starts monitoring that profile. With no saved target, running it **with no arguments at all** prints the same four commands and offers to start the wizard.
 
 If there is no terminal to answer on, setup says so and points at `--generate-config` instead of hanging.
 

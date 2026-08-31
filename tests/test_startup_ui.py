@@ -273,6 +273,23 @@ CROSS_TOOL_STRINGS = (
     "Leave the destination files unchanged.",
     "Discard all entered answers and exit?",
     "Run doctor now? It writes no files and offers real delivery tests only with separate approval.",
+    "Persist this target in the generated config?",
+    "Press Enter to accept the shown default. Ctrl+C cancels.",
+    "The setup wizard needs an interactive terminal (TTY).",
+    "Run --setup from an interactive shell or use --generate-config and edit the files manually.",
+    "Start monitoring now? Monitoring will continue until Ctrl+C.",
+    "seconds or use s/m/h/d",
+    "  Enter a positive whole number.",
+    "  This value is required.",
+    "  This secret is required and cannot be empty.",
+    "  Please answer 'y' or 'n'.",
+    "  Enter a positive duration such as 120, 2m, 1.5h, 1h 30m or 1d.",
+    # Setup summary rows
+    "  Persist target: ",
+    "  Authentication status: ",
+    "  Config destination: ",
+    "  Dotenv destination: ",
+    "  Install method: ",
 )
 
 
