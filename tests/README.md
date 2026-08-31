@@ -15,6 +15,13 @@ python -m pytest
 `pyproject.toml` puts the repository root first on `sys.path`, so the tests use the
 working tree instead of an installed copy of the module.
 
+Build the documentation site the same way CI does:
+
+```bash
+pip install -r docs/requirements.txt
+mkdocs build --strict
+```
+
 Lint the same way CI does:
 
 ```bash
@@ -32,7 +39,7 @@ and again before anything is published to PyPI.
 | `test_config_effects.py` | Diagnostic flag precedence, exported secret loading and secret source attribution |
 | `test_config_loading.py` | Declarative config parsing, rejected content and the generated template |
 | `test_diagnostics_output.py` | Verbose and debug output for email, webhook, connectivity, TLS and secret redaction |
-| `test_documentation.py` | Guide links, table-of-contents anchors, documented flags, settings and doctor markers |
+| `test_documentation.py` | Documentation site pages, guide links, navigation, documented flags, settings and doctor markers |
 | `test_startup_ui.py` | Startup summary rows, per-row routing, width-aware truncation and the grouped help |
 | `test_setup_wizard.py` | The setup wizard, per-section editing, input normalizers, the welcome screen and their terminal output contract |
 | `test_doctor.py` | The doctor report, its checks, delivery-test consent, exit code and its terminal output contract |

@@ -127,35 +127,3 @@ def test_a_short_secret_is_masked_the_same_way():
 def test_an_absent_secret_is_reported_as_not_set():
     assert monitor.mask_secret("") == "(not set)"
     assert monitor.mask_secret(None) == "(not set)"
-
-
-# Verifies every guide link points at this project's documentation, so a moved page fails here rather than in front of a user
-def test_guide_urls_point_at_the_project_documentation():
-    guide_names = [name for name in vars(monitor) if name.endswith("_GUIDE_URL")]
-
-    assert guide_names
-    for name in guide_names:
-        url = getattr(monitor, name)
-        assert url.startswith(monitor.DOCS_BASE_URL), f"{name} does not point at the project documentation"
-
-
-# Verifies every guide anchor exists in the documentation it points at
-def test_guide_anchors_exist_in_the_readme():
-    from pathlib import Path
-
-    readme = Path(__file__).resolve().parents[1] / "README.md"
-    headings = readme.read_text(encoding="utf-8").splitlines()
-    anchors = set()
-    for line in headings:
-        if not line.startswith("#"):
-            continue
-        title = line.lstrip("#").strip()
-        slug = "".join(char for char in title.casefold().replace(" ", "-") if char.isalnum() or char in "-_")
-        anchors.add(slug)
-
-    for name in [name for name in vars(monitor) if name.endswith("_GUIDE_URL")]:
-        url = getattr(monitor, name)
-        if "#" not in url:
-            continue
-        anchor = url.rsplit("#", 1)[1]
-        assert anchor in anchors, f"{name} points at a missing README anchor: #{anchor}"

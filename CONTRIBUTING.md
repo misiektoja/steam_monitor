@@ -34,6 +34,13 @@ python -m pytest
 python -m ruff check steam_monitor.py tests
 ```
 
+Build the documentation site:
+
+```bash
+pip install -r docs/requirements.txt
+mkdocs build --strict
+```
+
 The default suite is offline. It never contacts Steam and network calls are replaced with local test doubles. See [tests/README.md](tests/README.md) for what each test file covers.
 
 CI runs the same two checks on every push and pull request, across Python 3.9 through 3.14. The linter is pinned in the `lint` extra so a new ruff release cannot fail a build on a rule that did not exist when the change was written; the pre-commit hook pins the same version.

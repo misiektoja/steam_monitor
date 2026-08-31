@@ -35,6 +35,15 @@ body:
     validations:
       required: false
 
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Doctor output
+      description: "Output of `steam_monitor --doctor <steam_user_id>`. It writes no files and prints no secret values."
+      render: shell
+    validations:
+      required: false
+
   - type: input
     id: version
     attributes:
