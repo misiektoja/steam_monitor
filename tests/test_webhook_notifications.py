@@ -130,6 +130,26 @@ class WebhookNotificationTests(unittest.TestCase):
             steam_monitor.reload_secrets_signal_handler(steam_monitor.signal.SIGHUP, None)
         self.assertEqual(steam_monitor.WEBHOOK_PROVIDER, "ntfy")
 
+    # Verifies every delivery carries the deadline and refuses a redirect, which could retarget the payload
+    def test_delivery_is_bounded_and_does_not_follow_redirects(self):
+        response = FakeResponse(204)
+        with patch.object(steam_monitor.WEBHOOK_SESSION, "post", return_value=response) as post:
+            result = steam_monitor.send_webhook("Status title", "Status body", "status")
+
+        self.assertEqual(result, 0)
+        self.assertEqual(post.call_args.args, (steam_monitor.WEBHOOK_URL,))
+        self.assertEqual(post.call_args.kwargs["timeout"], steam_monitor.WEBHOOK_TIMEOUT_SECONDS)
+        self.assertIs(post.call_args.kwargs["allow_redirects"], False)
+
+    # Verifies a destination replaced mid-delivery is refused rather than posted to blindly
+    def test_delivery_refuses_a_destination_that_stopped_validating(self):
+        steam_monitor.WEBHOOK_URL = "http://example.test/hook"
+        with patch.object(steam_monitor.WEBHOOK_SESSION, "post") as post:
+            with self.assertRaises(steam_monitor.req.exceptions.InvalidURL):
+                steam_monitor.post_webhook_request(json={"content": "body"})
+
+        post.assert_not_called()
+
     # Verifies Discord delivery uses the configured template and disables mentions
     def test_discord_payload_delivery(self):
         response = FakeResponse(204)
