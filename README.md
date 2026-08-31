@@ -653,7 +653,7 @@ Two flags control how much the tool explains about itself.
 steam_monitor <steam_user_id> --verbose
 ```
 
-`--debug` adds diagnostic detail such as the configuration file being loaded, the connectivity endpoint being probed and the technical cause of a failure. It implies `--verbose`:
+`--debug` traces the whole run: the configuration file being loaded, the connectivity endpoint being probed, every Steam Web API call each polling cycle makes, the SMTP host an email is sent through, each webhook attempt with its HTTP status and retry decision, the state files being read and written, and the technical cause of any failure. It implies `--verbose`:
 
 ```sh
 steam_monitor <steam_user_id> --debug
@@ -661,7 +661,9 @@ steam_monitor <steam_user_id> --debug
 
 Both can also be enabled permanently with the `VERBOSE_MODE` and `DEBUG_MODE` configuration settings. A flag on the command line always wins, so `--debug` still applies when the configuration file sets `DEBUG_MODE = False`.
 
-Secret values are never printed by either mode. Where a secret has to be identified, only a short masked prefix and suffix are shown.
+Debug mode is the fastest way to find out why a tracked feature reports nothing. Steam level, XP, friends list and games library lookups each degrade quietly when Steam refuses them, usually because the profile is private. Debug names the endpoint that failed and verbose adds a line saying the matching alert cannot fire this cycle.
+
+Secret values are never printed by either mode. Where a secret has to be identified, only a short masked prefix and suffix are shown, the webhook destination is traced by host name alone, and known secret values are redacted from every error message before it reaches the console or the log.
 
 <a id="coloring-log-output-with-grc"></a>
 ### Coloring Log Output with GRC

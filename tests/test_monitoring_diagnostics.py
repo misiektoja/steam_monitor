@@ -1,0 +1,163 @@
+"""Tests that one monitoring cycle explains the Steam calls it makes and the ones that quietly degraded."""
+
+import pytest
+
+import steam_monitor as monitor
+
+
+STEAM_ID = 76561197960435530
+
+
+PLAYER_SUMMARY = {
+    "response": {
+        "players": [
+            {
+                "steamid": str(STEAM_ID),
+                "personaname": "TestPlayer",
+                "personastate": 0,
+                "communityvisibilitystate": 3,
+                "profileurl": "https://steamcommunity.com/id/testplayer/",
+                "avatarfull": "https://avatars.steamstatic.com/test_full.jpg",
+                "timecreated": 1300000000,
+                "lastlogoff": 1700000000,
+            }
+        ]
+    }
+}
+
+RECENTLY_PLAYED = {"response": {"games": []}}
+
+
+class StoppedAfterOneCycle(Exception):
+    pass
+
+
+class FakeSteamWebAPI:
+    # Answers the Steam endpoints the monitoring cycle calls, failing the ones named in failing_endpoints
+    def __init__(self, failing_endpoints=(), **_kwargs):
+        self.failing_endpoints = set(failing_endpoints)
+        self.called = []
+
+    def call(self, endpoint, **_kwargs):
+        self.called.append(endpoint)
+        if endpoint in self.failing_endpoints:
+            raise RuntimeError(f"{endpoint} is unavailable")
+        if endpoint == "ISteamUser.GetPlayerSummaries":
+            return PLAYER_SUMMARY
+        if endpoint == "IPlayerService.GetRecentlyPlayedGames":
+            return RECENTLY_PLAYED
+        if endpoint == "IPlayerService.GetSteamLevel":
+            return {"response": {"player_level": 42}}
+        if endpoint == "IPlayerService.GetBadges":
+            return {"response": {"player_xp": 5000, "player_xp_needed_to_level_up": 100, "player_xp_needed_current_level": 4900, "badges": []}}
+        if endpoint == "ISteamUser.GetFriendList":
+            return {"friendslist": {"friends": [{"steamid": "1", "friend_since": 1600000000}]}}
+        if endpoint == "IPlayerService.GetOwnedGames":
+            return {"response": {"games": [{"appid": 440}]}}
+        if endpoint == "ISteamUser.GetPlayerBans":
+            return {"players": []}
+        return {}
+
+
+# Runs one monitoring cycle with every tracked feature on and the named endpoints failing
+def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True):
+    monkeypatch.setattr(monitor, "DEBUG_MODE", diagnostics)
+    monkeypatch.setattr(monitor, "VERBOSE_MODE", diagnostics)
+    monkeypatch.setattr(monitor, "STEAM_LEVEL_XP_CHECK", True)
+    monkeypatch.setattr(monitor, "FRIENDS_CHECK", True)
+    monkeypatch.setattr(monitor, "GAMES_LIBRARY_CHECK", True)
+    monkeypatch.setattr(monitor, "STEAM_CHECK_INTERVAL", 60)
+    monkeypatch.setattr(monitor, "STEAM_ACTIVE_CHECK_INTERVAL", 30)
+    monkeypatch.setattr(monitor, "LIVENESS_CHECK_COUNTER", 0)
+    monkeypatch.setattr(monitor, "ACTIVE_INACTIVE_NOTIFICATION", False)
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", False)
+    monkeypatch.setattr(monitor, "STEAM_LEVEL_XP_NOTIFICATION", False)
+    monkeypatch.setattr(monitor, "FRIENDS_NOTIFICATION", False)
+    monkeypatch.setattr(monitor, "GAMES_LIBRARY_NOTIFICATION", False)
+    monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", False)
+    monkeypatch.setattr(monitor, "FILE_SUFFIX", "")
+    # Keep every generated file inside the temporary directory
+    monkeypatch.chdir(tmp_path)
+
+    api = FakeSteamWebAPI(failing_endpoints)
+    monkeypatch.setattr(monitor.steam.webapi, "WebAPI", lambda **kwargs: api)
+
+    sleeps = []
+
+    def stop_after_the_first_cycle(seconds):
+        sleeps.append(seconds)
+        # The first sleep is the one before the loop, the second ends the first full cycle
+        if len(sleeps) >= 2:
+            raise StoppedAfterOneCycle()
+
+    monkeypatch.setattr(monitor.time, "sleep", stop_after_the_first_cycle)
+
+    with pytest.raises(StoppedAfterOneCycle):
+        monitor.steam_monitor_user(STEAM_ID, "", None)
+    return api, sleeps
+
+
+# Verifies a healthy cycle names the Steam calls it makes and the interval it waits
+def test_a_healthy_cycle_names_its_steam_calls(tmp_path, monkeypatch, capsys):
+    api, sleeps = run_one_cycle(tmp_path, monkeypatch)
+
+    output = capsys.readouterr().out
+    assert "Opening the Steam Web API with key" in output
+    assert "Polling Steam for 76561197960435530" in output
+    assert "Next check in 1 minute (user is offline)" in output
+    assert "IPlayerService.GetOwnedGames" in api.called
+    assert sleeps[0] == 60
+
+
+# Verifies a failing level lookup names the endpoint instead of degrading in silence
+def test_a_failing_level_lookup_names_its_endpoint(tmp_path, monkeypatch, capsys):
+    run_one_cycle(tmp_path, monkeypatch, failing_endpoints={"IPlayerService.GetSteamLevel"})
+
+    output = capsys.readouterr().out
+    assert "Fetching the Steam level (IPlayerService.GetSteamLevel) failed with RuntimeError" in output
+    assert "Steam level or total XP was unavailable this cycle" in output
+
+
+# Verifies a failing friends lookup names the endpoint and says the alert cannot fire
+def test_a_failing_friends_lookup_names_its_endpoint(tmp_path, monkeypatch, capsys):
+    run_one_cycle(tmp_path, monkeypatch, failing_endpoints={"ISteamUser.GetFriendList"})
+
+    output = capsys.readouterr().out
+    assert "Fetching the friends list (ISteamUser.GetFriendList) failed with RuntimeError" in output
+    assert "The friends list was unavailable this cycle, so friends alerts cannot fire" in output
+
+
+# Verifies a failing games library lookup names the endpoint and says the alert cannot fire
+def test_a_failing_games_lookup_names_its_endpoint(tmp_path, monkeypatch, capsys):
+    run_one_cycle(tmp_path, monkeypatch, failing_endpoints={"IPlayerService.GetOwnedGames"})
+
+    output = capsys.readouterr().out
+    assert "Fetching the games library (IPlayerService.GetOwnedGames) failed with RuntimeError" in output
+    assert "The games library was unavailable this cycle, so games library alerts cannot fire" in output
+
+
+# Verifies a failing badges lookup is reported, since total XP alerts depend on it alone
+def test_a_failing_badges_lookup_names_its_endpoint(tmp_path, monkeypatch, capsys):
+    run_one_cycle(tmp_path, monkeypatch, failing_endpoints={"IPlayerService.GetBadges"})
+
+    output = capsys.readouterr().out
+    assert "Fetching total XP (IPlayerService.GetBadges) failed with RuntimeError" in output
+    assert "Steam level or total XP was unavailable this cycle" in output
+
+
+# Verifies a working tracked feature produces no degradation warning
+def test_a_healthy_cycle_reports_no_degradation(tmp_path, monkeypatch, capsys):
+    run_one_cycle(tmp_path, monkeypatch)
+
+    output = capsys.readouterr().out
+    assert "was unavailable this cycle" not in output
+
+
+# Verifies the same degraded cycle prints nothing extra when neither diagnostic mode is on
+def test_a_degraded_cycle_stays_quiet_without_diagnostics(tmp_path, monkeypatch, capsys):
+    run_one_cycle(tmp_path, monkeypatch, failing_endpoints={"IPlayerService.GetSteamLevel", "ISteamUser.GetFriendList"}, diagnostics=False)
+
+    output = capsys.readouterr().out
+    assert "* Debug:" not in output
+    assert "was unavailable this cycle" not in output
+    assert "Polling Steam for" not in output
