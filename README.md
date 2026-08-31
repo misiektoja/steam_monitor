@@ -37,6 +37,7 @@ pip install steam_monitor
 - **Saving all user activities and profile changes** with timestamps to a **CSV file**
 - **Status persistence** - automatically saves last status to JSON file to resume monitoring after restart
 - **Smart session continuity** - handles short offline interruptions and preserves session statistics
+- **Guided setup** - `--setup` asks a few questions and writes a ready-to-run configuration, with a review summary and per-section editing before anything is saved
 - **Preflight diagnostics** - `--doctor` checks the environment, configuration, connectivity, credentials, monitored profile and notification channels, and tells you how to fix whatever is not ready
 - **Flexible configuration** - support for config files, dotenv files, environment variables and command-line arguments
 - **Configurable color themes** - customizable terminal output colors and styles
@@ -53,6 +54,7 @@ pip install steam_monitor
    * [Upgrading](#upgrading)
 3. [Quick Start](#quick-start)
 4. [Configuration](#configuration)
+   * [Guided Setup](#guided-setup)
    * [Configuration File](#configuration-file)
    * [Steam Web API key](#steam-web-api-key)
    * [User Privacy Settings](#user-privacy-settings)
@@ -174,6 +176,25 @@ steam_monitor --help
 
 <a id="configuration"></a>
 ## Configuration
+
+<a id="guided-setup"></a>
+### Guided Setup
+
+The quickest way to a working configuration is to answer a few questions:
+
+```sh
+steam_monitor --setup
+```
+
+It asks for the profile to monitor, how often to check, your Steam Web API key and whether you want email or webhook alerts. **Nothing is written until you choose Save**: the answers are held until the end, where a summary shows exactly what is about to be written and lets you go back and change **one section without losing the other answers**.
+
+Answers are accepted in the formats people actually paste. The profile takes a **Steam64 ID, a Steam3 identifier, a vanity name, or a full profile URL**, and is normalized to one canonical Steam64 ID. Intervals take **`30s`, `2m`, `1.5h`, `1h 30m`, `1d`** or a plain number of seconds, and the normalized value is echoed back.
+
+Secrets are typed at a hidden prompt and go to the dotenv file. Non-secret settings go to the config file. Existing files are backed up before being replaced. When it finishes, setup offers to run [`--doctor`](#doctor-preflight) and prints the exact commands to start monitoring.
+
+Running the tool **with no arguments at all** prints the same four commands and offers to start the wizard.
+
+If there is no terminal to answer on, setup says so and points at `--generate-config` instead of hanging.
 
 <a id="configuration-file"></a>
 ### Configuration File
