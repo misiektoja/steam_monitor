@@ -1,10 +1,10 @@
 # Configuration
 
+Every setting has a command-line flag, and most also have a configuration file entry. [`--setup`](setup-and-first-run.md#guided-setup) writes both files for you. This page covers changing them afterwards, or writing them by hand.
+
 ## Configuration File
 
-Most settings can be configured via command-line arguments.
-
-If you want to have it stored persistently, generate a default config template and save it to a file named `steam_monitor.conf`:
+To keep settings persistently, generate a default config template and save it to a file named `steam_monitor.conf`:
 
 ```sh
 # On macOS, Linux or Windows Command Prompt (cmd.exe)
@@ -24,7 +24,7 @@ By default every outbound request verifies TLS certificates. Set `VERIFY_SSL = F
 
 ## SMTP Settings
 
-If you want to use email notifications functionality, configure SMTP settings in the `steam_monitor.conf` file.
+[`--setup`](setup-and-first-run.md#guided-setup) collects these for you. To configure them by hand, set the SMTP settings in the `steam_monitor.conf` file.
 
 Verify your SMTP settings by using `--send-test-email` flag (the tool will try to send a test email notification):
 
@@ -36,7 +36,7 @@ steam_monitor --send-test-email
 
 Steam Monitor supports Discord webhooks and native ntfy topics. Webhook alerts are independent from email, so either channel can be enabled alone or both can receive the same event.
 
-Save the private destination through a hidden prompt:
+[`--setup`](setup-and-first-run.md#guided-setup) collects the webhook URL and detects the provider from it. To configure it separately, save the private destination through a hidden prompt:
 
 ```sh
 steam_monitor --set-webhook-url

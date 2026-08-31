@@ -1,5 +1,7 @@
 # Installation
 
+Install from PyPI for the usual case, or download the single script if you would rather not install a package. Once it is installed, continue with [Setup & First Run](setup-and-first-run.md).
+
 ## Requirements
 
 * Python 3.6 or higher

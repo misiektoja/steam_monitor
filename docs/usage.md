@@ -1,5 +1,7 @@
 # Usage
 
+The tool has two modes. **Monitoring mode** watches a profile continuously and sends alerts as things change. **User information mode** prints a detailed profile snapshot once and exits.
+
 ## Detailed User Information Display Mode
 
 To display comprehensive Steam profile information for a user without starting monitoring, type the player's Steam64 ID (`steam_user_id` in the example below) and use the `-i` / `--info` flag:
@@ -194,7 +196,7 @@ To disable sending an email on errors (enabled by default):
 steam_monitor <steam_user_id> -e
 ```
 
-Make sure you defined your SMTP settings earlier (see [SMTP settings](configuration.md#smtp-settings)).
+Make sure you have configured your [SMTP settings](configuration.md#smtp-settings) first.
 
 Example email:
 

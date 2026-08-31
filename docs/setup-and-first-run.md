@@ -1,8 +1,28 @@
 # Setup & First Run
 
+This page assumes steam_monitor is already installed. If it is not, start with [Installation](installation.md).
+
+## Guided Setup
+
+The quickest way to a working configuration is to answer a few questions:
+
+```sh
+steam_monitor --setup
+```
+
+It asks for the profile to monitor, how often to check, your Steam Web API key and whether you want email or webhook alerts. **Nothing is written until you choose Save**: the answers are held until the end, where a summary shows exactly what is about to be written and lets you go back and change **one section without losing the other answers**.
+
+Answers are accepted in the formats people actually paste. The profile takes a **Steam64 ID, a Steam3 identifier, a vanity name, or a full profile URL**, and is normalized to one canonical Steam64 ID. Intervals take **`30s`, `2m`, `1.5h`, `1h 30m`, `1d`** or a plain number of seconds, and the normalized value is echoed back.
+
+Secrets are typed at a hidden prompt and go to the dotenv file. Non-secret settings go to the config file. Existing files are backed up before being replaced. When it finishes, setup offers to run [`--doctor`](troubleshooting.md#doctor-preflight) and prints the exact commands to start monitoring.
+
+Running the tool **with no arguments at all** prints the same four commands and offers to start the wizard.
+
+If there is no terminal to answer on, setup says so and points at `--generate-config` instead of hanging.
+
 ## Quick Start
 
-First save your [Steam Web API key](#steam-web-api-key) through the hidden prompt:
+If you would rather configure it by hand, first save your [Steam Web API key](#steam-web-api-key) through the hidden prompt:
 
 ```sh
 steam_monitor --set-steam-api-key
@@ -27,31 +47,14 @@ To get the list of all supported command-line arguments / flags:
 steam_monitor --help
 ```
 
-## Guided Setup
-
-The quickest way to a working configuration is to answer a few questions:
-
-```sh
-steam_monitor --setup
-```
-
-It asks for the profile to monitor, how often to check, your Steam Web API key and whether you want email or webhook alerts. **Nothing is written until you choose Save**: the answers are held until the end, where a summary shows exactly what is about to be written and lets you go back and change **one section without losing the other answers**.
-
-Answers are accepted in the formats people actually paste. The profile takes a **Steam64 ID, a Steam3 identifier, a vanity name, or a full profile URL**, and is normalized to one canonical Steam64 ID. Intervals take **`30s`, `2m`, `1.5h`, `1h 30m`, `1d`** or a plain number of seconds, and the normalized value is echoed back.
-
-Secrets are typed at a hidden prompt and go to the dotenv file. Non-secret settings go to the config file. Existing files are backed up before being replaced. When it finishes, setup offers to run [`--doctor`](troubleshooting.md#doctor-preflight) and prints the exact commands to start monitoring.
-
-Running the tool **with no arguments at all** prints the same four commands and offers to start the wizard.
-
-If there is no terminal to answer on, setup says so and points at `--generate-config` instead of hanging.
-
 ## Steam Web API key
 
 You can get the Steam Web API key here: [http://steamcommunity.com/dev/apikey](http://steamcommunity.com/dev/apikey)
 
 Provide the `STEAM_API_KEY` secret using one of the following methods:
 
- - Save and validate it through a hidden prompt with `--set-steam-api-key` (recommended)
+ - Answer the questions in `--setup`, which validates and saves it for you (recommended)
+ - Save and validate it through a hidden prompt with `--set-steam-api-key`
  - Set it as an [environment variable](configuration.md#storing-secrets), for example `export STEAM_API_KEY=...`
  - Add it to a [.env file](configuration.md#storing-secrets) as `STEAM_API_KEY=...` for persistent use
  - Pass it at runtime with `-u` / `--steam-api-key`
