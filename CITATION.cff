@@ -1,0 +1,22 @@
+# Citation metadata for this repository: https://citation-file-format.github.io
+# GitHub reads this file to build the "Cite this repository" widget.
+cff-version: 1.2.0
+message: "If you use steam_monitor in your work, please cite it as below."
+title: steam_monitor
+abstract: "Real-time OSINT tool for monitoring Steam players' activity, game sessions and profile changes, with instant notifications."
+type: software
+authors:
+  - family-names: Szymanski
+    given-names: Michal
+    alias: misiektoja
+    email: misiektoja-github@rm-rf.ninja
+version: "1.9.2"
+date-released: 2026-08-04
+license: GPL-3.0-or-later
+repository-code: "https://github.com/misiektoja/steam_monitor"
+keywords:
+  - steam
+  - monitoring
+  - tracking
+  - real-time
+  - osint

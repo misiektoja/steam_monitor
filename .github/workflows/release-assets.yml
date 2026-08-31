@@ -10,6 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # Signing the provenance attestation for the published archives
+      id-token: write
+      attestations: write
 
     steps:
       - name: Check out source
@@ -27,7 +30,19 @@ jobs:
           git archive --format=zip --output "${PREFIX}.zip" "${TAG}"
           git archive --format=tar.gz --output "${PREFIX}.tar.gz" "${TAG}"
 
+          sha256sum "${PREFIX}.zip" "${PREFIX}.tar.gz" > "${PREFIX}_SHA256SUMS.txt"
+
           ls -lh "${PREFIX}.zip" "${PREFIX}.tar.gz"
+          cat "${PREFIX}_SHA256SUMS.txt"
+
+      # Lets anyone confirm the archives were built by this workflow from this tag:
+      #     gh attestation verify steam_monitor_<tag>.zip --repo misiektoja/steam_monitor
+      - name: Attest the archives' build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            steam_monitor_${{ github.event.release.tag_name }}.zip
+            steam_monitor_${{ github.event.release.tag_name }}.tar.gz
 
       - name: Upload archives to GitHub Release
         uses: softprops/action-gh-release@v3
@@ -35,5 +50,6 @@ jobs:
           files: |
             steam_monitor_${{ github.event.release.tag_name }}.zip
             steam_monitor_${{ github.event.release.tag_name }}.tar.gz
+            steam_monitor_${{ github.event.release.tag_name }}_SHA256SUMS.txt
           fail_on_unmatched_files: true
           overwrite_files: true

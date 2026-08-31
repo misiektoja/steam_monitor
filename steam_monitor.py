@@ -428,7 +428,6 @@ if sys.version_info < (3, 6):
     sys.exit(1)
 
 import time
-import string
 import textwrap
 import json
 import os
@@ -445,7 +444,8 @@ from email.mime.text import MIMEText
 import argparse
 import csv
 import getpass
-from typing import Any, Dict
+# Referenced from the type comments below, which the linter does not parse
+from typing import Any, Dict  # noqa: F401
 import platform
 from platform import system
 import re
@@ -1668,7 +1668,8 @@ def build_ntfy_image(image_url=""):
             original_img.load()
             resized_img = original_img.convert("RGB")
         try:
-            resampling = getattr(getattr(PILImage, "Resampling", PILImage), "LANCZOS")
+            # Pillow moved LANCZOS into Resampling, so both the holder and the lookup stay dynamic
+            resampling = getattr(getattr(PILImage, "Resampling", PILImage), "LANCZOS")  # noqa: B009
             resized_img.thumbnail((160, 160), resampling)
             canvas = PILImage.new("RGB", (400, 160), (27, 32, 35))
             try:
@@ -2309,7 +2310,6 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
     status_ts_old = int(time.time())
     status_ts_old_bck = status_ts_old
     last_status_ts = 0
-    last_status = -1
 
     if status == 0:
         steam_last_status_file = f"steam_{username}_last_status.json"
@@ -2320,7 +2320,8 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
                     last_status_read = json.load(f)
                 if last_status_read:
                     last_status_ts = last_status_read[0]
-                    last_status = last_status_read[1]
+                    # Read for its length check only: a truncated file must fall through to the defaults below
+                    _last_status = last_status_read[1]
                     if lastlogoff and lastlogoff > last_status_ts:
                         status_ts_old = lastlogoff
                     else:
@@ -3108,6 +3109,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     added_details = []
                     removed_details = []
 
+                    # Defined and called inside this iteration, so the enclosing s_api cannot change under it
                     def _fetch_friend_summaries(id_set):
                         if not id_set:
                             return []
@@ -3117,7 +3119,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                         for i in range(0, len(ids_list), chunk_size):
                             chunk = ids_list[i:i + chunk_size]
                             try:
-                                resp = s_api.call('ISteamUser.GetPlayerSummaries', steamids=",".join(chunk))
+                                resp = s_api.call('ISteamUser.GetPlayerSummaries', steamids=",".join(chunk))  # noqa: B023
                                 players = resp.get('response', {}).get('players', [])
                                 summaries.extend(players)
                             except Exception:
