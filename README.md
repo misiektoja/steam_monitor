@@ -66,6 +66,7 @@ pip install steam_monitor
    * [CSV Export](#csv-export)
    * [Check Intervals](#check-intervals)
    * [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix)
+   * [Verbose and Debug Output](#verbose-and-debug-output)
    * [Coloring Log Output with GRC](#coloring-log-output-with-grc)
 6. [Change Log](#change-log)
 7. [Contributing](#contributing)
@@ -301,6 +302,8 @@ Long ntfy text messages are visibly truncated below ntfy's 4 KB boundary so they
 ### Storing Secrets
 
 It is recommended to store secrets like `STEAM_API_KEY`, `SMTP_PASSWORD`, `WEBHOOK_URL` or `NTFY_ACCESS_TOKEN` as either an environment variable or in a dotenv file.
+
+Both work on their own. An exported environment variable is applied whether or not a dotenv file exists, and a value exported in your shell overrides the same name in the dotenv file. Run with `--verbose` to see which of the two supplied each secret.
 
 Set environment variables using `export` on **Linux/Unix/macOS/WSL** systems:
 
@@ -638,6 +641,27 @@ pkill -USR1 -f "steam_monitor <steam_user_id>"
 ```
 
 As Windows supports limited number of signals, this functionality is available only on Linux/Unix/macOS.
+
+<a id="verbose-and-debug-output"></a>
+### Verbose and Debug Output
+
+Two flags control how much the tool explains about itself.
+
+`--verbose` adds startup detail, including the detected install method and which secrets came from the dotenv file versus the environment:
+
+```sh
+steam_monitor <steam_user_id> --verbose
+```
+
+`--debug` adds diagnostic detail such as the configuration file being loaded, the connectivity endpoint being probed and the technical cause of a failure. It implies `--verbose`:
+
+```sh
+steam_monitor <steam_user_id> --debug
+```
+
+Both can also be enabled permanently with the `VERBOSE_MODE` and `DEBUG_MODE` configuration settings. A flag on the command line always wins, so `--debug` still applies when the configuration file sets `DEBUG_MODE = False`.
+
+Secret values are never printed by either mode. Where a secret has to be identified, only a short masked prefix and suffix are shown.
 
 <a id="coloring-log-output-with-grc"></a>
 ### Coloring Log Output with GRC

@@ -1,0 +1,155 @@
+"""Tests that printed commands, masked secrets and guide links match the detected install method."""
+
+import pytest
+
+import steam_monitor as monitor
+
+
+@pytest.fixture(autouse=True)
+# Keeps install detection and path rendering deterministic regardless of how the suite itself was started
+def isolated_install_detection(monkeypatch):
+    monkeypatch.delenv(monitor.INSTALL_METHOD_ENV_VAR, raising=False)
+    monkeypatch.delenv("STEAM_MONITOR_IN_CONTAINER", raising=False)
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", None)
+    monkeypatch.setattr(monitor, "DOTENV_FILE", "")
+    monkeypatch.setattr(monitor, "system", lambda: "Linux")
+
+
+# Verifies a downloaded script is detected from the invoked file name
+def test_a_downloaded_script_is_detected(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["/home/user/steam_monitor.py", "--doctor"])
+
+    assert monitor.install_method() == monitor.INSTALL_METHOD_SCRIPT
+    assert monitor.install_method_display_name() == "downloaded script"
+    assert monitor.render_command(["--version"]) == "python3 steam_monitor.py --version"
+
+
+# Verifies the packaged console script is detected and rendered by its entry point name
+def test_a_pypi_install_is_detected(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["/usr/local/bin/steam_monitor", "--doctor"])
+
+    assert monitor.install_method() == monitor.INSTALL_METHOD_PYPI
+    assert monitor.install_method_display_name() == "PyPI install"
+    assert monitor.render_command(["--version"]) == "steam_monitor --version"
+
+
+# Verifies detection can be pinned explicitly, which containers and packaged builds need
+def test_the_install_method_can_be_overridden(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["/home/user/steam_monitor.py"])
+    monkeypatch.setenv(monitor.INSTALL_METHOD_ENV_VAR, "pypi")
+
+    assert monitor.install_method() == monitor.INSTALL_METHOD_PYPI
+
+
+# Verifies a container is named in the install method, so printed guidance can be tailored to it
+def test_a_container_is_reported_in_the_install_method(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["/usr/local/bin/steam_monitor"])
+    monkeypatch.setenv("STEAM_MONITOR_IN_CONTAINER", "true")
+
+    assert monitor.running_in_container() is True
+    assert monitor.install_method_display_name() == "PyPI install in a container"
+
+
+# Verifies the active config and dotenv paths are carried into every printed command
+def test_active_paths_are_carried_into_printed_commands(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["/usr/local/bin/steam_monitor"])
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", "/home/user/my tool.conf")
+    monkeypatch.setattr(monitor, "DOTENV_FILE", "/home/user/secrets.env")
+
+    rendered = monitor.render_command(["--send-test-email"])
+
+    assert rendered == "steam_monitor --send-test-email --config-file '/home/user/my tool.conf' --env-file /home/user/secrets.env"
+
+
+# Verifies a command that must stay path-free does not inherit the active paths
+def test_paths_can_be_left_out(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["/usr/local/bin/steam_monitor"])
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", "/home/user/tool.conf")
+
+    assert monitor.render_command(["--generate-config"], include_paths=False) == "steam_monitor --generate-config"
+
+
+# Verifies an explicitly supplied path is rendered even when the active ones are left out
+def test_an_explicit_path_wins_over_the_active_ones(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["/usr/local/bin/steam_monitor"])
+    monkeypatch.setattr(monitor, "DOTENV_FILE", "/home/user/other.env")
+
+    rendered = monitor.render_command(["--send-test-webhook"], include_paths=False, env_path="/home/user/chosen.env")
+
+    assert rendered == "steam_monitor --send-test-webhook --env-file /home/user/chosen.env"
+
+
+# Verifies a disabled dotenv search is never rendered as a path
+def test_a_disabled_dotenv_search_is_not_rendered(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["/usr/local/bin/steam_monitor"])
+    monkeypatch.setattr(monitor, "DOTENV_FILE", "none")
+
+    assert monitor.render_command(["--version"]) == "steam_monitor --version"
+
+
+# Verifies arguments containing spaces are quoted for the shell the user pastes into
+def test_windows_quoting_uses_double_quotes(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["C:\\\\tools\\\\steam_monitor.exe"])
+    monkeypatch.setattr(monitor, "system", lambda: "Windows")
+
+    assert monitor.quote_command_argument("C:\\Program Files\\tool.conf") == '"C:\\Program Files\\tool.conf"'
+    assert monitor.quote_command_argument("--version") == "--version"
+
+
+# Verifies the optional artwork install hint follows the same install detection as every other command
+def test_the_artwork_install_hint_follows_the_install_method(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["/usr/local/bin/steam_monitor"])
+    assert monitor.ntfy_images_install_command() == 'pip3 install "steam_monitor[ntfy-images]"'
+
+    monkeypatch.setattr("sys.argv", ["/home/user/steam_monitor.py"])
+    assert monitor.ntfy_images_install_command().startswith('pip3 install "Pillow')
+
+
+# Verifies a masked secret shows enough to recognize it and never enough to reuse it
+def test_a_masked_secret_hides_the_middle():
+    assert monitor.mask_secret("ABCDEFGHIJKLMNOP") == "ABCD...OP"
+    assert "EFGHIJKLMN" not in monitor.mask_secret("ABCDEFGHIJKLMNOP")
+
+
+# Verifies a short secret is hidden entirely rather than being mostly printed
+def test_a_short_secret_is_hidden_entirely():
+    assert monitor.mask_secret("short") == "*" * 8
+    assert monitor.mask_secret("ab") == "*" * 8
+
+
+# Verifies an absent secret is named as absent instead of rendering as an empty string
+def test_an_absent_secret_is_reported_as_not_set():
+    assert monitor.mask_secret("") == "(not set)"
+    assert monitor.mask_secret(None) == "(not set)"
+
+
+# Verifies every guide link points at this project's documentation, so a moved page fails here rather than in front of a user
+def test_guide_urls_point_at_the_project_documentation():
+    guide_names = [name for name in vars(monitor) if name.endswith("_GUIDE_URL")]
+
+    assert guide_names
+    for name in guide_names:
+        url = getattr(monitor, name)
+        assert url.startswith(monitor.DOCS_BASE_URL), f"{name} does not point at the project documentation"
+
+
+# Verifies every guide anchor exists in the documentation it points at
+def test_guide_anchors_exist_in_the_readme():
+    from pathlib import Path
+
+    readme = Path(__file__).resolve().parents[1] / "README.md"
+    headings = readme.read_text(encoding="utf-8").splitlines()
+    anchors = set()
+    for line in headings:
+        if not line.startswith("#"):
+            continue
+        title = line.lstrip("#").strip()
+        slug = "".join(char for char in title.casefold().replace(" ", "-") if char.isalnum() or char in "-_")
+        anchors.add(slug)
+
+    for name in [name for name in vars(monitor) if name.endswith("_GUIDE_URL")]:
+        url = getattr(monitor, name)
+        if "#" not in url:
+            continue
+        anchor = url.rsplit("#", 1)[1]
+        assert anchor in anchors, f"{name} points at a missing README anchor: #{anchor}"

@@ -273,6 +273,15 @@ ST_LOGFILE = "steam_monitor"
 # Can also be disabled via the -d flag
 DISABLE_LOGGING = False
 
+# Whether to print extra startup and runtime detail
+# Can also be enabled via the --verbose flag, which always wins over this setting
+VERBOSE_MODE = False
+
+# Whether to print diagnostic detail, including the technical cause of failures
+# Implies verbose output
+# Can also be enabled via the --debug flag, which always wins over this setting
+DEBUG_MODE = False
+
 # Controls conversion of separator-only log lines to ASCII:
 #   "Auto" - enable on Windows only (default)
 #   "On"   - enable on every operating system
@@ -392,6 +401,8 @@ FILE_SUFFIX = ""
 ST_LOGFILE = ""
 DISABLE_LOGGING = False
 ASCII_LOG_SEPARATORS = "Auto"
+VERBOSE_MODE = False
+DEBUG_MODE = False
 HORIZONTAL_LINE = 0
 CLEAR_SCREEN = False
 STEAM_ACTIVE_CHECK_SIGNAL_VALUE = 0
@@ -402,6 +413,21 @@ exec(CONFIG_BLOCK, globals())
 
 # Default name for the optional config file
 DEFAULT_CONFIG_FILENAME = "steam_monitor.conf"
+
+# Documentation links, kept as constants so error messages, help text and the guides they point at cannot drift apart
+PROJECT_URL = "https://github.com/misiektoja/steam_monitor"
+DOCS_BASE_URL = f"{PROJECT_URL}/blob/main/README.md"
+GUIDE_URL = DOCS_BASE_URL
+INSTALL_GUIDE_URL = f"{DOCS_BASE_URL}#installation"
+QUICK_START_GUIDE_URL = f"{DOCS_BASE_URL}#quick-start"
+CONFIG_GUIDE_URL = f"{DOCS_BASE_URL}#configuration"
+CONFIG_FILE_GUIDE_URL = f"{DOCS_BASE_URL}#configuration-file"
+STEAM_API_KEY_GUIDE_URL = f"{DOCS_BASE_URL}#steam-web-api-key"
+PRIVACY_GUIDE_URL = f"{DOCS_BASE_URL}#user-privacy-settings"
+SMTP_GUIDE_URL = f"{DOCS_BASE_URL}#smtp-settings"
+WEBHOOK_GUIDE_URL = f"{DOCS_BASE_URL}#webhook-settings"
+SECRETS_GUIDE_URL = f"{DOCS_BASE_URL}#storing-secrets"
+USAGE_GUIDE_URL = f"{DOCS_BASE_URL}#usage"
 
 # List of secret keys to load from env/config
 SECRET_KEYS = ("STEAM_API_KEY", "SMTP_PASSWORD", "WEBHOOK_URL", "NTFY_ACCESS_TOKEN")
@@ -451,6 +477,7 @@ from typing import Any, Dict  # noqa: F401
 import platform
 from platform import system
 import re
+import shlex
 import ipaddress
 import tempfile
 from io import BytesIO
@@ -496,6 +523,109 @@ except ImportError:
 NTFY_IMAGES_AVAILABLE = PILImage is not None
 
 
+# Install methods the tool can detect, used to tailor every command it prints
+INSTALL_METHOD_PYPI = "pypi"
+INSTALL_METHOD_SCRIPT = "script"
+INSTALL_METHOD_ENV_VAR = "STEAM_MONITOR_INSTALL_METHOD"
+
+
+# Returns True when the tool runs inside a container, so printed commands and paths can be adjusted for it
+def running_in_container():
+    if os.environ.get("STEAM_MONITOR_IN_CONTAINER", "").strip().casefold() in ("1", "true", "yes"):
+        return True
+    if os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv"):
+        return True
+    try:
+        with open("/proc/1/cgroup", encoding="utf-8", errors="replace") as cgroup_file:
+            return any(marker in cgroup_file.read() for marker in ("docker", "containerd", "kubepods", "podman"))
+    except OSError:
+        return False
+
+
+# Returns how the tool was started, either as the installed console script or as a downloaded standalone script
+def install_method():
+    override = os.environ.get(INSTALL_METHOD_ENV_VAR, "").strip().casefold()
+    if override in (INSTALL_METHOD_PYPI, INSTALL_METHOD_SCRIPT):
+        return override
+    if os.path.basename(sys.argv[0] or "").casefold().endswith(".py"):
+        return INSTALL_METHOD_SCRIPT
+    return INSTALL_METHOD_PYPI
+
+
+# Returns a readable name for the detected install method
+def install_method_display_name():
+    base = "PyPI install" if install_method() == INSTALL_METHOD_PYPI else "downloaded script"
+    return f"{base} in a container" if running_in_container() else base
+
+
+# Returns the argv prefix that invokes this tool for the detected install method
+def install_command_prefix():
+    if install_method() == INSTALL_METHOD_SCRIPT:
+        return ["python3", os.path.basename(sys.argv[0]) or "steam_monitor.py"]
+    return ["steam_monitor"]
+
+
+# Returns one command-line argument quoted for the shell the user is most likely pasting into
+def quote_command_argument(argument):
+    text = str(argument)
+    if system() == "Windows":
+        return f'"{text}"' if (not text or any(char.isspace() for char in text)) else text
+    return shlex.quote(text)
+
+
+# Returns a copy-pasteable command line for the detected install method, carrying non-default config and dotenv paths
+def render_command(arguments=None, include_paths=True, config_path=None, env_path=None):
+    parts = list(install_command_prefix())
+    parts.extend(str(argument) for argument in (arguments or []))
+    # An explicitly passed path is always rendered, while include_paths only governs falling back to the active ones
+    selected_config = config_path if config_path is not None else (CLI_CONFIG_PATH if include_paths else None)
+    selected_env = env_path if env_path is not None else (DOTENV_FILE if include_paths else None)
+    if selected_config:
+        parts.extend(["--config-file", str(selected_config)])
+    if selected_env and str(selected_env).casefold() != "none":
+        parts.extend(["--env-file", str(selected_env)])
+    return " ".join(quote_command_argument(part) for part in parts)
+
+
+# Prints a diagnostic line only when debug mode is enabled
+def print_debug(message):
+    if DEBUG_MODE:
+        print(f"* Debug: {message}")
+
+
+# Returns whether extra detail should be printed, which debug mode always implies
+def verbose_enabled():
+    return bool(VERBOSE_MODE or DEBUG_MODE)
+
+
+# Prints an additional detail line only when verbose or debug mode is enabled
+def print_verbose(message):
+    if verbose_enabled():
+        print(f"* {message}")
+
+
+# Applies only the explicitly supplied --verbose and --debug flags so the command line always wins over the config file
+def apply_diagnostic_cli_flags(args):
+    global VERBOSE_MODE, DEBUG_MODE
+    if getattr(args, "verbose", None):
+        VERBOSE_MODE = True
+    if getattr(args, "debug", None):
+        DEBUG_MODE = True
+        VERBOSE_MODE = True
+
+
+# Returns a secret rendered as a short prefix and suffix so it can be shown without disclosing the value
+def mask_secret(value, prefix=4, suffix=2):
+    if value is None:
+        return "(not set)"
+    text = str(value)
+    if not text:
+        return "(not set)"
+    if len(text) <= prefix + suffix or prefix < 1 or suffix < 1:
+        return "*" * 8
+    return f"{text[:prefix]}...{text[-suffix:]}"
+
+
 # Returns the newest Pillow release that still supports the running Python version
 def ntfy_images_requirement():
     if sys.version_info < (3, 7):
@@ -511,7 +641,7 @@ def ntfy_images_requirement():
 
 # Returns the command that installs optional ntfy artwork support for the active installation
 def ntfy_images_install_command():
-    if os.path.basename(sys.argv[0] or "").endswith(".py"):
+    if install_method() == INSTALL_METHOD_SCRIPT:
         return 'pip3 install "{}"'.format(ntfy_images_requirement())
     return 'pip3 install "steam_monitor[ntfy-images]"'
 
@@ -894,13 +1024,18 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
-# Checks internet connectivity
-def check_internet(url=CHECK_INTERNET_URL, timeout=CHECK_INTERNET_TIMEOUT):
+# Checks internet connectivity against the configured URL and timeout
+def check_internet(url=None, timeout=None):
+    # Resolved at call time so a config file can change these, which binding them as default arguments prevented
+    selected_url = CHECK_INTERNET_URL if url is None else url
+    selected_timeout = CHECK_INTERNET_TIMEOUT if timeout is None else timeout
+    print_debug(f"Checking connectivity against {selected_url} with a {selected_timeout}s timeout")
     try:
-        _ = req.get(url, timeout=timeout)
+        _ = req.get(selected_url, timeout=selected_timeout)
         return True
     except req.RequestException as e:
-        print(f"* No connectivity, please check your network:\n\n{e}")
+        print(f"* No connectivity, please check your network:\n\n{sanitize_error_text(str(e))}")
+        print_debug(f"Connectivity check failed with {type(e).__name__}")
         return False
 
 
@@ -1171,6 +1306,45 @@ def resolve_secret_env_path(env_file=None, cwd=None):
     return destination.resolve()
 
 
+# Returns the keys a dotenv file itself defines, used to tell a file-supplied secret from an exported one
+def dotenv_file_keys(env_path=None):
+    if not env_path or not os.path.isfile(str(env_path)):
+        return frozenset()
+    try:
+        from dotenv import dotenv_values
+    except ImportError:
+        return frozenset()
+    try:
+        return frozenset(name for name, value in dotenv_values(str(env_path)).items() if value is not None)
+    except Exception:
+        return frozenset()
+
+
+# Returns where each currently exported secret came from, naming the dotenv file only for the keys that file defines
+def secret_sources(env_path=None):
+    # load_dotenv copies file values into the environment, so the file's own keys have to be checked first
+    file_keys = dotenv_file_keys(env_path)
+    sources = {}
+    for secret in SECRET_KEYS:
+        if os.getenv(secret) is None:
+            continue
+        sources[secret] = str(env_path) if secret in file_keys else "environment"
+    return sources
+
+
+# Copies exported secrets into module globals and returns the applied names paired with whether the value changed
+def load_secrets_from_environment(namespace=None):
+    selected_namespace = globals() if namespace is None else namespace
+    applied = []
+    for secret in SECRET_KEYS:
+        value = os.getenv(secret)
+        if value is None:
+            continue
+        applied.append((secret, selected_namespace.get(secret) != value))
+        selected_namespace[secret] = value
+    return applied
+
+
 # Checks whether a dotenv file already contains one named assignment
 def _dotenv_contains_key(destination, key):
     destination_path = Path(destination)
@@ -1338,7 +1512,7 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
         raise SecretConfigurationError(f"Could not save the webhook URL in '{destination}'. Check file permissions or choose another path with --env-file.")
     print("* Webhook URL looks valid")
     print(f"* Updated private settings file: {destination}")
-    print(f"* Send a test webhook with: steam_monitor --send-test-webhook --env-file {destination}")
+    print(f"* Send a test webhook with: {render_command(['--send-test-webhook'], include_paths=False, env_path=destination)}")
     return str(destination)
 
 
@@ -2069,21 +2243,19 @@ def reload_secrets_signal_handler(sig, frame):
             if env_path:
                 load_dotenv(env_path, override=True)
             else:
-                print("* No .env file found, skipping env-var reload")
+                print("* No .env file found, reloading exported environment variables only")
         except ImportError:
             env_path = None
-            print("* python-dotenv not installed, skipping env-var reload")
+            print("* python-dotenv not installed, reloading exported environment variables only")
 
     webhook_url_changed = False
-    if env_path:
-        for secret in SECRET_KEYS:
-            old_val = globals().get(secret)
-            val = os.getenv(secret)
-            if val is not None and val != old_val:
-                globals()[secret] = val
-                if secret == "WEBHOOK_URL":
-                    webhook_url_changed = True
-                print(f"* Reloaded {secret} from {env_path}")
+    sources = secret_sources(env_path)
+    for secret, changed in load_secrets_from_environment():
+        if not changed:
+            continue
+        if secret == "WEBHOOK_URL":
+            webhook_url_changed = True
+        print(f"* Reloaded {secret} from {sources.get(secret, 'environment')}")
     if webhook_url_changed:
         detected_provider = detect_webhook_provider(WEBHOOK_URL)
         if detected_provider and detected_provider != normalized_webhook_provider():
@@ -2181,6 +2353,8 @@ def load_config_file(config_path, namespace=None, report_errors=True):
         # Parsed as data rather than executed, so a config file picked up from the working directory cannot run code
         parsed_values = parse_config_content(content, str(config_path), retired_settings)
         selected_namespace.update(parsed_values)
+        if report_errors:
+            print_debug(f"Applied {len(parsed_values)} setting(s) from '{config_path}'")
         if retired_settings and report_errors:
             print(f"* Note: {describe_retired_settings(retired_settings, chr(39) + str(config_path) + chr(39))}")
         return True
@@ -2201,6 +2375,8 @@ def load_config_file(config_path, namespace=None, report_errors=True):
     if report_errors:
         print(f"* Error: {detail}")
         print("* Config files are read as data. Only documented SETTING = value lines with plain literal values are accepted.")
+        print(f"To fix: Correct the reported line, or start from a fresh template with '{render_command(['--generate-config', str(config_path)], include_paths=False)}'")
+        print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
     return False
 
 
@@ -3869,8 +4045,25 @@ def main():
         default=None,
         help="Disable coloured output in the terminal"
     )
+    opts.add_argument(
+        "--verbose",
+        dest="verbose",
+        action="store_true",
+        default=None,
+        help="Print extra startup and runtime detail (overrides VERBOSE_MODE)"
+    )
+    opts.add_argument(
+        "--debug",
+        dest="debug",
+        action="store_true",
+        default=None,
+        help="Print diagnostic detail including the technical cause of failures, implies --verbose (overrides DEBUG_MODE)"
+    )
 
     args = parser.parse_args()
+
+    # Applied here so config-load failures and startup checks can already print diagnostics
+    apply_diagnostic_cli_flags(args)
 
     if args.set_steam_api_key and args.set_webhook_url:
         parser.error("--set-steam-api-key cannot be combined with --set-webhook-url")
@@ -3927,8 +4120,14 @@ def main():
         sys.exit(1)
 
     if cfg_path:
+        print_debug(f"Loading configuration file '{cfg_path}'")
         if not load_config_file(cfg_path):
             sys.exit(1)
+    else:
+        print_debug("No configuration file found, using built-in defaults")
+
+    # Reapplied because the config file may carry VERBOSE_MODE or DEBUG_MODE values that must not beat an explicit flag
+    apply_diagnostic_cli_flags(args)
 
     if args.env_file:
         DOTENV_FILE = os.path.expanduser(args.env_file)
@@ -3957,11 +4156,12 @@ def main():
             if env_path:
                 print(f"* Warning: Cannot load dotenv file '{env_path}' because 'python-dotenv' is not installed\n\nTo install it, run:\n    pip3 install python-dotenv\n\nOnce installed, re-run this tool\n")
 
-    if env_path:
-        for secret in SECRET_KEYS:
-            val = os.getenv(secret)
-            if val is not None:
-                globals()[secret] = val
+    # Exported secrets apply on their own, so a dotenv file is an alternative to the environment rather than a precondition
+    applied_secrets = load_secrets_from_environment()
+    if applied_secrets:
+        secret_source_map = secret_sources(env_path)
+        for secret, _ in applied_secrets:
+            print_debug(f"Loaded {secret} from {secret_source_map.get(secret, 'environment')} ({mask_secret(globals().get(secret))})")
 
     apply_webhook_cli_overrides(args, parser)
 
@@ -4135,6 +4335,15 @@ def main():
     print(f"* ASCII log separators:\t\t{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})")
     print(f"* Configuration file:\t\t{cfg_path}")
     print(f"* Dotenv file:\t\t\t{env_path or 'None'}")
+
+    if verbose_enabled():
+        startup_secret_sources = secret_sources(env_path)
+        dotenv_supplied = sorted(name for name, source in startup_secret_sources.items() if source != "environment")
+        environment_supplied = sorted(name for name, source in startup_secret_sources.items() if source == "environment")
+        print(f"* Install method:\t\t{install_method_display_name()}")
+        print(f"* Secrets from dotenv file:\t{', '.join(dotenv_supplied) if dotenv_supplied else 'None'}")
+        print(f"* Secrets from environment:\t{', '.join(environment_supplied) if environment_supplied else 'None'}")
+        print(f"* Diagnostics:\t\t\t[verbose: {verbose_enabled()}] [debug: {DEBUG_MODE}]")
 
     if NTFY_IMAGES and not NTFY_IMAGES_AVAILABLE:
         NTFY_IMAGES = False
