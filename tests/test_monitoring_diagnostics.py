@@ -80,7 +80,7 @@ def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True)
     monkeypatch.chdir(tmp_path)
 
     api = FakeSteamWebAPI(failing_endpoints)
-    monkeypatch.setattr(monitor.steam.webapi, "WebAPI", lambda **kwargs: api)
+    monkeypatch.setattr(monitor, "steam_web_api_client", lambda *args, **kwargs: api)
 
     sleeps = []
 

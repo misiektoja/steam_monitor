@@ -306,7 +306,8 @@ def test_each_notification_channel_reports_its_own_outcome(capsys, monkeypatch, 
     monkeypatch.setattr(monitor, "send_email", lambda *_args, **_kwargs: 1)
     monkeypatch.setattr(monitor, "send_webhook", lambda *_args, **_kwargs: 0)
 
-    assert monitor.send_notification_channels("error", "subject", "body", email_enabled=True, webhook_enabled=True) == (True, True)
+    # The return is per-channel delivery, so the failed email reports False while the webhook reports True
+    assert monitor.send_notification_channels("error", "subject", "body", email_enabled=True, webhook_enabled=True) == (False, True)
 
     output = capsys.readouterr().out
     assert "Email channel for the error alert failed" in output
@@ -359,6 +360,100 @@ def test_a_secret_in_an_error_message_is_redacted(capsys, monkeypatch, diagnosti
     output = capsys.readouterr().out
     assert SECRET_SMTP_PASSWORD not in output
     assert "<redacted>" in output
+
+
+# Verifies the configured TLS setting reaches every outbound request rather than only some of them
+def test_tls_verification_reaches_every_outbound_request(monkeypatch, restored_globals):
+    monkeypatch.setattr(monitor, "VERIFY_SSL", False)
+    configure_webhook()
+    observed = []
+
+    def record_get(*_args, **kwargs):
+        observed.append(("get", kwargs.get("verify")))
+        raise req.exceptions.ConnectionError("stopped")
+
+    def record_post(*_args, **kwargs):
+        observed.append(("post", kwargs.get("verify")))
+        raise req.exceptions.ConnectionError("stopped")
+
+    monkeypatch.setattr(monitor.req, "get", record_get)
+    monkeypatch.setattr(monitor.WEBHOOK_SESSION, "get", record_get)
+    monkeypatch.setattr(monitor.WEBHOOK_SESSION, "post", record_post)
+
+    # Each call is expected to fail, since the point is only to capture the verify argument it sent
+    for outbound_call in (
+        lambda: monitor.check_internet("https://example.invalid/probe", 1),
+        lambda: monitor.fetch_persona_name_history(76561197960435530),
+        lambda: monitor.validate_steam_api_key("A" * 32),
+        lambda: monitor.resolve_steam_community_url("https://steamcommunity.com/id/someone/", "A" * 32),
+        lambda: monitor.send_webhook("t", "b", "status", force=True, sleeper=lambda _seconds: None),
+    ):
+        try:
+            outbound_call()
+        except Exception:
+            pass
+
+    # Pinned so the test cannot quietly degrade to proving one call site instead of all of them
+    assert len(observed) >= 5, observed
+    assert all(verify is False for _kind, verify in observed), observed
+
+
+# Verifies the Steam Web API client applies the TLS setting before it issues its first request
+def test_the_steam_client_applies_tls_before_its_first_request(monkeypatch, restored_globals):
+    monkeypatch.setattr(monitor, "VERIFY_SSL", False)
+    order = []
+
+    class FakeSession:
+        def __init__(self):
+            self._verify = True
+
+        @property
+        def verify(self):
+            return self._verify
+
+        @verify.setter
+        def verify(self, value):
+            order.append(("verify_set", value))
+            self._verify = value
+
+    class FakeWebAPI:
+        def __init__(self, key, auto_load_interfaces=True):
+            order.append(("constructed", auto_load_interfaces))
+            self.session = FakeSession()
+
+        def fetch_interfaces(self):
+            order.append(("fetch_interfaces", self.session.verify))
+            return {}
+
+        def load_interfaces(self, _interfaces):
+            order.append(("load_interfaces", None))
+
+    monkeypatch.setattr(monitor.steam.webapi, "WebAPI", FakeWebAPI)
+
+    monitor.steam_web_api_client("A" * 32)
+
+    assert order[0] == ("constructed", False)
+    assert order[1] == ("verify_set", False)
+    # The interface fetch is the client's first network call, so it must already be running with the setting applied
+    assert order[2] == ("fetch_interfaces", False)
+
+
+# Verifies a channel that failed is reported as undelivered so the caller can retry only that one
+def test_a_failed_channel_is_reported_as_undelivered(monkeypatch, diagnostics_on):
+    configure_smtp()
+    configure_webhook()
+    monkeypatch.setattr(monitor, "send_email", lambda *_args, **_kwargs: 1)
+    monkeypatch.setattr(monitor, "send_webhook", lambda *_args, **_kwargs: 0)
+
+    assert monitor.send_notification_channels("error", "s", "b", email_enabled=True, webhook_enabled=True) == (False, True)
+
+
+# Verifies a channel that was never enabled is reported as undelivered rather than as a success
+def test_a_disabled_channel_is_not_reported_as_delivered(monkeypatch, restored_globals):
+    monkeypatch.setattr(monitor, "send_email", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(monitor, "send_webhook", lambda *_args, **_kwargs: 0)
+
+    assert monitor.send_notification_channels("error", "s", "b", email_enabled=False, webhook_enabled=False) == (False, False)
 
 
 # Verifies the connectivity check explains what it probed and why it failed

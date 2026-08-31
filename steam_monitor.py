@@ -247,6 +247,11 @@ CHECK_INTERNET_URL = 'https://api.steampowered.com/'
 # Timeout used when checking initial internet connectivity; in seconds
 CHECK_INTERNET_TIMEOUT = 5
 
+# Whether to verify TLS certificates on every outbound request
+# Only set this to False for a network that intercepts TLS with its own certificate authority,
+# and understand that it disables protection against an intercepted connection
+VERIFY_SSL = True
+
 # CSV file to write all status & game changes
 # Can also be set using the -b flag
 CSV_FILE = ""
@@ -396,6 +401,7 @@ STEAM_SNOOZE_INACTIVITY_THRESHOLD = 0
 LIVENESS_CHECK_INTERVAL = 0
 CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
+VERIFY_SSL = True
 CSV_FILE = ""
 DOTENV_FILE = ""
 FILE_SUFFIX = ""
@@ -451,8 +457,12 @@ nl_ch = "\n"
 
 import sys
 
-if sys.version_info < (3, 6):
-    print("* Error: Python version 3.6 or higher required !")
+# Declared once so the startup gate, the packaging metadata and any later environment check cannot disagree
+MINIMUM_PYTHON_VERSION = (3, 6)
+MINIMUM_PYTHON_VERSION_TEXT = ".".join(str(part) for part in MINIMUM_PYTHON_VERSION)
+
+if sys.version_info < MINIMUM_PYTHON_VERSION:
+    print(f"* Error: Python version {MINIMUM_PYTHON_VERSION_TEXT} or higher required !")
     sys.exit(1)
 
 import time
@@ -481,6 +491,7 @@ import platform
 from platform import system
 import re
 import shlex
+import unicodedata
 import ipaddress
 import tempfile
 from io import BytesIO
@@ -613,6 +624,81 @@ def print_debug_exception(context, exc):
     print_debug(f"{context} failed with {type(exc).__name__}: {exc}")
 
 
+# Strips terminal control sequences and other C0/C1 characters from third-party text before it reaches a console or a log
+def sanitize_untrusted_text(value, max_length=256):
+    if value is None:
+        return ""
+    text = str(value)
+    text = ANSI_ESCAPE_RE.sub("", text)
+    # Everything a remote service sends is hostile until proven otherwise, so drop the control range outright
+    text = "".join(character for character in text if character == " " or not unicodedata.category(character).startswith("C"))
+    text = text.strip()
+    if max_length and len(text) > max_length:
+        text = text[:max_length] + "..."
+    return text
+
+
+# Writes JSON to a file atomically, so a crash cannot leave a half-written state file behind
+def write_json_atomic(destination, payload, mode=None):
+    destination_path = Path(destination).expanduser()
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n", prefix=f".{destination_path.name}.", suffix=".tmp", dir=str(destination_path.parent), delete=False) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            json.dump(payload, temporary_file, indent=2)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        if mode is not None and os.name == "posix":
+            os.chmod(str(temporary_path), mode)
+        os.replace(str(temporary_path), str(destination_path))
+        temporary_path = None
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
+    return str(destination_path)
+
+
+# Copies an existing file to a timestamped private backup before it is replaced, returning the backup path or None
+def create_timestamped_backup(destination, attempts=100):
+    destination_path = Path(destination).expanduser()
+    if not destination_path.is_file():
+        return None
+    existing_bytes = destination_path.read_bytes()
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    for attempt in range(attempts):
+        suffix = f".{stamp}.bak" if attempt == 0 else f".{stamp}-{attempt}.bak"
+        backup_path = destination_path.with_name(destination_path.name + suffix)
+        try:
+            # O_EXCL so a backup can never overwrite an earlier one, even under a concurrent run
+            descriptor = os.open(str(backup_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            continue
+        try:
+            with os.fdopen(descriptor, "wb") as backup_file:
+                backup_file.write(existing_bytes)
+                backup_file.flush()
+                os.fsync(backup_file.fileno())
+        except Exception:
+            try:
+                os.unlink(str(backup_path))
+            except OSError:
+                pass
+            raise
+        return str(backup_path)
+    raise OSError(f"Could not create a unique backup for '{destination_path}' after {attempts} attempts")
+
+
+# Returns a Steam Web API client whose session honors the configured TLS verification setting
+def steam_web_api_client(api_key=None):
+    selected_key = STEAM_API_KEY if api_key is None else api_key
+    # Interfaces are loaded manually because the automatic load fires before the session can be configured
+    client = steam.webapi.WebAPI(key=selected_key, auto_load_interfaces=False)
+    client.session.verify = VERIFY_SSL
+    client.load_interfaces(client.fetch_interfaces())
+    return client
+
+
 # Silences debug output while a raw secret is entered or validated, then restores the previous mode
 @contextmanager
 def debug_output_suppressed():
@@ -651,16 +737,13 @@ def apply_diagnostic_cli_flags(args):
         DEBUG_MODE = True
 
 
-# Returns a secret rendered as a short prefix and suffix so it can be shown without disclosing the value
-def mask_secret(value, prefix=4, suffix=2):
-    if value is None:
+# Returns a placeholder reporting only whether a secret is set, never any part of its value
+def mask_secret(value):
+    # Diagnostic output is meant to be pasted into public bug reports, so not even a prefix of a live key may appear.
+    # Which secret is loaded is answered by its name and source instead, which secret_sources reports.
+    if value is None or not str(value):
         return "(not set)"
-    text = str(value)
-    if not text:
-        return "(not set)"
-    if len(text) <= prefix + suffix or prefix < 1 or suffix < 1:
-        return "*" * 8
-    return f"{text[:prefix]}...{text[-suffix:]}"
+    return "<redacted>"
 
 
 # Returns the newest Pillow release that still supports the running Python version
@@ -1068,7 +1151,7 @@ def check_internet(url=None, timeout=None):
     selected_timeout = CHECK_INTERNET_TIMEOUT if timeout is None else timeout
     print_debug(f"Checking connectivity against {selected_url} with a {selected_timeout}s timeout")
     try:
-        _ = req.get(selected_url, timeout=selected_timeout)
+        _ = req.get(selected_url, timeout=selected_timeout, verify=VERIFY_SSL)
         return True
     except req.RequestException as e:
         print(f"* No connectivity, please check your network:\n\n{sanitize_error_text(str(e))}")
@@ -1111,7 +1194,7 @@ def resolve_steam_community_url(community_url, api_key, timeout=30):
 
     resolver_url = "https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/"
     try:
-        response = req.get(resolver_url, params={"key": api_key, "vanityurl": profile_name, "url_type": 1}, timeout=timeout)
+        response = req.get(resolver_url, params={"key": api_key, "vanityurl": profile_name, "url_type": 1}, timeout=timeout, verify=VERIFY_SSL)
     except req.Timeout:
         raise ValueError("Steam Web API request timed out") from None
     except req.RequestException:
@@ -1444,12 +1527,13 @@ def update_dotenv_file(destination, updates):
             os.fsync(temporary_file.fileno())
         if os.name == "posix":
             os.chmod(str(temporary_path), 0o600)
+        backup_path = create_timestamped_backup(destination_path)
         os.replace(str(temporary_path), str(destination_path))
         temporary_path = None
     finally:
         if temporary_path is not None and temporary_path.exists():
             temporary_path.unlink()
-    return {"path": str(destination_path), "updated_keys": tuple(key for key, _ in update_items)}
+    return {"path": str(destination_path), "updated_keys": tuple(key for key, _ in update_items), "backup_path": backup_path}
 
 
 # Validates a Steam Web API key without exposing it in output
@@ -1457,7 +1541,7 @@ def validate_steam_api_key(api_key, timeout=10):
     if not isinstance(api_key, str) or not re.fullmatch(r"[A-Fa-f0-9]{32}", api_key.strip()):
         return False
     try:
-        response = req.get("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/", params={"key": api_key.strip(), "steamids": "76561197960287930"}, timeout=timeout)
+        response = req.get("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/", params={"key": api_key.strip(), "steamids": "76561197960287930"}, timeout=timeout, verify=VERIFY_SSL)
         if response.status_code != 200:
             return False
         payload = response.json()
@@ -1490,11 +1574,13 @@ def run_set_steam_api_key(env_file=None, interactive=None, input_func=None, getp
     if not validate(api_key):
         raise SecretConfigurationError("The entered Steam Web API key is invalid or could not be verified. The private settings file was not changed.")
     try:
-        update_dotenv_file(destination, {"STEAM_API_KEY": api_key})
+        result = update_dotenv_file(destination, {"STEAM_API_KEY": api_key})
     except Exception:
         raise SecretConfigurationError(f"Could not save the Steam Web API key in '{destination}'. Check file permissions or choose another path with --env-file.")
     print("* Steam Web API key is valid")
     print(f"* Updated private settings file: {destination}")
+    if result.get("backup_path"):
+        print(f"* Previous private settings file backed up to: {result['backup_path']}")
     return str(destination)
 
 
@@ -1549,11 +1635,13 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
     if not validate_webhook_url(webhook_url):
         raise SecretConfigurationError("That does not look like a complete HTTPS webhook URL. The private settings file was not changed.")
     try:
-        update_dotenv_file(destination, {"WEBHOOK_URL": webhook_url})
+        result = update_dotenv_file(destination, {"WEBHOOK_URL": webhook_url})
     except Exception:
         raise SecretConfigurationError(f"Could not save the webhook URL in '{destination}'. Check file permissions or choose another path with --env-file.")
     print("* Webhook URL looks valid")
     print(f"* Updated private settings file: {destination}")
+    if result.get("backup_path"):
+        print(f"* Previous private settings file backed up to: {result['backup_path']}")
     print(f"* Send a test webhook with: {render_command(['--send-test-webhook'], include_paths=False, env_path=destination)}")
     return str(destination)
 
@@ -1882,7 +1970,7 @@ def build_ntfy_image(image_url=""):
     try:
         if not steam_image_url_is_allowed(image_url):
             raise ValueError("ntfy image URL must use a Steam HTTPS image host")
-        response = WEBHOOK_SESSION.get(image_url, headers={"User-Agent": f"SteamMonitor/{VERSION}"}, timeout=WEBHOOK_TIMEOUT_SECONDS, stream=True, allow_redirects=False)
+        response = WEBHOOK_SESSION.get(image_url, headers={"User-Agent": f"SteamMonitor/{VERSION}"}, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=VERIFY_SSL, stream=True, allow_redirects=False)
         with response:
             response.raise_for_status()
             content_type = str((response.headers or {}).get("Content-Type", "")).split(";", 1)[0].strip().casefold()
@@ -1936,7 +2024,7 @@ def post_webhook_request(**request_kwargs):
     # Revalidated here because a dotenv reload can replace the destination after the delivery started
     if not validate_webhook_url(destination):
         raise req.exceptions.InvalidURL("WEBHOOK_URL must contain a complete HTTPS link")
-    return WEBHOOK_SESSION.post(destination, timeout=WEBHOOK_TIMEOUT_SECONDS, allow_redirects=False, **request_kwargs)
+    return WEBHOOK_SESSION.post(destination, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=VERIFY_SSL, allow_redirects=False, **request_kwargs)
 
 
 # Sends one webhook through an isolated bounded retry path
@@ -2031,15 +2119,18 @@ def send_webhook(title, description, notification_type="status", force=False, sl
 def send_notification_channels(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, image_url="", ntfy_priority=0, ntfy_tags=""):
     email_attempted = bool(email_enabled)
     webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    email_delivered = False
+    webhook_delivered = False
     if email_attempted:
         print(f"Sending email notification to {RECEIVER_EMAIL}")
-        email_result = send_email(subject, body, body_html, SMTP_SSL)
-        print_debug(f"Email channel for the {notification_type} alert {'succeeded' if email_result == 0 else 'failed'}")
+        email_delivered = send_email(subject, body, body_html, SMTP_SSL) == 0
+        print_debug(f"Email channel for the {notification_type} alert {'succeeded' if email_delivered else 'failed'}")
     if webhook_attempted:
         print("Sending webhook notification")
-        webhook_result = send_webhook(subject, body, notification_type, force=True, image_url=image_url, ntfy_priority=ntfy_priority, ntfy_tags=ntfy_tags)
-        print_debug(f"Webhook channel for the {notification_type} alert {'succeeded' if webhook_result == 0 else 'failed'}")
-    return email_attempted, webhook_attempted
+        webhook_delivered = send_webhook(subject, body, notification_type, force=True, image_url=image_url, ntfy_priority=ntfy_priority, ntfy_tags=ntfy_tags) == 0
+        print_debug(f"Webhook channel for the {notification_type} alert {'succeeded' if webhook_delivered else 'failed'}")
+    # Delivery, not the attempt, so a channel that failed is retried while one that succeeded is not resent
+    return email_delivered, webhook_delivered
 
 
 # Initializes the CSV file
@@ -2584,7 +2675,7 @@ def fetch_persona_name_history(steamid, timeout=15):
     url = f"https://steamcommunity.com/profiles/{steamid}/ajaxaliases"
     headers = {"User-Agent": "Mozilla/5.0 (compatible; steam_monitor)"}
     try:
-        resp = req.get(url, headers=headers, timeout=timeout)
+        resp = req.get(url, headers=headers, timeout=timeout, verify=VERIFY_SSL)
         resp.raise_for_status()
         data = resp.json()
     except Exception as exc:
@@ -2631,7 +2722,7 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
 
     try:
         print_debug(f"Opening the Steam Web API with key {mask_secret(STEAM_API_KEY)} for {steamid}")
-        s_api = steam.webapi.WebAPI(key=STEAM_API_KEY)
+        s_api = steam_web_api_client()
         s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
         s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
     except Exception as e:
@@ -2640,7 +2731,7 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
         sys.exit(1)
 
     try:
-        username = s_user["response"]["players"][0].get("personaname")
+        username = sanitize_untrusted_text(s_user["response"]["players"][0].get("personaname"))
     except Exception as exc:
         print(f"* Error: User with Steam64 ID {steamid} does not exist!")
         print_debug_exception("Reading the player summary", exc)
@@ -2648,12 +2739,12 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
 
     status = int(s_user["response"]["players"][0].get("personastate"))
     visibilitystate = int(s_user["response"]["players"][0].get("communityvisibilitystate"))
-    realname = s_user["response"]["players"][0].get("realname", "")
+    realname = sanitize_untrusted_text(s_user["response"]["players"][0].get("realname", ""))
     profile_url = s_user["response"]["players"][0].get("profileurl")
     timecreated = s_user["response"]["players"][0].get("timecreated")
     lastlogoff = s_user["response"]["players"][0].get("lastlogoff")
     gameid = s_user["response"]["players"][0].get("gameid")
-    gamename = s_user["response"]["players"][0].get("gameextrainfo", "")
+    gamename = sanitize_untrusted_text(s_user["response"]["players"][0].get("gameextrainfo", ""))
 
     status_ts_old = int(time.time())
     status_ts_old_bck = status_ts_old
@@ -2766,8 +2857,8 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
 
                 players = summaries.get("response", {}).get("players", [])
                 for p in players:
-                    persona = p.get("personaname", "")
-                    real_name = p.get("realname") or ""
+                    persona = sanitize_untrusted_text(p.get("personaname", ""))
+                    real_name = sanitize_untrusted_text(p.get("realname") or "")
                     sid = p.get("steamid", "")
                     since_ts = friend_since_map.get(sid)
                     since_str = f" - friend since {get_date_from_ts(int(since_ts))}" if since_ts else ""
@@ -2852,7 +2943,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
     try:
         print_debug(f"Opening the Steam Web API with key {mask_secret(STEAM_API_KEY)} for {steamid}")
-        s_api = steam.webapi.WebAPI(key=STEAM_API_KEY)
+        s_api = steam_web_api_client()
         s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
         s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
     except Exception as e:
@@ -2861,7 +2952,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         sys.exit(1)
 
     try:
-        username = s_user["response"]["players"][0].get("personaname")
+        username = sanitize_untrusted_text(s_user["response"]["players"][0].get("personaname"))
     except Exception as exc:
         print(f"* Error: User with Steam64 ID {steamid} does not exist!")
         print_debug_exception("Reading the player summary", exc)
@@ -2870,12 +2961,12 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     status = int(s_user["response"]["players"][0].get("personastate"))
     visibilitystate = int(s_user["response"]["players"][0].get("communityvisibilitystate"))
 
-    realname = s_user["response"]["players"][0].get("realname", "")
+    realname = sanitize_untrusted_text(s_user["response"]["players"][0].get("realname", ""))
     profile_url = s_user["response"]["players"][0].get("profileurl")
     timecreated = s_user["response"]["players"][0].get("timecreated")
     lastlogoff = s_user["response"]["players"][0].get("lastlogoff")
     gameid = s_user["response"]["players"][0].get("gameid")
-    gamename = s_user["response"]["players"][0].get("gameextrainfo", "")
+    gamename = sanitize_untrusted_text(s_user["response"]["players"][0].get("gameextrainfo", ""))
     avatar_url = s_user["response"]["players"][0].get("avatarfull", "")
 
     status_ts_old = int(time.time())
@@ -2951,8 +3042,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         else:
             last_status_to_save.append(None)
         try:
-            with open(steam_last_status_file, 'w', encoding="utf-8") as f:
-                json.dump(last_status_to_save, f, indent=2)
+            write_json_atomic(steam_last_status_file, last_status_to_save)
             print_debug(f"Saved the last status to '{steam_last_status_file}'")
         except Exception as e:
             print(f"* Cannot save last status to '{steam_last_status_file}' file: {e}")
@@ -3043,8 +3133,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             last_games_count = current_count
             last_games_appids = set(current_appids)
             try:
-                with open(steam_games_file, 'w', encoding="utf-8") as f:
-                    json.dump({"game_count": current_count, "appids": current_appids}, f, indent=2)
+                write_json_atomic(steam_games_file, {"game_count": current_count, "appids": current_appids})
                 print_debug(f"Saved the games library to '{steam_games_file}'")
             except Exception as e:
                 print(f"* Cannot save games library to '{steam_games_file}': {e}")
@@ -3067,8 +3156,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         else:
             last_status_to_save.append(None)
         try:
-            with open(steam_last_status_file, 'w', encoding="utf-8") as f:
-                json.dump(last_status_to_save, f, indent=2)
+            write_json_atomic(steam_last_status_file, last_status_to_save)
             print_debug(f"Saved the last status to '{steam_last_status_file}'")
         except Exception as e:
             print(f"* Cannot save last status to '{steam_last_status_file}' file: {e}")
@@ -3129,13 +3217,13 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         webhook_sent = False
         try:
             print_debug(f"Polling Steam for {steamid} (ISteamUser.GetPlayerSummaries, IPlayerService.GetRecentlyPlayedGames)")
-            s_api = steam.webapi.WebAPI(key=STEAM_API_KEY)
+            s_api = steam_web_api_client()
             s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
             s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
             status = int(s_user["response"]["players"][0]["personastate"])
             gameid = s_user["response"]["players"][0].get("gameid")
-            gamename = s_user["response"]["players"][0].get("gameextrainfo", "")
-            current_username = s_user["response"]["players"][0].get("personaname")
+            gamename = sanitize_untrusted_text(s_user["response"]["players"][0].get("gameextrainfo", ""))
+            current_username = sanitize_untrusted_text(s_user["response"]["players"][0].get("personaname"))
             current_avatar_url = s_user["response"]["players"][0].get("avatarfull", "") or avatar_url
 
             # Fetch Steam level and total XP if tracking is enabled
@@ -3207,9 +3295,9 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     m_subject = f"steam_monitor: monitoring error (user: {username})"
                     m_body = f"Steam Monitor could not refresh the user data and will retry in {display_time(sleep_interval)}.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                 if (ERROR_NOTIFICATION and not email_sent) or (webhook_event_enabled("error") and not webhook_sent):
-                    email_attempted, webhook_attempted = send_notification_channels("error", m_subject, m_body, email_enabled=ERROR_NOTIFICATION and not email_sent, webhook_enabled=webhook_event_enabled("error") and not webhook_sent, image_url=current_avatar_url, ntfy_priority=5, ntfy_tags="warning")
-                    email_sent = email_sent or email_attempted
-                    webhook_sent = webhook_sent or webhook_attempted
+                    email_delivered, webhook_delivered = send_notification_channels("error", m_subject, m_body, email_enabled=ERROR_NOTIFICATION and not email_sent, webhook_enabled=webhook_event_enabled("error") and not webhook_sent, image_url=current_avatar_url, ntfy_priority=5, ntfy_tags="warning")
+                    email_sent = email_sent or email_delivered
+                    webhook_sent = webhook_sent or webhook_delivered
 
             print_cur_ts("Timestamp:\t\t\t")
 
@@ -3243,8 +3331,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             else:
                 last_status_to_save.append(None)
             try:
-                with open(steam_last_status_file, 'w', encoding="utf-8") as f:
-                    json.dump(last_status_to_save, f, indent=2)
+                write_json_atomic(steam_last_status_file, last_status_to_save)
             except Exception as e:
                 print(f"* Cannot save last status to '{steam_last_status_file}' file: {e}")
 
@@ -3511,8 +3598,8 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                         added_map = {p.get('steamid'): p for p in added_players}
                         for sid in added_ids:
                             p = added_map.get(sid, {})
-                            persona = p.get('personaname') or ""
-                            real = p.get('realname') or ""
+                            persona = sanitize_untrusted_text(p.get('personaname') or "")
+                            real = sanitize_untrusted_text(p.get('realname') or "")
                             if profile_csv_file_name:
                                 try:
                                     write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="friend_added", friend_steamid=sid, friend_persona=persona, friend_realname=real,)
@@ -3530,8 +3617,8 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                         removed_map = {p.get('steamid'): p for p in removed_players}
                         for sid in removed_ids:
                             p = removed_map.get(sid, {})
-                            persona = p.get('personaname') or ""
-                            real = p.get('realname') or ""
+                            persona = sanitize_untrusted_text(p.get('personaname') or "")
+                            real = sanitize_untrusted_text(p.get('realname') or "")
                             if profile_csv_file_name:
                                 try:
                                     write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="friend_removed", friend_steamid=sid, friend_persona=persona, friend_realname=real,)
@@ -3599,8 +3686,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                         print(f"Removed: {', '.join(str(a) for a in removed_appids)}")
 
                     try:
-                        with open(steam_games_file, 'w', encoding="utf-8") as f:
-                            json.dump({"game_count": new_count, "appids": sorted(current_games_appids)}, f, indent=2)
+                        write_json_atomic(steam_games_file, {"game_count": new_count, "appids": sorted(current_games_appids)})
                     except Exception as e:
                         print(f"* Cannot save games library to '{steam_games_file}': {e}")
 
@@ -3742,9 +3828,16 @@ def main():
             if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith("-"):
                 # Write directly to file (bypasses PowerShell UTF-16 encoding issue on Windows)
                 output_file = sys.argv[idx + 1]
+                try:
+                    backup_path = create_timestamped_backup(output_file)
+                except OSError as exc:
+                    print(f"* Error: Could not back up the existing config file '{output_file}': {exc}")
+                    sys.exit(1)
                 with open(output_file, "w", encoding="utf-8") as f:
                     f.write(config_content)
                 print(f"Config written to: {output_file}")
+                if backup_path:
+                    print(f"Previous config backed up to: {backup_path}")
                 sys.exit(0)
         except (ValueError, IndexError):
             pass

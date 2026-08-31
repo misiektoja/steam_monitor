@@ -105,19 +105,25 @@ def test_the_artwork_install_hint_follows_the_install_method(monkeypatch):
     assert monitor.ntfy_images_install_command().startswith('pip3 install "Pillow')
 
 
-# Verifies a masked secret shows enough to recognize it and never enough to reuse it
-def test_a_masked_secret_hides_the_middle():
-    assert monitor.mask_secret("ABCDEFGHIJKLMNOP") == "ABCD...OP"
-    assert "EFGHIJKLMN" not in monitor.mask_secret("ABCDEFGHIJKLMNOP")
+# Verifies a masked secret discloses no part of its value, since diagnostic output reaches public bug reports
+def test_a_masked_secret_discloses_nothing():
+    secret = "ABCDEFGHIJKLMNOP"
+
+    masked = monitor.mask_secret(secret)
+
+    assert masked == "<redacted>"
+    for length in range(2, len(secret) + 1):
+        assert secret[:length] not in masked
+        assert secret[-length:] not in masked
 
 
-# Verifies a short secret is hidden entirely rather than being mostly printed
-def test_a_short_secret_is_hidden_entirely():
-    assert monitor.mask_secret("short") == "*" * 8
-    assert monitor.mask_secret("ab") == "*" * 8
+# Verifies a short secret is not treated differently from a long one
+def test_a_short_secret_is_masked_the_same_way():
+    assert monitor.mask_secret("ab") == "<redacted>"
+    assert monitor.mask_secret("short") == "<redacted>"
 
 
-# Verifies an absent secret is named as absent instead of rendering as an empty string
+# Verifies an absent secret is named as absent instead of reading as a value that is present
 def test_an_absent_secret_is_reported_as_not_set():
     assert monitor.mask_secret("") == "(not set)"
     assert monitor.mask_secret(None) == "(not set)"

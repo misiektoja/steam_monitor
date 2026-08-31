@@ -4,6 +4,11 @@ from unittest.mock import Mock, patch
 import steam_monitor
 
 
+# Returns the TLS verification setting the module applies to every outbound request
+def monitor_verify_ssl():
+    return steam_monitor.VERIFY_SSL
+
+
 class ResolveSteamCommunityUrlTests(unittest.TestCase):
     # Builds a mocked HTTP response for resolver tests
     def make_response(self, status_code=200, payload=None, headers=None):
@@ -44,7 +49,7 @@ class ResolveSteamCommunityUrlTests(unittest.TestCase):
             result = steam_monitor.resolve_steam_community_url("https://steamcommunity.com/id/misiektoja/", "test-key")
 
         self.assertEqual(result, 76561197960265740)
-        get_mock.assert_called_once_with("https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/", params={"key": "test-key", "vanityurl": "misiektoja", "url_type": 1}, timeout=30)
+        get_mock.assert_called_once_with("https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/", params={"key": "test-key", "vanityurl": "misiektoja", "url_type": 1}, timeout=30, verify=monitor_verify_ssl())
 
     # Verifies that API no-match responses produce a useful resolver error
     def test_reports_unresolved_vanity_url(self):

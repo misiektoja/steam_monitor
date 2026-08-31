@@ -121,7 +121,7 @@ class SecretInputTests(unittest.TestCase):
         with patch.object(steam_monitor.req, "get", return_value=response) as request:
             self.assertTrue(steam_monitor.validate_steam_api_key("A" * 32))
 
-        request.assert_called_once_with("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/", params={"key": "A" * 32, "steamids": "76561197960287930"}, timeout=10)
+        request.assert_called_once_with("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/", params={"key": "A" * 32, "steamids": "76561197960287930"}, timeout=10, verify=steam_monitor.VERIFY_SSL)
 
 
 if __name__ == "__main__":

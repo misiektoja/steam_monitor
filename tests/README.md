@@ -31,7 +31,8 @@ and again before anything is published to PyPI.
 | --- | --- |
 | `test_config_effects.py` | Diagnostic flag precedence, exported secret loading and secret source attribution |
 | `test_config_loading.py` | Declarative config parsing, rejected content and the generated template |
-| `test_diagnostics_output.py` | Verbose and debug output for email, webhook, connectivity and secret redaction |
+| `test_diagnostics_output.py` | Verbose and debug output for email, webhook, connectivity, TLS and secret redaction |
+| `test_file_safety.py` | Atomic state writes, timestamped backups, untrusted text sanitizing and the declared Python minimum |
 | `test_install_method_commands.py` | Install method detection, printed commands, masked secrets and guide links |
 | `test_monitoring_diagnostics.py` | One monitoring cycle: Steam calls named, degraded features reported, quiet by default |
 | `test_repository_contracts.py` | Governance documents, issue templates, action pinning, release gating and the CI contract |

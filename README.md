@@ -191,6 +191,10 @@ steam_monitor --generate-config steam_monitor.conf
 
 Edit the `steam_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
 
+Passing a filename that already exists copies the previous file to a timestamped `.bak` beside it before writing, and prints where it went, so regenerating the template never loses your edits.
+
+By default every outbound request verifies TLS certificates. Set `VERIFY_SSL = False` only on a network that intercepts TLS with its own certificate authority, and understand that it removes protection against an intercepted connection.
+
 <a id="steam-web-api-key"></a>
 ### Steam Web API key
 
@@ -324,6 +328,8 @@ SMTP_PASSWORD="your_smtp_password"
 WEBHOOK_URL="https://discord.com/api/webhooks/..."
 NTFY_ACCESS_TOKEN="your_ntfy_access_token"
 ```
+
+Saving a secret with `--set-steam-api-key` or `--set-webhook-url` copies the previous dotenv file to a timestamped `.bak` with owner-only permissions before replacing it, and prints where it went.
 
 By default the tool will auto-search for dotenv file named `.env` in current directory and then upward from it.
 
