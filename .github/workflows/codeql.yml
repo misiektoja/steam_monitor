@@ -20,14 +20,21 @@ jobs:
       # Uploading the analysis result as code scanning alerts
       security-events: write
       contents: read
+      # Reading the workflow run metadata the analysis reports alongside the result
+      actions: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The analysis never pushes, so the checkout token is not left behind in the runner
+          persist-credentials: false
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
         with:
           languages: python
+          # Python needs no compilation, so nothing is built before the database is created
+          build-mode: none
           # The extended suite adds security queries that the default suite leaves out
           queries: security-extended
 
