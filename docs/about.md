@@ -1,19 +1,5 @@
 # About
 
-## Requirements
-
-* Python 3.6 or higher
-* Libraries: [steam](https://github.com/ValvePython/steam), `requests`, `python-dateutil`, `python-dotenv`
-* Optional: [Pillow](https://pypi.org/project/Pillow/), needed only to attach Steam avatar or game artwork to ntfy alerts
-
-Tested on:
-
-* **macOS**: Ventura, Sonoma, Sequoia, Tahoe
-* **Linux**: Raspberry Pi OS (Bullseye, Bookworm, Trixie), Ubuntu 24/25, Rocky Linux 8.x/9.x, Kali Linux 2024/2025
-* **Windows**: 10, 11
-
-It should work on other versions of macOS, Linux, Unix and Windows as well.
-
 ## Change log
 
 See [RELEASE_NOTES.md](https://github.com/misiektoja/steam_monitor/blob/main/RELEASE_NOTES.md).

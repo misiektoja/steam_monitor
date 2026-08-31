@@ -1,6 +1,6 @@
 # Installation
 
-# Requirements
+## Requirements
 
 * Python 3.6 or higher
 * Libraries: [steam](https://github.com/ValvePython/steam), `requests`, `python-dateutil`, `python-dotenv`

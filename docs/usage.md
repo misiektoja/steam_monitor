@@ -278,3 +278,23 @@ pkill -USR1 -f "steam_monitor <steam_user_id>"
 ```
 
 As Windows supports limited number of signals, this functionality is available only on Linux/Unix/macOS.
+
+## Coloring Log Output with GRC
+
+The tool has native **color output** support for terminal since v1.5 (see `COLORED_OUTPUT` and `COLOR_THEME` config options), but you can also use [GRC](https://github.com/garabik/grc) to color logs.
+
+Add to your GRC config (`~/.grc/grc.conf`):
+
+```
+# monitoring log file
+.*_monitor_.*\.log
+conf.monitor_logs
+```
+
+Now copy the [conf.monitor_logs](https://raw.githubusercontent.com/misiektoja/steam_monitor/refs/heads/main/grc/conf.monitor_logs) to your `~/.grc/` and log files should be nicely colored when using `grc` tool.
+
+Example:
+
+```sh
+grc tail -F -n 100 steam_monitor_<user_steam_id/file_suffix>.log
+```

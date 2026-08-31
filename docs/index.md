@@ -28,7 +28,7 @@ Real-time tracker for Steam players' activity, with detailed profile insights an
 2. [Set it up and run it for the first time](setup-and-first-run.md)
 3. [Tune the configuration](configuration.md)
 
-If something does not work, [`--doctor`](troubleshooting.md#doctor-preflight) will usually tell you why.
+If something does not work, [`--doctor`](troubleshooting.md#doctor-preflight) will usually tell you why, and [`--verbose` or `--debug`](troubleshooting.md#verbose-and-debug-output) will show you what the tool is doing.
 
 ## Screenshots
 

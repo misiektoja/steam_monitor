@@ -1,6 +1,6 @@
 # Setup & First Run
 
-# Quick Start
+## Quick Start
 
 First save your [Steam Web API key](#steam-web-api-key) through the hidden prompt:
 

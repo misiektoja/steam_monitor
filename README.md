@@ -20,7 +20,7 @@ Powerful tool for real-time tracking of **Steam players' activities**.
 pip install steam_monitor
 ```
 
-Then answer a few questions and it writes a ready-to-run configuration:
+The guided setup asks a few questions and writes a ready-to-run configuration:
 
 ```sh
 steam_monitor --setup
@@ -48,9 +48,8 @@ steam_monitor --setup
 | [Installation](https://misiektoja.github.io/steam_monitor/installation/) | Requirements, installing from PyPI or by hand, upgrading |
 | [Setup & First Run](https://misiektoja.github.io/steam_monitor/setup-and-first-run/) | The guided wizard, the Steam Web API key, profile visibility |
 | [Configuration](https://misiektoja.github.io/steam_monitor/configuration/) | Config file, SMTP, webhooks, storing secrets, check intervals |
-| [Usage](https://misiektoja.github.io/steam_monitor/usage/) | Monitoring mode, user information mode, notifications, CSV export, signals |
-| [Troubleshooting](https://misiektoja.github.io/steam_monitor/troubleshooting/) | `--doctor` preflight checks, and what to do when something fails |
-| [Debugging Tools](https://misiektoja.github.io/steam_monitor/debugging/) | `--verbose` and `--debug` output, coloring logs with GRC |
+| [Usage](https://misiektoja.github.io/steam_monitor/usage/) | Monitoring mode, user information mode, notifications, CSV export, signals, coloring logs with GRC |
+| [Troubleshooting](https://misiektoja.github.io/steam_monitor/troubleshooting/) | `--doctor` preflight checks, what to do when something fails, `--verbose` and `--debug` output |
 | [Testing](https://misiektoja.github.io/steam_monitor/testing/) | Running the offline suite, the linter and the docs build |
 | [About](https://misiektoja.github.io/steam_monitor/about/) | Requirements, change log, contributing, security, license, support |
 

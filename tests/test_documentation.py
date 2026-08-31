@@ -218,3 +218,61 @@ def test_the_bug_report_asks_for_doctor_output():
     template = (REPO_ROOT / ".github" / "ISSUE_TEMPLATE" / "bug_report.yml").read_text(encoding="utf-8")
 
     assert "--doctor" in template, "the bug report template does not ask for doctor output"
+
+
+# Returns one page's markdown with fenced code blocks removed, so shell comments are not read as headings
+def prose_lines(path):
+    text = re.sub(r"```.*?```", "", path.read_text(encoding="utf-8"), flags=re.DOTALL)
+    return text.splitlines()
+
+
+# Verifies each page has exactly one title, which a mechanical split silently breaks
+def test_each_page_has_exactly_one_title():
+    for path in sorted(DOCS_DIR.glob("*.md")):
+        titles = [line for line in prose_lines(path) if line.startswith("# ")]
+        assert len(titles) == 1, f"{path.name} has {len(titles)} titles: {titles}"
+
+
+# Verifies no section is documented on two pages, since a reader who finds one will not know the other exists
+def test_no_section_is_duplicated_across_pages():
+    seen = {}
+    duplicates = []
+    for path in sorted(DOCS_DIR.glob("*.md")):
+        for line in prose_lines(path):
+            if not line.startswith("## "):
+                continue
+            title = line[3:].strip()
+            if title in seen:
+                duplicates.append(f"'{title}' in both {seen[title]} and {path.name}")
+            seen[title] = path.name
+
+    assert not duplicates, f"sections documented twice: {duplicates}"
+
+
+# Verifies the set of pages is what the project intends, so a page cannot appear or vanish unnoticed
+def test_the_page_set_is_deliberate():
+    expected = {"index.md", "installation.md", "setup-and-first-run.md", "configuration.md", "usage.md", "troubleshooting.md", "testing.md", "about.md"}
+
+    assert {path.name for path in DOCS_DIR.glob("*.md")} == expected
+
+
+# Verifies a page is never named after something this project does not have
+def test_no_page_promises_tooling_that_does_not_exist():
+    # The sibling tools have a Debugging Tools page because they ship standalone utilities in a debug directory
+    if not (REPO_ROOT / "debug").is_dir():
+        assert not (DOCS_DIR / "debugging.md").exists(), "there is a Debugging Tools page but no debug utilities to document"
+
+
+# Verifies each section sits on the page a reader would look for it on, matching the sibling tools
+@pytest.mark.parametrize("section,page", [
+    ("Requirements", "installation.md"),
+    ("Doctor Preflight", "troubleshooting.md"),
+    ("Verbose and Debug Output", "troubleshooting.md"),
+    ("Coloring Log Output with GRC", "usage.md"),
+    ("Storing Secrets", "configuration.md"),
+    ("Guided Setup", "setup-and-first-run.md"),
+])
+def test_sections_sit_on_the_page_a_reader_expects(section, page):
+    located = [path.name for path in sorted(DOCS_DIR.glob("*.md")) if f"## {section}" in "\n".join(prose_lines(path))]
+
+    assert located == [page], f"'{section}' is on {located}, expected {page}"
