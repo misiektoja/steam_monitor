@@ -1,0 +1,5 @@
+# Known findings in history that cannot be removed without rewriting it.
+# Fingerprint format: commit:file:rule:line
+
+# An SMTP password committed in 2024 and rotated since. Removed from the working tree in 538e15d.
+b87a79f9e41f62f0105957170d8399c384373a0e:steam_monitor.py:monitor-secret-assignment:35
