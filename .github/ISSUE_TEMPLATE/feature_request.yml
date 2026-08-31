@@ -1,0 +1,49 @@
+name: Feature request
+description: Ask for a capability that steam_monitor does not have yet
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The [README](https://github.com/misiektoja/steam_monitor#table-of-contents) describes what is already supported. Check the configuration section before asking for a setting that may already exist.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do and where the tool gets in the way today.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like it to do
+      description: The behavior you want, including the command-line option or configuration setting you imagine.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the tool this concerns
+      options:
+        - Player status monitoring
+        - Game and achievement detection
+        - Friends and level tracking
+        - Notifications (email, Discord, ntfy)
+        - Configuration and dotenv files
+        - Log and CSV output
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Existing settings or workarounds you tried and why they were not enough.
+    validations:
+      required: false

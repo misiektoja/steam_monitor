@@ -16,15 +16,23 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Build archives from release tag
         shell: bash
+        env:
+          # Passed through the environment so a crafted tag cannot be pasted into the shell
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
-          TAG="${{ github.event.release.tag_name }}"
+          TAG="$RELEASE_TAG"
+          # A tag becomes part of a filename, so refuse anything outside the characters a tag may use
+          if [[ ! "$TAG" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "Refusing unsafe release tag: $TAG" >&2
+            exit 1
+          fi
           PREFIX="steam_monitor_${TAG}"
 
           git archive --format=zip --output "${PREFIX}.zip" "${TAG}"
@@ -38,14 +46,14 @@ jobs:
       # Lets anyone confirm the archives were built by this workflow from this tag:
       #     gh attestation verify steam_monitor_<tag>.zip --repo misiektoja/steam_monitor
       - name: Attest the archives' build provenance
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             steam_monitor_${{ github.event.release.tag_name }}.zip
             steam_monitor_${{ github.event.release.tag_name }}.tar.gz
 
       - name: Upload archives to GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           files: |
             steam_monitor_${{ github.event.release.tag_name }}.zip

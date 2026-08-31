@@ -134,7 +134,7 @@ def test_local_hooks_match_the_pinned_linter():
     ruff_hook = next(entry for entry in hooks if "ruff-pre-commit" in entry["repo"])
     assert ruff_hook["rev"] == f"v{pinned.group(1)}"
 
-    lint_steps = read_yaml_asset(".github/workflows/lint.yml")["jobs"]["lint"]["steps"]
+    lint_steps = read_yaml_asset(".github/workflows/tests.yml")["jobs"]["lint"]["steps"]
     assert any("ruff check" in step.get("run", "") for step in lint_steps)
 
 

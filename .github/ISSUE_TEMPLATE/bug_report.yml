@@ -1,0 +1,78 @@
+name: Bug report
+description: Report incorrect or unexpected behavior
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report a suspected vulnerability here. Follow [SECURITY.md](https://github.com/misiektoja/steam_monitor/blob/main/SECURITY.md) instead.
+
+        Never paste a Steam Web API key, an SMTP password, a webhook URL or a complete configuration file into an issue. Logs can name the accounts you monitor, so redact anything you do not want public. [SUPPORT.md](https://github.com/misiektoja/steam_monitor/blob/main/SUPPORT.md) lists what to include.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected and what happened instead. Include the exact error text when there is one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The steps, including the command you ran and the relevant settings from your configuration file. Redact targets, credentials and webhook URLs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: The lines around the failure, redacted. The tool writes a log file unless you pass `--disable-logging`.
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: steam_monitor version
+      description: "Output of `steam_monitor --version`."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How it is installed
+      options:
+        - PyPI (pip install steam_monitor)
+        - Standalone script
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and Python version
+      description: "For example: macOS 15.5, Python 3.14.0."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the tool this concerns
+      options:
+        - Player status monitoring
+        - Game and achievement detection
+        - Friends and level tracking
+        - Notifications (email, Discord, ntfy)
+        - Configuration and dotenv files
+        - Log and CSV output
+        - Other
+    validations:
+      required: false

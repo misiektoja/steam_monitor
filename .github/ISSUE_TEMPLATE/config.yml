@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a vulnerability
+    url: https://github.com/misiektoja/steam_monitor/security/advisories/new
+    about: Report privately through GitHub. Never open a public issue for a suspected vulnerability.
+  - name: Documentation
+    url: https://github.com/misiektoja/steam_monitor#table-of-contents
+    about: Requirements, installation, configuration, usage and troubleshooting.
+  - name: Getting help
+    url: https://github.com/misiektoja/steam_monitor/blob/main/SUPPORT.md
+    about: Where to ask, what to include and what to redact before you post.
+  - name: Question or idea
+    url: https://github.com/misiektoja/steam_monitor/discussions
+    about: Ask about usage or discuss an approach before opening an issue.
