@@ -2583,6 +2583,7 @@ def doctor_check_environment(version_info=None, spec_finder=None):
         checks.append(make_doctor_check("Environment", "PASS", "Optional dependency colorama is installed", "Used only for coloured output on Windows terminals"))
     else:
         checks.append(make_doctor_check("Environment", "WARN", "Optional dependency colorama is not installed", "Coloured output may not render on older Windows terminals. Every other platform is unaffected. Install it with: pip3 install colorama"))
+    checks.append(make_doctor_check("Environment", "PASS", f"Install method: {install_method()}"))
     return checks
 
 

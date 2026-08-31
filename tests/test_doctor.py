@@ -122,6 +122,7 @@ def test_the_python_version_is_checked_not_just_printed():
     assert unsupported[0].status == "FAIL"
     assert unsupported[0].advice is not None
     assert monitor.MINIMUM_PYTHON_VERSION_TEXT in unsupported[0].advice.fix
+    assert any(check.status == "PASS" and check.label.startswith("Install method: ") for check in supported)
 
 
 # Verifies a missing required dependency fails while a missing optional one only warns
