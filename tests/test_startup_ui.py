@@ -22,17 +22,17 @@ def run_cli(*arguments):
 # Verifies the selected Steam banner remains exact and version independent
 def test_selected_banner_exact_content():
     assert monitor.STARTUP_BANNER == r"""
- .---------------.     ____  _
+ .---------------.    ____  _
 |         .--.   |   / ___|| |_ ___  __ _ _ __ ___
 |    O===|  O |  |   \___ \| __/ _ \/ _` | '_ ` _ \
 |   /     '--'   |    ___) | ||  __/ (_| | | | | | |
 |  O             |   |____/ \__\___|\__,_|_| |_| |_|
  '---------------'
-                     __  __             _ _
-                    |  \/  | ___  _ __ (_) |_ ___  _ __
-                    | |\/| |/ _ \| '_ \| | __/ _ \| '__|
-                    | |  | | (_) | | | | | || (_) | |
-                    |_|  |_|\___/|_| |_|_|\__\___/|_|"""
+                      __  __             _ _
+                     |  \/  | ___  _ __ (_) |_ ___  _ __
+                     | |\/| |/ _ \| '_ \| | __/ _ \| '__|
+                     | |  | | (_) | | | | | || (_) | |
+                     |_|  |_|\___/|_| |_|_|\__\___/|_|"""
 
 
 # Verifies the art is portable, bounded and free of trailing whitespace
@@ -41,6 +41,28 @@ def test_banner_ascii_width_and_whitespace():
     lines = monitor.STARTUP_BANNER.splitlines()
     assert max(map(len, lines)) <= 90
     assert all(line == line.rstrip() for line in lines)
+
+
+# Verifies the Steam wordmark matches the standard FIGlet rows at the shared body column
+def test_banner_steam_wordmark_rows():
+    assert [line[21:] for line in monitor.STARTUP_BANNER.splitlines()[1:6]] == [
+        " ____  _",
+        "/ ___|| |_ ___  __ _ _ __ ___",
+        "\\___ \\| __/ _ \\/ _` | '_ ` _ \\",
+        " ___) | ||  __/ (_| | | | | | |",
+        "|____/ \\__\\___|\\__,_|_| |_| |_|",
+    ]
+
+
+# Verifies the Monitor wordmark matches the standard FIGlet rows at the shared body column
+def test_banner_monitor_wordmark_rows():
+    assert [line[21:] for line in monitor.STARTUP_BANNER.splitlines()[7:12]] == [
+        " __  __             _ _",
+        "|  \\/  | ___  _ __ (_) |_ ___  _ __",
+        "| |\\/| |/ _ \\| '_ \\| | __/ _ \\| '__|",
+        "| |  | | (_) | | | | | || (_) | |",
+        "|_|  |_|\\___/|_| |_|_|\\__\\___/|_|",
+    ]
 
 
 # Verifies the printed version stays dynamic and followed by one blank line
@@ -55,7 +77,7 @@ def test_banner_dynamic_version_line(monkeypatch, capsys):
 def test_banner_version_alignment():
     banner_lines = monitor.STARTUP_BANNER.splitlines()
     steam_body_column = banner_lines[2].index("/ ___")
-    monitor_body_indent = len(banner_lines[7]) - len(banner_lines[7].lstrip())
+    monitor_body_indent = len(banner_lines[8]) - len(banner_lines[8].lstrip())
     version_indent = len(" " * 21) - len((" " * 21).lstrip())
     assert steam_body_column == monitor_body_indent == version_indent
 
