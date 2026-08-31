@@ -12,7 +12,7 @@ The distributed package contains no vendored third-party source. It declares the
 | [requests](https://pypi.org/project/requests/) | Apache-2.0 | HTTP for the monitored service, notifications and artwork |
 | [python-dateutil](https://pypi.org/project/python-dateutil/) | Apache-2.0 or BSD-3-Clause | Timestamp parsing and relative date arithmetic |
 | [python-dotenv](https://pypi.org/project/python-dotenv/) | BSD-3-Clause | Reading secrets from `.env` |
-| [Pillow](https://pypi.org/project/Pillow/) | MIT-CMU | Artwork handling for image notifications |
+| [Pillow](https://pypi.org/project/Pillow/) | MIT-CMU | Artwork handling for image notifications, `ntfy-images` extra |
 | [colorama](https://pypi.org/project/colorama/) | BSD-3-Clause | ANSI color support on Windows terminals |
 
 ## Build, test and lint dependencies

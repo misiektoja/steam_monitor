@@ -18,6 +18,8 @@ cd steam_monitor
 pip install -e '.[test]'
 ```
 
+The test extra already includes Pillow, which the ntfy artwork tests need. The `ntfy-images` extra installs the same dependency for normal use.
+
 Optional local hooks catch what CI would reject before a commit is written:
 
 ```sh

@@ -55,6 +55,19 @@ class TestGovernanceDocuments:
         for requirement in re.findall(r'"([A-Za-z0-9_.-]+)', declared.group(1)):
             assert requirement.casefold() in notices, requirement
 
+    # Artwork support must stay optional, or every install carries an image library it may never use
+    def test_artwork_support_ships_as_an_optional_extra(self):
+        pyproject = read_asset("pyproject.toml")
+        requirements = read_asset("requirements.txt")
+
+        runtime = re.search(r"^dependencies = \[(.*?)^\]", pyproject, re.S | re.M)
+        assert runtime is not None and "Pillow" not in runtime.group(1)
+        extra = re.search(r"^ntfy-images = \[(.*?)^\]", pyproject, re.S | re.M)
+        assert extra is not None
+        assert re.findall(r'"(Pillow[^"]+)"', extra.group(1)) == ["Pillow>=8.0,<9.0; python_version < '3.7'", "Pillow>=9.0,<10.0; python_version == '3.7'", "Pillow>=10.0,<11.0; python_version == '3.8'", "Pillow>=11.3.0,<12; python_version == '3.9'", "Pillow>=12.0.0; python_version >= '3.10'"]
+        assert not any(line.strip().startswith("Pillow") for line in requirements.splitlines())
+        assert '# Pillow>=12.0.0; python_version >= "3.10"' in requirements
+
     # The support document must route each request type to a channel that exists
     def test_support_document_routes_every_request_type(self):
         support = read_asset("SUPPORT.md")

@@ -12,7 +12,7 @@ steam[client]
 requests
 python-dateutil
 python-dotenv (optional)
-Pillow (for ntfy images)
+Pillow (optional, needed only when NTFY_IMAGES attaches artwork to ntfy alerts)
 colorama (optional, for better colours on Windows terminals)
 """
 
@@ -187,8 +187,9 @@ WEBHOOK_TRANSFORMS = []
 NTFY_ACCESS_TOKEN = ""
 
 # Whether to attach a Steam avatar or game image to supported ntfy alerts
+# Requires the optional Pillow package: pip3 install "steam_monitor[ntfy-images]"
 # Image preparation or delivery failures fall back to text
-NTFY_IMAGES = True
+NTFY_IMAGES = False
 
 # Whether to periodically check the user's Steam level and total XP for changes
 # (disabled by default to avoid extra API usage)
@@ -493,6 +494,26 @@ try:
 except ImportError:
     pass
 NTFY_IMAGES_AVAILABLE = PILImage is not None
+
+
+# Returns the newest Pillow release that still supports the running Python version
+def ntfy_images_requirement():
+    if sys.version_info < (3, 7):
+        return "Pillow>=8.0,<9.0"
+    if sys.version_info < (3, 8):
+        return "Pillow>=9.0,<10.0"
+    if sys.version_info < (3, 9):
+        return "Pillow>=10.0,<11.0"
+    if sys.version_info < (3, 10):
+        return "Pillow>=11.3.0,<12"
+    return "Pillow>=12.0.0"
+
+
+# Returns the command that installs optional ntfy artwork support for the active installation
+def ntfy_images_install_command():
+    if os.path.basename(sys.argv[0] or "").endswith(".py"):
+        return 'pip3 install "{}"'.format(ntfy_images_requirement())
+    return 'pip3 install "steam_monitor[ntfy-images]"'
 
 
 # ANSI escape sequence helper used for colouring and stripping colour codes
@@ -4114,6 +4135,11 @@ def main():
     print(f"* ASCII log separators:\t\t{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})")
     print(f"* Configuration file:\t\t{cfg_path}")
     print(f"* Dotenv file:\t\t\t{env_path or 'None'}")
+
+    if NTFY_IMAGES and not NTFY_IMAGES_AVAILABLE:
+        NTFY_IMAGES = False
+        if WEBHOOK_ENABLED and normalized_webhook_provider() == "ntfy":
+            print(f"\n* Warning: ntfy artwork is enabled, but the optional 'Pillow' package is not installed\n\nTo attach artwork, run:\n    {ntfy_images_install_command()}\n\nOnce installed, re-run this tool. To stop this warning, set NTFY_IMAGES to False\n\nSending ntfy alerts as text only...")
 
     out = f"\nMonitoring user with Steam64 ID {colorize('steam_id', str(s_id))}"
     print(colorize("header", out))

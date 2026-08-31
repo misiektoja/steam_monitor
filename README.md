@@ -77,7 +77,8 @@ pip install steam_monitor
 ## Requirements
 
 * Python 3.6 or higher
-* Libraries: [steam](https://github.com/ValvePython/steam), `requests`, `python-dateutil`, `python-dotenv`, `Pillow`
+* Libraries: [steam](https://github.com/ValvePython/steam), `requests`, `python-dateutil`, `python-dotenv`
+* Optional: [Pillow](https://pypi.org/project/Pillow/), needed only to attach Steam avatar or game artwork to ntfy alerts
 
 Tested on:
 
@@ -97,6 +98,12 @@ It should work on other versions of macOS, Linux, Unix and Windows as well.
 pip install steam_monitor
 ```
 
+To also attach Steam avatar or game artwork to ntfy alerts, install the optional extra instead. It selects the newest Pillow release your Python version still supports:
+
+```sh
+pip install "steam_monitor[ntfy-images]"
+```
+
 <a id="manual-installation"></a>
 ### Manual Installation
 
@@ -105,7 +112,7 @@ Download the *[steam_monitor.py](https://raw.githubusercontent.com/misiektoja/st
 Install dependencies via pip:
 
 ```sh
-pip install "steam[client]" requests python-dateutil python-dotenv Pillow
+pip install "steam[client]" requests python-dateutil python-dotenv
 ```
 
 Alternatively, from the downloaded *[requirements.txt](https://raw.githubusercontent.com/misiektoja/steam_monitor/refs/heads/main/requirements.txt)*:
@@ -113,6 +120,14 @@ Alternatively, from the downloaded *[requirements.txt](https://raw.githubusercon
 ```sh
 pip install -r requirements.txt
 ```
+
+For optional ntfy artwork attachments also install Pillow. On Python 3.10 and newer:
+
+```sh
+pip install "Pillow>=12.0.0"
+```
+
+Older Python versions need the newest Pillow they still support. The commented lines in *requirements.txt* list the pin for each one.
 
 <a id="upgrading"></a>
 ### Upgrading
@@ -266,7 +281,19 @@ Advanced integrations can set `WEBHOOK_USERNAME`, `WEBHOOK_AVATAR_URL`, `WEBHOOK
 
 `WEBHOOK_TEMPLATE`, `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` apply only to Discord and are ignored when `WEBHOOK_PROVIDER` is `"ntfy"`. The ntfy provider needs no template: it sends the alert body as a native ntfy message with the subject as its title. Customize ntfy delivery through `WEBHOOK_HEADERS` (for example `X-Priority` or `X-Tags`).
 
-`NTFY_IMAGES` enables bounded Steam avatar or game artwork attachments. If image preparation or upload fails, delivery falls back to text.
+`NTFY_IMAGES` enables bounded Steam avatar or game artwork attachments. It is disabled by default and needs the optional Pillow package:
+
+```sh
+pip install "steam_monitor[ntfy-images]"
+```
+
+Then enable it in `steam_monitor.conf`:
+
+```ini
+NTFY_IMAGES = True
+```
+
+If artwork is enabled while Pillow is missing, startup says so, names the exact install command and keeps sending text-only alerts. If image preparation or upload fails, delivery falls back to text.
 
 Long ntfy text messages are visibly truncated below ntfy's 4 KB boundary so they remain notifications instead of temporary attachments. Intentional image attachments through `NTFY_IMAGES` are unchanged.
 

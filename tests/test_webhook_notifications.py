@@ -258,6 +258,26 @@ class WebhookNotificationTests(unittest.TestCase):
         self.assertEqual(steam_monitor.normalize_steam_image_url("//avatars.steamstatic.com/avatar_full.jpg"), "https://avatars.steamstatic.com/avatar_full.jpg")
         self.assertEqual(steam_monitor.normalize_steam_image_url("https://example.test/header.jpg"), "")
 
+    # Verifies artwork ships disabled and the generated config explains the optional install
+    def test_ntfy_images_ship_disabled_and_document_the_optional_dependency(self):
+        self.assertIn("NTFY_IMAGES = False", steam_monitor.CONFIG_BLOCK)
+        self.assertIn('pip3 install "steam_monitor[ntfy-images]"', steam_monitor.CONFIG_BLOCK)
+
+    # Verifies every supported Python gets the newest Pillow release that still supports it
+    def test_ntfy_images_requirement_matches_python_version(self):
+        expected = {(3, 6, 15): "Pillow>=8.0,<9.0", (3, 7, 17): "Pillow>=9.0,<10.0", (3, 8, 18): "Pillow>=10.0,<11.0", (3, 9, 23): "Pillow>=11.3.0,<12", (3, 10, 0): "Pillow>=12.0.0", (3, 14, 0): "Pillow>=12.0.0"}
+        for version, requirement in expected.items():
+            with patch.object(steam_monitor.sys, "version_info", version):
+                self.assertEqual(steam_monitor.ntfy_images_requirement(), requirement, version)
+
+    # Verifies package installs are pointed at the extra while single-file users get a plain Pillow pin
+    def test_ntfy_images_install_command_matches_install_method(self):
+        with patch.object(steam_monitor.sys, "argv", ["steam_monitor"]):
+            self.assertEqual(steam_monitor.ntfy_images_install_command(), 'pip3 install "steam_monitor[ntfy-images]"')
+        with patch.object(steam_monitor.sys, "argv", ["/opt/tools/steam_monitor.py"]):
+            self.assertIn("Pillow>=", steam_monitor.ntfy_images_install_command())
+            self.assertNotIn("steam_monitor[", steam_monitor.ntfy_images_install_command())
+
     # Verifies one-run CLI overrides enable only the selected webhook choices
     def test_runtime_overrides(self):
         args = argparse.Namespace(

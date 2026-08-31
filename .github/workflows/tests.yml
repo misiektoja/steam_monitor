@@ -51,5 +51,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e '.[test]'
 
+      - name: Verify the optional artwork extra resolves
+        run: python -m pip install -e '.[ntfy-images]'
+
       - name: Run offline test suite
         run: python -m pytest
