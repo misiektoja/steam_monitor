@@ -3,7 +3,7 @@ title = "Shared monitor repos gitleaks config"
 [extend]
 useDefault = true
 
-[[allowlists]]
+[allowlist]
 description = "Skip the deterministic API key used only by redaction tests"
 regexTarget = "secret"
 regexes = ['''^0123456789ABCDEF0123456789ABCDEF$''']
