@@ -37,6 +37,7 @@ pip install steam_monitor
 - **Saving all user activities and profile changes** with timestamps to a **CSV file**
 - **Status persistence** - automatically saves last status to JSON file to resume monitoring after restart
 - **Smart session continuity** - handles short offline interruptions and preserves session statistics
+- **Preflight diagnostics** - `--doctor` checks the environment, configuration, connectivity, credentials, monitored profile and notification channels, and tells you how to fix whatever is not ready
 - **Flexible configuration** - support for config files, dotenv files, environment variables and command-line arguments
 - **Configurable color themes** - customizable terminal output colors and styles
 - Possibility to **control the running copy** of the script via signals
@@ -66,6 +67,7 @@ pip install steam_monitor
    * [CSV Export](#csv-export)
    * [Check Intervals](#check-intervals)
    * [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix)
+   * [Doctor Preflight](#doctor-preflight)
    * [When Something Goes Wrong](#when-something-goes-wrong)
    * [Verbose and Debug Output](#verbose-and-debug-output)
    * [Coloring Log Output with GRC](#coloring-log-output-with-grc)
@@ -648,6 +650,29 @@ pkill -USR1 -f "steam_monitor <steam_user_id>"
 ```
 
 As Windows supports limited number of signals, this functionality is available only on Linux/Unix/macOS.
+
+<a id="doctor-preflight"></a>
+### Doctor Preflight
+
+Before monitoring anything, `--doctor` checks whether the setup is actually ready and reports what is not:
+
+```sh
+steam_monitor --doctor <steam_user_id>
+```
+
+It is **read-only**: it writes no files, and it says so before the first check runs. Checks are grouped into **Environment**, **Configuration**, **Connectivity**, **Authentication**, **Target** and **Notifications**, and each row is marked `[PASS]`, `[WARN]`, `[FAIL]` or `[SKIP]`. Every non-passing row carries a `To fix:` line and a link to the relevant section here.
+
+The Configuration section names the configuration and dotenv files in effect and reports **which secrets came from the dotenv file and which came from the environment**, by name only. No secret value is ever printed.
+
+When email or webhook alerts validate and you are at a terminal, doctor then offers to send **one real test message per channel**, each behind its own confirmation. Declining is the default. Nothing is sent without an explicit `y`, so a scripted or containerized run stays message-free.
+
+It exits `0` when every check passed and `1` when any check or approved delivery test failed, so it can be used as a container healthcheck or a CI smoke test:
+
+```sh
+steam_monitor --doctor <steam_user_id> && echo "ready"
+```
+
+Running it without a Steam64 ID checks everything except the monitored profile.
 
 <a id="when-something-goes-wrong"></a>
 ### When Something Goes Wrong

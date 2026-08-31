@@ -436,11 +436,19 @@ WEBHOOK_GUIDE_URL = f"{DOCS_BASE_URL}#webhook-settings"
 SECRETS_GUIDE_URL = f"{DOCS_BASE_URL}#storing-secrets"
 USAGE_GUIDE_URL = f"{DOCS_BASE_URL}#usage"
 STEAM_API_KEY_REGISTRATION_URL = "https://steamcommunity.com/dev/apikey"
+DOCTOR_GUIDE_URL = f"{DOCS_BASE_URL}#doctor-preflight"
+
+# Shared prefixes for the checks a delivery test depends on, kept as constants because the labels are dynamic
+SMTP_READY_CHECK_LABEL = "SMTP settings and alert choices look valid"
+WEBHOOK_READY_CHECK_LABEL = "Webhook URL, headers and alert choices look valid"
 
 # List of secret keys to load from env/config
 SECRET_KEYS = ("STEAM_API_KEY", "SMTP_PASSWORD", "WEBHOOK_URL", "NTFY_ACCESS_TOKEN")
 
 LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / STEAM_CHECK_INTERVAL
+
+# The last connectivity failure, so a quiet caller can classify it instead of the check printing it
+LAST_CONNECTIVITY_ERROR = None
 
 stdout_bck = None
 csvfieldnames = ['Date', 'Status', 'Game name', 'Game ID']
@@ -490,6 +498,7 @@ import getpass
 from typing import Any, Dict  # noqa: F401
 import platform
 from platform import system
+import importlib.util
 import re
 import shlex
 from collections import namedtuple
@@ -1150,7 +1159,7 @@ def signal_handler(sig, frame):
 
 
 # Checks internet connectivity against the configured URL and timeout
-def check_internet(url=None, timeout=None):
+def check_internet(url=None, timeout=None, quiet=False):
     # Resolved at call time so a config file can change these, which binding them as default arguments prevented
     selected_url = CHECK_INTERNET_URL if url is None else url
     selected_timeout = CHECK_INTERNET_TIMEOUT if timeout is None else timeout
@@ -1159,7 +1168,11 @@ def check_internet(url=None, timeout=None):
         _ = req.get(selected_url, timeout=selected_timeout, verify=VERIFY_SSL)
         return True
     except req.RequestException as e:
-        print_recovery_error(e, context="runtime")
+        # Quiet callers render the failure themselves, which doctor needs so nothing lands on its progress line
+        global LAST_CONNECTIVITY_ERROR
+        if not quiet:
+            print_recovery_error(e, context="runtime")
+        LAST_CONNECTIVITY_ERROR = e
         return False
 
 
@@ -1687,7 +1700,24 @@ def _startup_webhook_notification_categories():
         (WEBHOOK_NAME_CHANGE_NOTIFICATION, "name"),
         (WEBHOOK_ERROR_NOTIFICATION, "errors"),
     )
-    return [label for enabled, label in settings if WEBHOOK_ENABLED and enabled]
+    return [label for label in _selected_webhook_notification_categories(settings) if WEBHOOK_ENABLED]
+
+
+# Returns the webhook alert types selected in the configuration, ignoring the master switch
+def _selected_webhook_notification_categories(settings=None):
+    if settings is None:
+        settings = (
+            (WEBHOOK_ACTIVE_NOTIFICATION, "active"),
+            (WEBHOOK_INACTIVE_NOTIFICATION, "inactive"),
+            (WEBHOOK_STATUS_NOTIFICATION, "status"),
+            (WEBHOOK_GAME_CHANGE_NOTIFICATION, "game"),
+            (WEBHOOK_LEVEL_XP_NOTIFICATION, "level/XP"),
+            (WEBHOOK_FRIENDS_NOTIFICATION, "friends"),
+            (WEBHOOK_GAMES_NOTIFICATION, "games"),
+            (WEBHOOK_NAME_CHANGE_NOTIFICATION, "name"),
+            (WEBHOOK_ERROR_NOTIFICATION, "errors"),
+        )
+    return [label for enabled, label in settings if enabled]
 
 
 # Formats one notification row with unstarred continuation lines when needed
@@ -1889,6 +1919,40 @@ def print_monitor_recovery(error, context, tracker, prefix):
         if DEBUG_MODE and advice.detail:
             print(f"Technical detail: {sanitize_error_text(advice.detail)}")
     return advice
+
+
+# Returns the spelling each webhook service uses for itself, since the stored value is casefolded for comparisons
+def webhook_provider_display_name(provider=None):
+    normalized = normalized_webhook_provider(provider)
+    return {"discord": "Discord", "ntfy": "ntfy"}.get(normalized, normalized or "an unset provider")
+
+
+# One doctor result, held until the whole report is rendered
+DoctorCheck = namedtuple("DoctorCheck", ["section", "status", "label", "detail", "advice"])
+DoctorCheck.__new__.__defaults__ = ("", None)
+
+
+# Collects doctor checks plus the work later checks reuse, so nothing is fetched or authenticated twice
+class DoctorReport:
+    # Starts an empty report with no shared Steam state and no channel marked ready for a delivery test
+    def __init__(self):
+        self.checks = []
+        self.steam_client = None
+        self.player_summary = None
+        self.steam_id = None
+        # Structural flags, so offering a delivery test never depends on matching a rendered label
+        self.email_ready = False
+        self.webhook_ready = False
+
+
+# Builds one doctor check, keeping construction in one place so the shape cannot drift between sections
+def make_doctor_check(section, status, label, detail="", advice=None):
+    return DoctorCheck(section, status, label, detail, advice)
+
+
+# Returns whether a configured value is a real value rather than an unedited placeholder
+def doctor_value_is_set(value):
+    return isinstance(value, str) and bool(value.strip()) and not value.strip().startswith("your_")
 
 
 # Returns whether one configured webhook alert is enabled independently of email settings
@@ -2310,6 +2374,351 @@ def send_notification_channels(notification_type, subject, body, body_html="", e
         print_debug(f"Webhook channel for the {notification_type} alert {'succeeded' if webhook_delivered else 'failed'}")
     # Delivery, not the attempt, so a channel that failed is retried while one that succeeded is not resent
     return email_delivered, webhook_delivered
+
+
+# Reports the running Python version plus every required and optional dependency
+def doctor_check_environment(version_info=None, spec_finder=None):
+    checks = []
+    selected_version = sys.version_info if version_info is None else version_info
+    version_text = ".".join(str(part) for part in tuple(selected_version)[:3])
+    if tuple(selected_version)[:2] >= MINIMUM_PYTHON_VERSION:
+        checks.append(make_doctor_check("Environment", "PASS", f"Python {version_text} is supported"))
+    else:
+        advice = make_recovery_advice("dependency.missing", f"Python {version_text} is unsupported", f"Install Python {MINIMUM_PYTHON_VERSION_TEXT} or newer then retry", False)
+        checks.append(make_doctor_check("Environment", "FAIL", advice.summary, advice=advice))
+
+    find_spec = importlib.util.find_spec if spec_finder is None else spec_finder
+
+    # Returns whether one module can be located, treating an unimportable parent as absent
+    def module_present(module_name):
+        try:
+            return find_spec(module_name) is not None
+        except (ImportError, ValueError):
+            return False
+
+    for module_name, package_name in (("requests", "requests"), ("dateutil", "python-dateutil"), ("steam", "steam[client]")):
+        if module_present(module_name):
+            checks.append(make_doctor_check("Environment", "PASS", f"Required dependency {package_name} is installed"))
+        else:
+            advice = make_recovery_advice("dependency.missing", f"Required dependency {package_name} is missing", f'Install it with: pip3 install "{package_name}"', False)
+            checks.append(make_doctor_check("Environment", "FAIL", advice.summary, advice=advice))
+
+    if module_present("dotenv"):
+        checks.append(make_doctor_check("Environment", "PASS", "Optional dependency python-dotenv is installed", "Used only for reading secrets from a dotenv file"))
+    else:
+        checks.append(make_doctor_check("Environment", "WARN", "Optional dependency python-dotenv is not installed", "Secrets can only come from environment variables or the configuration file. Everything else works. Install it with: pip3 install python-dotenv"))
+
+    # The guarded import flag is checked rather than the module, because it reflects whether artwork actually works
+    if NTFY_IMAGES_AVAILABLE:
+        checks.append(make_doctor_check("Environment", "PASS", "Optional dependency Pillow is installed", "Used only for artwork attachments in ntfy alerts"))
+    else:
+        checks.append(make_doctor_check("Environment", "WARN", "Optional dependency Pillow is not installed", f"ntfy alerts are delivered as text without artwork. Every other feature is unaffected. Install it with: {ntfy_images_install_command()}"))
+
+    if module_present("colorama"):
+        checks.append(make_doctor_check("Environment", "PASS", "Optional dependency colorama is installed", "Used only for coloured output on Windows terminals"))
+    else:
+        checks.append(make_doctor_check("Environment", "WARN", "Optional dependency colorama is not installed", "Coloured output may not render on older Windows terminals. Every other platform is unaffected. Install it with: pip3 install colorama"))
+    return checks
+
+
+# Groups the configured secret names by the source each value actually came from
+def doctor_secret_sources(env_path=None):
+    # The dotenv file's own keys are read first, because load_dotenv copies them into the environment
+    file_keys = dotenv_file_keys(env_path)
+    from_file = []
+    from_environment = []
+    from_settings = []
+    for key in SECRET_KEYS:
+        if not doctor_value_is_set(globals().get(key)):
+            continue
+        if key in file_keys:
+            from_file.append(key)
+        elif os.environ.get(key):
+            from_environment.append(key)
+        else:
+            from_settings.append(key)
+    return from_file, from_environment, from_settings
+
+
+# Reports which secrets are in effect and where each one was read from, by name and never by value
+def doctor_secret_checks(env_path=None):
+    from_file, from_environment, from_settings = doctor_secret_sources(env_path)
+    checks = []
+    if from_file:
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the dotenv file", ", ".join(from_file)))
+    if from_environment:
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the environment", ", ".join(from_environment)))
+    if from_settings:
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the configuration file or command line", ", ".join(from_settings)))
+    if not checks:
+        checks.append(make_doctor_check("Configuration", "PASS", "No secrets loaded", "Nothing was read from a dotenv file, the environment or the command line"))
+    return checks
+
+
+# Reports the configuration and dotenv files in effect plus every file the tool will generate
+def doctor_check_configuration(config_path=None, env_path=None):
+    checks = []
+    if config_path:
+        checks.append(make_doctor_check("Configuration", "PASS", "Configuration file loaded", f"Path: {config_path}"))
+    else:
+        checks.append(make_doctor_check("Configuration", "PASS", "No configuration file selected", "Using built-in defaults and command-line overrides"))
+    if env_path:
+        checks.append(make_doctor_check("Configuration", "PASS", "Dotenv file loaded", f"Path: {env_path}"))
+    else:
+        checks.append(make_doctor_check("Configuration", "PASS", "No dotenv file loaded", "Secrets can still come from environment variables or the configuration file"))
+    checks.extend(doctor_secret_checks(env_path))
+
+    if DISABLE_LOGGING:
+        checks.append(make_doctor_check("Configuration", "PASS", "Output logging is disabled", "No log file will be written"))
+    else:
+        checks.append(make_doctor_check("Configuration", "PASS", "Output logging is enabled", f"Log file base name: {ST_LOGFILE}"))
+    checks.append(make_doctor_check("Configuration", "PASS", "CSV logging is enabled" if CSV_FILE else "CSV logging is disabled", f"Path: {CSV_FILE}" if CSV_FILE else "No activity CSV file will be written"))
+    checks.append(make_doctor_check("Configuration", "PASS", "Profile CSV logging is enabled" if PROFILE_CSV_FILE else "Profile CSV logging is disabled", f"Path: {PROFILE_CSV_FILE}" if PROFILE_CSV_FILE else "No profile CSV file will be written"))
+    return checks
+
+
+# Confirms the configured connectivity endpoint is reachable, reusing the settings monitoring will use
+def doctor_check_connectivity():
+    global LAST_CONNECTIVITY_ERROR
+    LAST_CONNECTIVITY_ERROR = None
+    if check_internet(quiet=True):
+        return [make_doctor_check("Connectivity", "PASS", "The connectivity endpoint is reachable", f"Endpoint: {CHECK_INTERNET_URL} (TLS verification: {bool(VERIFY_SSL)})")]
+    advice = classify_recovery_error(LAST_CONNECTIVITY_ERROR, context="runtime", detail=f"Could not reach {CHECK_INTERNET_URL}")
+    return [make_doctor_check("Connectivity", "FAIL", advice.summary, advice.detail, advice)]
+
+
+# Validates the Steam Web API key once and stores the client so later checks reuse it
+def doctor_check_authentication(report):
+    if not doctor_value_is_set(STEAM_API_KEY):
+        advice = classify_recovery_error(context="set_steam_api_key", detail="No Steam Web API key is configured")
+        return [make_doctor_check("Authentication", "FAIL", "No Steam Web API key is configured", "Nothing can be monitored without one", advice)]
+    try:
+        report.steam_client = steam_web_api_client()
+    except Exception as exc:
+        advice = classify_recovery_error(exc, context="runtime")
+        return [make_doctor_check("Authentication", "FAIL", advice.summary, advice.detail, advice)]
+    return [make_doctor_check("Authentication", "PASS", "Steam accepted the configured Web API key", "The key itself was not displayed")]
+
+
+# Confirms the monitored profile exists and is visible, reusing the client the authentication check opened
+def doctor_check_target(report, target_value=None):
+    if not target_value:
+        advice = make_recovery_advice("target.invalid", "No Steam64 ID is configured", recovery_fix_with_guide("Pass a Steam64 ID, or a profile URL with -r", USAGE_GUIDE_URL), False)
+        return [make_doctor_check("Target", "WARN", advice.summary, "Nothing will be monitored until one is given", advice)]
+    if report.steam_client is None:
+        return [make_doctor_check("Target", "SKIP", "The monitored profile was not checked", "The Steam Web API key did not validate, so no lookup was attempted")]
+    try:
+        summary = report.steam_client.call("ISteamUser.GetPlayerSummaries", steamids=str(target_value))
+        players = summary["response"]["players"]
+    except Exception as exc:
+        advice = classify_recovery_error(exc, context="target")
+        return [make_doctor_check("Target", "FAIL", advice.summary, advice.detail, advice)]
+    if not players:
+        advice = classify_recovery_error(context="target", detail=f"Steam returned no profile for Steam64 ID {target_value}")
+        return [make_doctor_check("Target", "FAIL", advice.summary, advice.detail, advice)]
+    report.player_summary = players[0]
+    report.steam_id = target_value
+    checks = [make_doctor_check("Target", "PASS", "The monitored profile exists", f"Display name: {sanitize_untrusted_text(players[0].get('personaname'))} (Steam64 ID {target_value})")]
+    visibility = int(players[0].get("communityvisibilitystate", 1))
+    if visibility >= 3:
+        checks.append(make_doctor_check("Target", "PASS", "The monitored profile is publicly visible", "Status and game details can be read"))
+    else:
+        advice = make_recovery_advice("target.not_visible", "The monitored profile is not publicly visible", recovery_fix_with_guide("Ask the user to set profile and game details visibility to Public", PRIVACY_GUIDE_URL), False)
+        checks.append(make_doctor_check("Target", "WARN", advice.summary, "Status and game changes cannot be detected while it is private", advice))
+    return checks
+
+
+# Checks email alert settings without connecting to the SMTP server or sending anything
+def doctor_check_email_notifications(report):
+    enabled_categories = _startup_email_notification_categories()
+    configured = doctor_value_is_set(SMTP_HOST) and doctor_value_is_set(SENDER_EMAIL) and doctor_value_is_set(RECEIVER_EMAIL)
+    # The error alert ships on by default, so it alone cannot mean the channel is switched on
+    deliberate_categories = [category for category in enabled_categories if category != "errors"]
+    if not deliberate_categories and not configured:
+        return [make_doctor_check("Notifications", "PASS", "Email alerts are disabled", "No SMTP connection was attempted and no email was sent")]
+    if not configured:
+        advice = classify_recovery_error(context="email", detail="SMTP settings are incomplete")
+        return [make_doctor_check("Notifications", "WARN", "Email alerts are selected but SMTP is not configured", "Set SMTP_HOST, SENDER_EMAIL and RECEIVER_EMAIL, or turn the alerts off", advice)]
+    if not enabled_categories:
+        advice = make_recovery_advice("smtp.invalid", "Email is configured but no alert types are selected", recovery_fix_with_guide("Turn on at least one email alert in the configuration file", SMTP_GUIDE_URL), False)
+        return [make_doctor_check("Notifications", "WARN", advice.summary, "Nothing would ever be emailed", advice)]
+    if not doctor_value_is_set(SMTP_USER) or not doctor_value_is_set(SMTP_PASSWORD):
+        advice = classify_recovery_error(context="email", detail="SMTP_USER or SMTP_PASSWORD is missing")
+        return [make_doctor_check("Notifications", "WARN", "Email alerts are selected but the SMTP sign-in is incomplete", "Set SMTP_USER and SMTP_PASSWORD, using an app password if the provider requires one", advice)]
+    report.email_ready = True
+    return [make_doctor_check("Notifications", "PASS", SMTP_READY_CHECK_LABEL, f"Alerts: {', '.join(enabled_categories)}. No email was sent during this passive check")]
+
+
+# Checks webhook alert settings without sending anything, asking whether the channel can fire before validating it
+def doctor_check_webhook_notifications(report):
+    selected_categories = _selected_webhook_notification_categories()
+    deliberate_categories = [category for category in selected_categories if category != "errors"]
+    if not WEBHOOK_ENABLED and not deliberate_categories:
+        return [make_doctor_check("Notifications", "PASS", "Webhook alerts are disabled", "No webhook was sent")]
+    if not WEBHOOK_ENABLED:
+        advice = make_recovery_advice("webhook.invalid", "Webhook alert types are selected but webhooks are switched off", recovery_fix_with_guide("Set WEBHOOK_ENABLED to True, or turn the alert types off", WEBHOOK_GUIDE_URL), False)
+        return [make_doctor_check("Notifications", "WARN", advice.summary, "Nothing would ever be delivered", advice)]
+    if not normalized_webhook_provider():
+        advice = classify_recovery_error(context="webhook", detail="WEBHOOK_PROVIDER must be discord or ntfy")
+        return [make_doctor_check("Notifications", "FAIL", advice.summary, advice.detail, advice)]
+    if not validate_webhook_url():
+        advice = classify_recovery_error(context="webhook", detail="WEBHOOK_URL must contain a complete HTTPS link")
+        return [make_doctor_check("Notifications", "FAIL", advice.summary, advice.detail, advice)]
+    for validation_error in (validate_webhook_customization(normalized_webhook_provider()), validate_webhook_headers(normalized_webhook_provider())):
+        if validation_error is not None:
+            advice = classify_recovery_error(context="webhook", detail=validation_error)
+            return [make_doctor_check("Notifications", "FAIL", advice.summary, advice.detail, advice)]
+    if not selected_categories:
+        advice = make_recovery_advice("webhook.invalid", "Webhook alerts are on but no alert types are selected", recovery_fix_with_guide("Turn on at least one webhook alert in the configuration file, or set WEBHOOK_ENABLED to False", WEBHOOK_GUIDE_URL), False)
+        return [make_doctor_check("Notifications", "WARN", advice.summary, "Nothing would ever be delivered", advice)]
+    report.webhook_ready = True
+    return [make_doctor_check("Notifications", "PASS", f"{WEBHOOK_READY_CHECK_LABEL} for {webhook_provider_display_name()}", f"Alerts: {', '.join(selected_categories)}. The private link was not displayed and no webhook was sent")]
+
+
+# The fixed section order the report renders in, chosen so each section depends only on the ones above it
+DOCTOR_SECTIONS = ("Environment", "Configuration", "Connectivity", "Authentication", "Target", "Notifications")
+
+# Width of the transient progress line currently on screen, so the next write can erase exactly what it drew
+DOCTOR_PROGRESS_WIDTH = 0
+
+
+# Renders one sectioned ASCII doctor report with a fix line on every non-passing row
+def render_doctor_report(report):
+    lines = [colorize("header", "Doctor")]
+    for section in DOCTOR_SECTIONS:
+        section_checks = [check for check in report.checks if check.section == section]
+        if not section_checks:
+            continue
+        lines.extend(("", colorize("section", section)))
+        for check in section_checks:
+            lines.append(f"[{check.status}] {check.label}")
+            if check.detail:
+                lines.append(f"  {check.detail}")
+            if check.status in ("FAIL", "WARN") and check.advice is not None:
+                lines.append(f"To fix: {check.advice.fix}")
+    failures = sum(check.status == "FAIL" for check in report.checks)
+    warnings = sum(check.status == "WARN" for check in report.checks)
+    if failures:
+        summary_line = colorize("error", f"  {failures} check(s) failed, {warnings} warning(s). Fix the failures above before relying on the tool.")
+    elif warnings:
+        summary_line = colorize("warning", f"  All critical checks passed with {warnings} warning(s). Review the warnings above.")
+    else:
+        summary_line = colorize("boolean_true", "  All checks passed. You are good to go!")
+    lines.extend(("", colorize("header", "Summary"), summary_line, "", f"Guide: {DOCTOR_GUIDE_URL}"))
+    return sanitize_error_text("\n".join(lines))
+
+
+# Returns the real terminal underneath the logger wrapper, so progress can move the cursor safely
+def _doctor_terminal_stream():
+    stream = sys.stdout
+    while isinstance(stream, (Logger, ColorStream)):
+        stream = stream.terminal
+    return stream
+
+
+# Shows one transient doctor step, only on an interactive terminal
+# The line stays uncoloured on purpose: it is erased by writing exactly len(line) spaces, and escape
+# sequences would make that width wrong and leave a styled remnant behind
+def _doctor_progress(label):
+    global DOCTOR_PROGRESS_WIDTH
+    terminal = _doctor_terminal_stream()
+    if terminal.isatty():
+        if DOCTOR_PROGRESS_WIDTH:
+            terminal.write("\r" + (" " * DOCTOR_PROGRESS_WIDTH) + "\r")
+        line = f"* Checking {ANSI_ESCAPE_RE.sub('', sanitize_untrusted_text(label))} ..."
+        DOCTOR_PROGRESS_WIDTH = len(line)
+        terminal.write("\r" + line)
+        terminal.flush()
+
+
+# Clears the transient doctor progress line on an interactive terminal
+def _doctor_progress_clear():
+    global DOCTOR_PROGRESS_WIDTH
+    terminal = _doctor_terminal_stream()
+    if terminal.isatty() and DOCTOR_PROGRESS_WIDTH:
+        terminal.write("\r" + (" " * DOCTOR_PROGRESS_WIDTH) + "\r")
+        terminal.flush()
+    DOCTOR_PROGRESS_WIDTH = 0
+
+
+# States what doctor will and will not do, before the first slow check starts rather than after
+def render_doctor_notice():
+    print("Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval.\n")
+
+
+# Prompts for explicit delivery consent and defaults safely to no
+def _doctor_ask_yes_no(question):
+    while True:
+        try:
+            value = input(f"{question} [y/N]: ").strip().casefold()
+        except (EOFError, KeyboardInterrupt):
+            print("\nDelivery test skipped.")
+            return False
+        if not value or value in ("n", "no"):
+            return False
+        if value in ("y", "yes"):
+            return True
+        print("  Please answer 'y' or 'n'.")
+
+
+# Offers one real delivery per ready channel, only after separate interactive approval
+def _doctor_offer_notification_tests(report):
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        return []
+    if not report.email_ready and not report.webhook_ready:
+        return []
+    print("")
+    print(colorize("header", "Optional delivery tests"))
+    print("")
+    print("Doctor will not write files. Each approved test sends one real message.")
+    print("")
+    checks = []
+    if report.email_ready:
+        if _doctor_ask_yes_no("Send one test email now? This will deliver a real message"):
+            delivered = send_email("steam_monitor: test email", "This is a test email from steam_monitor --doctor.", "", SMTP_SSL, smtp_timeout=5) == 0
+            checks.append(make_doctor_check("Notifications", "PASS" if delivered else "FAIL", "Test email delivered" if delivered else "Test email could not be delivered", advice=None if delivered else classify_recovery_error(context="email", detail="The test email was not delivered")))
+        else:
+            checks.append(make_doctor_check("Notifications", "SKIP", "Test email declined"))
+    if report.webhook_ready:
+        provider = webhook_provider_display_name()
+        if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
+            delivered = send_webhook("Steam Monitor test", "Your webhook alerts are set up correctly.", "status", force=True) == 0
+            checks.append(make_doctor_check("Notifications", "PASS" if delivered else "FAIL", f"Test webhook delivered through {provider}" if delivered else f"Test webhook could not be delivered through {provider}", advice=None if delivered else classify_recovery_error(context="webhook", detail="The test webhook was not delivered")))
+        else:
+            checks.append(make_doctor_check("Notifications", "SKIP", "Test webhook declined"))
+    for check in checks:
+        print(f"[{check.status}] {check.label}")
+        if check.status == "FAIL" and check.advice is not None:
+            print(f"To fix: {check.advice.fix}")
+    return checks
+
+
+# Runs every preflight check, then the approved delivery tests, returning zero only when nothing failed
+def run_doctor(target_value=None, config_path=None, env_path=None):
+    report = DoctorReport()
+    progress = _doctor_progress if _doctor_terminal_stream().isatty() else None
+    render_doctor_notice()
+    try:
+        for label, collect in (
+            ("environment", lambda: doctor_check_environment()),
+            ("configuration", lambda: doctor_check_configuration(config_path, env_path)),
+            ("connectivity", lambda: doctor_check_connectivity()),
+            ("authentication", lambda: doctor_check_authentication(report)),
+            ("the monitored profile", lambda: doctor_check_target(report, target_value)),
+            ("notifications", lambda: doctor_check_email_notifications(report) + doctor_check_webhook_notifications(report)),
+        ):
+            if progress is not None:
+                progress(label)
+            report.checks.extend(collect())
+    finally:
+        _doctor_progress_clear()
+    print(render_doctor_report(report))
+    delivery_checks = _doctor_offer_notification_tests(report)
+    failed = any(check.status == "FAIL" for check in (list(report.checks) + list(delivery_checks)))
+    if not failed:
+        print("")
+        print(f"Start monitoring with: {render_command([str(target_value)] if target_value else [])}")
+    return 1 if failed else 0
 
 
 # Initializes the CSV file
@@ -4415,6 +4824,13 @@ def main():
         help="Disable coloured output in the terminal"
     )
     opts.add_argument(
+        "--doctor",
+        dest="doctor",
+        action="store_true",
+        default=None,
+        help="Run read-only preflight checks and report what is ready and what is not"
+    )
+    opts.add_argument(
         "--verbose",
         dest="verbose",
         action="store_true",
@@ -4467,10 +4883,10 @@ def main():
         utility_flags = {
             "--no-color", "-h", "--help",
             "--version", "--generate-config",
-            "--send-test-email", "--send-test-webhook",
+            "--send-test-email", "--send-test-webhook", "--doctor",
             "--webhook", "--no-webhook", "--webhook-errors", "--no-webhook-error-notify"
         }
-        utility_action = args.send_test_email or args.send_test_webhook
+        utility_action = args.send_test_email or args.send_test_webhook or args.doctor
         complex_args = [] if utility_action else [a for a in sys.argv[1:] if a not in utility_flags]
 
         if complex_args or not utility_action:
@@ -4533,6 +4949,10 @@ def main():
             print_debug(f"Loaded {secret} from {secret_source_map.get(secret, 'environment')} ({mask_secret(globals().get(secret))})")
 
     apply_webhook_cli_overrides(args, parser)
+
+    if args.doctor:
+        doctor_target = args.steam64_id if args.steam64_id else None
+        sys.exit(run_doctor(target_value=doctor_target, config_path=cfg_path, env_path=env_path))
 
     if not check_internet():
         sys.exit(1)
