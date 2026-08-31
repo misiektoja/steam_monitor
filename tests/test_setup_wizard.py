@@ -71,6 +71,24 @@ def minimal_answers(target=str(STEAM64)):
     return [target, "y", "5m", "45s", "n", "n", "1", "n", "n"]
 
 
+# Verifies explicit setup keeps the shared startup screen-clearing behavior
+def test_setup_cli_clears_screen_before_wizard(tmp_path, monkeypatch, wizard_globals):
+    clear_calls = []
+    monkeypatch.setattr(monitor, "CLEAR_SCREEN", True)
+    monkeypatch.setattr(monitor, "clear_screen", lambda enabled: clear_calls.append(enabled))
+    monkeypatch.setattr(monitor, "print_startup_banner", lambda: None)
+    monkeypatch.setattr(monitor.signal, "signal", lambda *args: None)
+    monkeypatch.setattr(monitor, "find_config_file", lambda _path=None: None)
+    monkeypatch.setattr(monitor, "run_setup_wizard", lambda **_kwargs: 0)
+    monkeypatch.setattr(monitor.sys, "argv", ["steam_monitor", "--setup", "--config-file", str(tmp_path / "steam_monitor.conf"), "--env-file", "none"])
+
+    with pytest.raises(SystemExit) as exit_error:
+        monitor.main()
+
+    assert exit_error.value.code == 0
+    assert clear_calls == [True]
+
+
 # Verifies a duration is accepted in the formats people actually type
 @pytest.mark.parametrize("value,expected", [
     ("30s", 30), ("2m", 120), ("1.5h", 5400), ("1h 30m", 5400), ("1h30m", 5400),
