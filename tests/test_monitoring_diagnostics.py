@@ -34,12 +34,20 @@ class StoppedAfterOneCycle(Exception):
 
 class FakeSteamWebAPI:
     # Answers the Steam endpoints the monitoring cycle calls, failing the ones named in failing_endpoints
-    def __init__(self, failing_endpoints=(), **_kwargs):
+    def __init__(self, failing_endpoints=(), poll_error=None, healthy_polls=1, **_kwargs):
         self.failing_endpoints = set(failing_endpoints)
+        # A poll error is raised only after the startup snapshot has succeeded, so the loop is actually reached
+        self.poll_error = poll_error
+        self.healthy_polls = healthy_polls
+        self.polls = 0
         self.called = []
 
     def call(self, endpoint, **_kwargs):
         self.called.append(endpoint)
+        if endpoint == "ISteamUser.GetPlayerSummaries" and self.poll_error is not None:
+            self.polls += 1
+            if self.polls > self.healthy_polls:
+                raise self.poll_error
         if endpoint in self.failing_endpoints:
             raise RuntimeError(f"{endpoint} is unavailable")
         if endpoint == "ISteamUser.GetPlayerSummaries":
@@ -60,7 +68,7 @@ class FakeSteamWebAPI:
 
 
 # Runs one monitoring cycle with every tracked feature on and the named endpoints failing
-def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True):
+def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True, poll_error=None, stop_after_sleeps=2):
     monkeypatch.setattr(monitor, "DEBUG_MODE", diagnostics)
     monkeypatch.setattr(monitor, "VERBOSE_MODE", diagnostics)
     monkeypatch.setattr(monitor, "STEAM_LEVEL_XP_CHECK", True)
@@ -79,15 +87,15 @@ def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True)
     # Keep every generated file inside the temporary directory
     monkeypatch.chdir(tmp_path)
 
-    api = FakeSteamWebAPI(failing_endpoints)
+    api = FakeSteamWebAPI(failing_endpoints, poll_error=poll_error)
     monkeypatch.setattr(monitor, "steam_web_api_client", lambda *args, **kwargs: api)
 
     sleeps = []
 
     def stop_after_the_first_cycle(seconds):
         sleeps.append(seconds)
-        # The first sleep is the one before the loop, the second ends the first full cycle
-        if len(sleeps) >= 2:
+        # The first sleep is the one before the loop, the rest end each cycle
+        if len(sleeps) >= stop_after_sleeps:
             raise StoppedAfterOneCycle()
 
     monkeypatch.setattr(monitor.time, "sleep", stop_after_the_first_cycle)
@@ -161,3 +169,59 @@ def test_a_degraded_cycle_stays_quiet_without_diagnostics(tmp_path, monkeypatch,
     assert "[DEBUG" not in output
     assert "was unavailable this cycle" not in output
     assert "Polling Steam for" not in output
+
+
+# Returns an HTTP error carrying the given status, the way requests raises one
+def http_error(status_code, message="request failed"):
+    import requests as req
+
+    response = req.Response()
+    response.status_code = status_code
+    return req.exceptions.HTTPError(message, response=response)
+
+
+# Verifies a transient failure gets one short retry rather than waiting a whole polling interval
+def test_a_transient_failure_retries_once_quickly(tmp_path, monkeypatch, capsys):
+    _api, sleeps = run_one_cycle(tmp_path, monkeypatch, poll_error=TimeoutError("request timed out"), stop_after_sleeps=4)
+
+    # The first sleep precedes the loop, then one short retry, then the full interval once the retry is spent
+    assert sleeps[0] == 60
+    assert sleeps[1] == monitor.TRANSIENT_RETRY_SECONDS
+    assert sleeps[2] == 60
+    output = capsys.readouterr().out
+    assert "The Steam Web API request timed out" in output
+    assert f"Retrying once in {monitor.display_time(monitor.TRANSIENT_RETRY_SECONDS)}" in output
+
+
+# Verifies a rate limit skips the short retry and waits the period Steam asked for
+def test_a_rate_limit_waits_instead_of_retrying_quickly(tmp_path, monkeypatch, capsys):
+    error = http_error(429)
+    assert error.response is not None
+    error.response.headers["Retry-After"] = "120"
+
+    _api, sleeps = run_one_cycle(tmp_path, monkeypatch, poll_error=error, stop_after_sleeps=3)
+
+    assert sleeps[0] == 60
+    assert sleeps[1] == 120
+    assert monitor.TRANSIENT_RETRY_SECONDS not in sleeps
+    output = capsys.readouterr().out
+    assert "Steam is rate limiting requests" in output
+
+
+# Verifies a failure that cannot be retried goes straight to the polling interval
+def test_a_rejected_api_key_does_not_get_a_quick_retry(tmp_path, monkeypatch, capsys):
+    _api, sleeps = run_one_cycle(tmp_path, monkeypatch, poll_error=http_error(403), stop_after_sleeps=3)
+
+    assert sleeps[0] == 60
+    assert sleeps[1] == 60
+    assert monitor.TRANSIENT_RETRY_SECONDS not in sleeps
+    assert "Steam rejected the configured Web API key" in capsys.readouterr().out
+
+
+# Verifies a continuing outage explains itself once rather than on every cycle
+def test_a_continuing_outage_prints_one_hint(tmp_path, monkeypatch, capsys):
+    _api, _sleeps = run_one_cycle(tmp_path, monkeypatch, poll_error=http_error(503), stop_after_sleeps=6)
+
+    output = capsys.readouterr().out
+    assert output.count("The Steam Web API is temporarily unavailable") >= 3
+    assert output.count("To fix: ") == 1

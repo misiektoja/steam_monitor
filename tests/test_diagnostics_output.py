@@ -467,4 +467,7 @@ def test_the_connectivity_check_is_explained(capsys, monkeypatch, diagnostics_on
 
     output = capsys.readouterr().out
     assert "Checking connectivity against https://example.invalid/probe with a 3s timeout" in output
-    assert "Connectivity check failed with ConnectionError" in output
+    # The failure itself is now reported as structured recovery advice rather than a raw exception
+    assert "* Error: Steam could not be reached" in output
+    assert "To fix: Check connectivity, DNS and any proxy" in output
+    assert "Technical detail: " in output

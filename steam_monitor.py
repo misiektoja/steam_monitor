@@ -435,6 +435,7 @@ SMTP_GUIDE_URL = f"{DOCS_BASE_URL}#smtp-settings"
 WEBHOOK_GUIDE_URL = f"{DOCS_BASE_URL}#webhook-settings"
 SECRETS_GUIDE_URL = f"{DOCS_BASE_URL}#storing-secrets"
 USAGE_GUIDE_URL = f"{DOCS_BASE_URL}#usage"
+STEAM_API_KEY_REGISTRATION_URL = "https://steamcommunity.com/dev/apikey"
 
 # List of secret keys to load from env/config
 SECRET_KEYS = ("STEAM_API_KEY", "SMTP_PASSWORD", "WEBHOOK_URL", "NTFY_ACCESS_TOKEN")
@@ -491,6 +492,7 @@ import platform
 from platform import system
 import re
 import shlex
+from collections import namedtuple
 import unicodedata
 import ipaddress
 import tempfile
@@ -526,6 +528,9 @@ NTFY_IMAGE_DOWNLOAD_LIMIT_BYTES = 5 * 1024 * 1024
 NTFY_IMAGE_DOWNLOAD_CHUNK_BYTES = 64 * 1024
 NTFY_IMAGE_PIXEL_LIMIT = 25_000_000
 NTFY_IMAGE_FILENAME = "steam-image.jpg"
+# One short retry absorbs a transient failure without waiting a whole polling interval
+TRANSIENT_RETRY_SECONDS = 5
+
 NTFY_IMAGE_ALLOWED_HOST_SUFFIXES = ("steamstatic.com", "steamusercontent.com", "steamcdn-a.akamaihd.net", "steamuserimages-a.akamaihd.net")
 
 PILImage = None  # type: Any
@@ -1154,8 +1159,7 @@ def check_internet(url=None, timeout=None):
         _ = req.get(selected_url, timeout=selected_timeout, verify=VERIFY_SSL)
         return True
     except req.RequestException as e:
-        print(f"* No connectivity, please check your network:\n\n{sanitize_error_text(str(e))}")
-        print_debug(f"Connectivity check failed with {type(e).__name__}")
+        print_recovery_error(e, context="runtime")
         return False
 
 
@@ -1710,6 +1714,181 @@ def sanitize_error_text(value):
     text = re.sub(r"(?i)([?&]key=)[^&\s]+", r"\1<redacted>", text)
     text = re.sub(r"(?im)(\b(?:STEAM_API_KEY|SMTP_PASSWORD|WEBHOOK_URL|NTFY_ACCESS_TOKEN)\b\s*=\s*)[^\s]+", r"\1<redacted>", text)
     return text
+
+
+# Every recovery category the tool can report, kept closed so a message is testable, deduplicable and translatable later
+RECOVERY_CODES = frozenset({
+    "config.missing", "config.invalid",
+    "dependency.missing",
+    "secret.missing",
+    "auth.api_key_invalid", "auth.rejected",
+    "network.unavailable", "network.timeout",
+    "steam.rate_limited", "steam.unavailable",
+    "target.invalid", "target.not_found", "target.not_visible",
+    "smtp.invalid", "smtp.authentication", "smtp.connection",
+    "webhook.invalid", "webhook.rejected", "webhook.rate_limited", "webhook.connection",
+    "file.unreadable", "file.unwritable",
+    "unknown",
+})
+
+# A namedtuple rather than a dataclass, because the declared minimum Python for this tool predates dataclasses
+RecoveryAdvice = namedtuple("RecoveryAdvice", ["code", "summary", "fix", "retryable", "detail"])
+RecoveryAdvice.__new__.__defaults__ = ("",)
+
+
+# Carries structured recovery advice across an exception boundary without exposing technical detail
+class RecoveryError(Exception):
+    # Initializes a structured recovery exception, keeping the original cause attached for debug output
+    def __init__(self, advice, cause=None):
+        self.advice = advice
+        self.cause = cause
+        if cause is not None:
+            self.__cause__ = cause
+        super().__init__(advice.summary)
+
+
+# Builds one piece of recovery advice, refusing any code outside the closed set and sanitizing every field
+def make_recovery_advice(code, summary, fix, retryable, detail=""):
+    if code not in RECOVERY_CODES:
+        raise ValueError(f"Unsupported recovery code: {code}")
+    return RecoveryAdvice(code, sanitize_error_text(summary), sanitize_error_text(fix), bool(retryable), sanitize_error_text(detail) if detail else "")
+
+
+# Adds a directly relevant documentation link on its own line
+def recovery_fix_with_guide(fix, guide_url):
+    return f"{fix}\nGuide: {guide_url}"
+
+
+# Returns the HTTP status carried by an error, when it has one
+def recovery_http_status(error):
+    response = getattr(error, "response", None)
+    status = getattr(response, "status_code", None)
+    return status if isinstance(status, int) else None
+
+
+# Maps one exception plus its HTTP status and calling context to stable recovery advice
+def classify_recovery_error(error=None, context="runtime", detail=""):
+    if isinstance(error, RecoveryError):
+        return error.advice
+    message = str(detail or error or "").lower()
+    safe_detail = sanitize_error_text(detail or error) if (detail or error) else ""
+    status = recovery_http_status(error)
+
+    def advice(code, summary, fix, retryable, guide_url=None):
+        return make_recovery_advice(code, summary, recovery_fix_with_guide(fix, guide_url) if guide_url else fix, retryable, safe_detail)
+
+    if context == "config":
+        if "does not exist" in message:
+            return advice("config.missing", safe_detail or "The configuration file was not found", f"Create one with '{render_command(['--generate-config', 'steam_monitor.conf'], include_paths=False)}' or correct the --config-file path", False, CONFIG_FILE_GUIDE_URL)
+        return advice("config.invalid", safe_detail or "The configuration file could not be read", f"Correct the reported line, or start from a fresh template with '{render_command(['--generate-config', 'steam_monitor.conf'], include_paths=False)}'", False, CONFIG_FILE_GUIDE_URL)
+
+    if context in ("set_steam_api_key", "set_webhook_url"):
+        flag = "--set-steam-api-key" if context == "set_steam_api_key" else "--set-webhook-url"
+        guide = STEAM_API_KEY_GUIDE_URL if context == "set_steam_api_key" else WEBHOOK_GUIDE_URL
+        if "interactive terminal" in message:
+            return advice("unknown", f"{flag} requires an interactive terminal", f"Run {flag} in a terminal window so the value stays hidden while you paste it", False, guide)
+        if "cancelled" in message:
+            return advice("unknown", safe_detail or "Setup was cancelled", f"Run {flag} again when you have the value ready", False, guide)
+        if any(term in message for term in ("could not save", "file permissions", "writable path", "dotenv destination")):
+            return advice("file.unwritable", safe_detail or "The private settings file could not be updated", "Check file permissions or choose another path with --env-file PATH", False, SECRETS_GUIDE_URL)
+        if context == "set_steam_api_key":
+            return advice("auth.api_key_invalid", safe_detail or "Steam rejected the entered Web API key", f"Copy a fresh key from {STEAM_API_KEY_REGISTRATION_URL} then run {flag} again", False, guide)
+        return advice("webhook.invalid", safe_detail or "The webhook URL was not changed", f"Copy a complete Discord or ntfy webhook URL then run {flag} again", False, guide)
+
+    if context == "target":
+        if any(term in message for term in ("rate limit", "429")) or status == 429:
+            return advice("steam.rate_limited", "Steam rate limited the profile lookup", "Wait for the reported period then try again", True)
+        if any(term in message for term in ("timed out", "timeout")):
+            return advice("network.timeout", "The Steam Web API request timed out", "Check connectivity then try again", True)
+        if "cannot connect" in message:
+            return advice("network.unavailable", "The Steam Web API could not be reached", "Check connectivity, DNS and any proxy then try again", True)
+        if any(term in message for term in ("invalid steam", "only steam user", "not supported")):
+            return advice("target.invalid", safe_detail or "That is not a recognized Steam profile", "Pass a Steam64 ID, or a full profile URL such as https://steamcommunity.com/id/<name>/", False, USAGE_GUIDE_URL)
+        return advice("target.not_found", safe_detail or "No Steam user matches that profile", "Check the Steam64 ID or profile URL and try again", False, USAGE_GUIDE_URL)
+
+    if context == "email":
+        if any(term in message for term in ("authentication", "auth", "username and password", "535")):
+            return advice("smtp.authentication", "The SMTP server rejected the sign-in", "Check SMTP_USER and SMTP_PASSWORD, and use an app password if the provider requires one", False, SMTP_GUIDE_URL)
+        if any(term in message for term in ("settings are incorrect", "invalid")):
+            return advice("smtp.invalid", safe_detail or "The SMTP settings are incomplete or invalid", "Check SMTP_HOST, SMTP_PORT, SENDER_EMAIL and RECEIVER_EMAIL in the configuration file", False, SMTP_GUIDE_URL)
+        return advice("smtp.connection", "The SMTP server could not be reached", "Check SMTP_HOST, SMTP_PORT and SMTP_SSL, then confirm the host is reachable from this machine", True, SMTP_GUIDE_URL)
+
+    if context == "webhook":
+        if status == 429 or "rate limit" in message:
+            return advice("webhook.rate_limited", "The webhook service is rate limiting deliveries", "Reduce how many alert types are enabled, or wait for the service to accept deliveries again", True, WEBHOOK_GUIDE_URL)
+        if any(term in message for term in ("must contain", "must be discord", "could not be formatted", "header", "priority", "tags")):
+            return advice("webhook.invalid", safe_detail or "The webhook configuration is not usable", f"Check WEBHOOK_URL, WEBHOOK_PROVIDER and the alert settings, then verify with '{render_command(['--send-test-webhook'])}'", False, WEBHOOK_GUIDE_URL)
+        if any(term in message for term in ("could not be reached", "connection", "timed out")):
+            return advice("webhook.connection", "The webhook service could not be reached", "Check connectivity and the webhook host, then try again", True, WEBHOOK_GUIDE_URL)
+        return advice("webhook.rejected", safe_detail or "The webhook service refused the delivery", f"Confirm the webhook still exists and the URL is current, then verify with '{render_command(['--send-test-webhook'])}'", status is not None and status >= 500, WEBHOOK_GUIDE_URL)
+
+    if context == "file":
+        if any(term in message for term in ("cannot load", "unreadable", "not valid utf-8", "no such file")):
+            return advice("file.unreadable", safe_detail or "A file the tool keeps could not be read", "Check the path and its permissions, or delete the file so it is recreated", False)
+        return advice("file.unwritable", safe_detail or "A file the tool keeps could not be written", "Check that the directory exists and is writable, or choose another path", False)
+
+    # Runtime, which is the monitoring loop and every Steam Web API call it makes
+    if status == 429 or "rate limit" in message or "too many requests" in message:
+        return advice("steam.rate_limited", "Steam is rate limiting requests", "The tool will wait and retry. Increase the polling intervals if this repeats", True)
+    if status in (401, 403) or "forbidden" in message or "unauthorized" in message:
+        return advice("auth.api_key_invalid", "Steam rejected the configured Web API key", f"Validate and replace it with '{render_command(['--set-steam-api-key'])}'", False, STEAM_API_KEY_GUIDE_URL)
+    if status == 404 or "not found" in message:
+        return advice("target.not_found", "Steam has no profile for the monitored Steam64 ID", "Check the Steam64 ID, since a deleted or renamed account cannot be monitored", False, USAGE_GUIDE_URL)
+    if status is not None and status >= 500 or "service unavailable" in message or "bad gateway" in message:
+        return advice("steam.unavailable", "The Steam Web API is temporarily unavailable", "This is usually a Steam outage. The tool will keep retrying", True)
+    if "timed out" in message or "timeout" in message:
+        return advice("network.timeout", "The Steam Web API request timed out", "Check connectivity. The tool will keep retrying", True)
+    if any(term in message for term in ("connection", "name resolution", "network is unreachable", "no connectivity")):
+        return advice("network.unavailable", "Steam could not be reached", "Check connectivity, DNS and any proxy. The tool will keep retrying", True)
+    if "private" in message or "visibility" in message:
+        return advice("target.not_visible", "The monitored profile is not publicly visible", "Ask the user to set game details and profile visibility to Public", False, PRIVACY_GUIDE_URL)
+    return advice("unknown", safe_detail or "The request could not be completed", "Re-run with --debug to see the technical cause", True)
+
+
+# Renders one structured failure as the shared Error, To fix and optional Technical detail block
+def render_recovery_error(error=None, context="runtime", debug=None, detail=""):
+    advice = classify_recovery_error(error, context, detail)
+    lines = [f"* Error: {advice.summary}", f"To fix: {advice.fix}"]
+    show_debug = DEBUG_MODE if debug is None else debug
+    if show_debug and advice.detail:
+        lines.append(f"Technical detail: {sanitize_error_text(advice.detail)}")
+    return "\n".join(lines)
+
+
+# Prints one structured recovery error and returns its stable advice
+def print_recovery_error(error=None, context="runtime", debug=None, detail=""):
+    advice = classify_recovery_error(error, context, detail)
+    print(render_recovery_error(RecoveryError(advice), debug=debug))
+    return advice
+
+
+# Tracks the last uninterrupted recovery category so a long outage cannot repeat the same hint every cycle
+class RecoveryHintTracker:
+    # Starts with no category, so the first failure of any kind always renders its hint
+    def __init__(self):
+        self.last_code = None
+
+    # Returns True for the first category and again only when the failure category changes
+    def should_render(self, advice):
+        if advice.code == self.last_code:
+            return False
+        self.last_code = advice.code
+        return True
+
+    # Clears suppression after a successful cycle, so a recurrence is reported again
+    def reset(self):
+        self.last_code = None
+
+
+# Prints one monitoring failure, repeating the fix only when the failure category changes
+def print_monitor_recovery(error, context, tracker, prefix):
+    advice = classify_recovery_error(error, context)
+    print(prefix + advice.summary)
+    if tracker.should_render(advice):
+        print(f"To fix: {advice.fix}")
+        if DEBUG_MODE and advice.detail:
+            print(f"Technical detail: {sanitize_error_text(advice.detail)}")
+    return advice
 
 
 # Returns whether one configured webhook alert is enabled independently of email settings
@@ -2516,10 +2695,8 @@ def load_config_file(config_path, namespace=None, report_errors=True):
     except Exception as exc:
         detail = f"Config file '{config_path}' failed with {type(exc).__name__}: {exc}"
     if report_errors:
-        print(f"* Error: {detail}")
         print("* Config files are read as data. Only documented SETTING = value lines with plain literal values are accepted.")
-        print(f"To fix: Correct the reported line, or start from a fresh template with '{render_command(['--generate-config', str(config_path)], include_paths=False)}'")
-        print(f"Guide: {CONFIG_FILE_GUIDE_URL}")
+        print_recovery_error(context="config", detail=detail)
     return False
 
 
@@ -2726,15 +2903,13 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
         s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
         s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
     except Exception as e:
-        print(f"* Error: {sanitize_error_text(e)}")
-        print_debug_exception("Opening the Steam Web API", e)
+        print_recovery_error(e, context="runtime")
         sys.exit(1)
 
     try:
         username = sanitize_untrusted_text(s_user["response"]["players"][0].get("personaname"))
     except Exception as exc:
-        print(f"* Error: User with Steam64 ID {steamid} does not exist!")
-        print_debug_exception("Reading the player summary", exc)
+        print_recovery_error(exc, context="target", detail=f"Steam returned no profile for Steam64 ID {steamid}")
         sys.exit(1)
 
     status = int(s_user["response"]["players"][0].get("personastate"))
@@ -2933,13 +3108,13 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         if csv_file_name:
             init_csv_file(csv_file_name)
     except Exception as e:
-        print(f"* Error: {e}")
+        print_recovery_error(e, context="file")
 
     try:
         if profile_csv_file_name:
             init_profile_csv_file(profile_csv_file_name)
     except Exception as e:
-        print(f"* Error: {e}")
+        print_recovery_error(e, context="file")
 
     try:
         print_debug(f"Opening the Steam Web API with key {mask_secret(STEAM_API_KEY)} for {steamid}")
@@ -2947,15 +3122,13 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
         s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
     except Exception as e:
-        print(f"* Error: {sanitize_error_text(e)}")
-        print_debug_exception("Opening the Steam Web API", e)
+        print_recovery_error(e, context="runtime")
         sys.exit(1)
 
     try:
         username = sanitize_untrusted_text(s_user["response"]["players"][0].get("personaname"))
     except Exception as exc:
-        print(f"* Error: User with Steam64 ID {steamid} does not exist!")
-        print_debug_exception("Reading the player summary", exc)
+        print_recovery_error(exc, context="target", detail=f"Steam returned no profile for Steam64 ID {steamid}")
         sys.exit(1)
 
     status = int(s_user["response"]["players"][0].get("personastate"))
@@ -3052,7 +3225,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         if csv_file_name and (status != last_status):
             write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), steam_personastates[status], gamename, gameid)
     except Exception as e:
-        print(f"* Error: {e}")
+        print_recovery_error(e, context="file")
 
     print(f"\nSteam64 ID:\t\t\t{steamid}")
     print(f"Display name:\t\t\t{username}")
@@ -3136,8 +3309,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 write_json_atomic(steam_games_file, {"game_count": current_count, "appids": current_appids})
                 print_debug(f"Saved the games library to '{steam_games_file}'")
             except Exception as e:
-                print(f"* Cannot save games library to '{steam_games_file}': {e}")
-                print_debug_exception(f"Saving the games library to '{steam_games_file}'", e)
+                print_recovery_error(e, context="file", detail=f"Cannot save games library to '{steam_games_file}'")
         except Exception as e:
             print(f"\nGames in library:\tN/A ({e})")
 
@@ -3200,6 +3372,9 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         sleep_interval = STEAM_ACTIVE_CHECK_INTERVAL
     else:
         sleep_interval = STEAM_CHECK_INTERVAL
+
+    recovery_hint_tracker = RecoveryHintTracker()
+    transient_retry_used = False
 
     print_debug(f"First check in {display_time(sleep_interval)}")
     time.sleep(sleep_interval)
@@ -3279,21 +3454,32 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             else:
                 sleep_interval = STEAM_CHECK_INTERVAL
 
+            advice = classify_recovery_error(e, context="runtime")
             response = e.response if isinstance(e, req.exceptions.HTTPError) else None
-            if response is not None and response.status_code == 429:
-                retry_after = int(response.headers.get('Retry-After') or sleep_interval)
-                print_verbose(f"Steam rate limited the request, waiting {display_time(retry_after)} before retrying")
+            if advice.code == "steam.rate_limited":
+                # Rate limits carry their own wait, so they skip the retry path rather than burning an attempt
+                retry_after = int(response.headers.get('Retry-After') or sleep_interval) if response is not None else sleep_interval
+                print_monitor_recovery(e, "runtime", recovery_hint_tracker, "* ")
+                print_verbose(f"Waiting {display_time(retry_after)} before retrying")
+                print_cur_ts("Timestamp:\t\t\t")
                 time.sleep(retry_after)
                 continue
             else:
-                print(f"* Error, retrying in {display_time(sleep_interval)}{': ' + sanitize_error_text(e) if e else ''}")
-                if 'Forbidden' in str(e):
-                    print("* API key might not be valid anymore!")
+                print_monitor_recovery(e, "runtime", recovery_hint_tracker, "* ")
+                if advice.retryable and not transient_retry_used:
+                    # One short retry absorbs a blip without waiting a whole polling interval
+                    transient_retry_used = True
+                    print_verbose(f"Retrying once in {display_time(TRANSIENT_RETRY_SECONDS)}")
+                    print_cur_ts("Timestamp:\t\t\t")
+                    time.sleep(TRANSIENT_RETRY_SECONDS)
+                    continue
+                print(f"* Retrying in {display_time(sleep_interval)}")
+                if advice.code == "auth.api_key_invalid":
                     m_subject = f"steam_monitor: API key error! (user: {username})"
-                    m_body = f"Steam rejected the configured API key. Validate and replace it with --set-steam-api-key.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                    m_body = f"{advice.summary}{nl_ch}{nl_ch}To fix: {advice.fix}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                 else:
                     m_subject = f"steam_monitor: monitoring error (user: {username})"
-                    m_body = f"Steam Monitor could not refresh the user data and will retry in {display_time(sleep_interval)}.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                    m_body = f"{advice.summary}{nl_ch}{nl_ch}To fix: {advice.fix}{nl_ch}{nl_ch}Steam Monitor will retry in {display_time(sleep_interval)}.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                 if (ERROR_NOTIFICATION and not email_sent) or (webhook_event_enabled("error") and not webhook_sent):
                     email_delivered, webhook_delivered = send_notification_channels("error", m_subject, m_body, email_enabled=ERROR_NOTIFICATION and not email_sent, webhook_enabled=webhook_event_enabled("error") and not webhook_sent, image_url=current_avatar_url, ntfy_priority=5, ntfy_tags="warning")
                     email_sent = email_sent or email_delivered
@@ -3304,6 +3490,9 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             time.sleep(sleep_interval)
 
             continue
+
+        recovery_hint_tracker.reset()
+        transient_retry_used = False
 
         # A tracked feature that returned nothing cannot raise its alert, which is invisible without this line
         if STEAM_LEVEL_XP_CHECK and (current_steam_level is None or current_player_xp is None):
@@ -3747,7 +3936,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 if csv_file_name:
                     write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), steam_personastates[status], gamename, gameid)
             except Exception as e:
-                print(f"* Error: {e}")
+                print_recovery_error(e, context="file")
 
         status_old = status
         gameid_old = gameid
@@ -4253,7 +4442,7 @@ def main():
         try:
             run_set_steam_api_key(env_file=args.env_file)
         except SecretConfigurationError as exc:
-            print(f"* Error: {exc}")
+            print_recovery_error(exc, context="set_steam_api_key")
             sys.exit(1)
         sys.exit(0)
 
@@ -4262,7 +4451,7 @@ def main():
         try:
             run_set_webhook_url(env_file=args.env_file)
         except SecretConfigurationError as exc:
-            print(f"* Error: {exc}")
+            print_recovery_error(exc, context="set_webhook_url")
             sys.exit(1)
         sys.exit(0)
 
@@ -4296,7 +4485,7 @@ def main():
     cfg_path = find_config_file(CLI_CONFIG_PATH)
 
     if not cfg_path and CLI_CONFIG_PATH:
-        print(f"* Error: Config file '{CLI_CONFIG_PATH}' does not exist")
+        print_recovery_error(context="config", detail=f"Config file '{CLI_CONFIG_PATH}' does not exist")
         sys.exit(1)
 
     if cfg_path:
@@ -4370,7 +4559,7 @@ def main():
         STEAM_API_KEY = args.steam_api_key
 
     if not STEAM_API_KEY or STEAM_API_KEY == "your_steam_web_api_key":
-        print("* Error: STEAM_API_KEY (-u / --steam_api_key) value is empty or incorrect")
+        print_recovery_error(context="set_steam_api_key", detail="No Steam Web API key is configured")
         sys.exit(1)
 
     if args.check_interval:
@@ -4389,12 +4578,12 @@ def main():
         try:
             s_id = resolve_steam_community_url(args.resolve_community_url, STEAM_API_KEY)
         except ValueError as e:
-            print(f"* Error: {e}")
+            print_recovery_error(e, context="target")
             sys.exit(1)
 
     if not s_id:
         # Check should have been handled earlier by the utility_flags logic
-        print("* Error: STEAM64_ID needs to be defined !")
+        print_recovery_error(context="target", detail="No Steam64 ID or profile URL was given")
         sys.exit(1)
 
     if args.csv_file:
@@ -4408,7 +4597,7 @@ def main():
             with open(CSV_FILE, 'a', newline='', buffering=1, encoding="utf-8") as _:
                 pass
         except Exception as e:
-            print(f"* Error: CSV file cannot be opened for writing: {e}")
+            print_recovery_error(e, context="file", detail=f"CSV file '{CSV_FILE}' cannot be opened for writing")
             sys.exit(1)
 
     if args.profile_csv_file:
@@ -4422,7 +4611,7 @@ def main():
             with open(PROFILE_CSV_FILE, 'a', newline='', buffering=1, encoding="utf-8") as _:
                 pass
         except Exception as e:
-            print(f"* Error: Profile CSV file cannot be opened for writing: {e}")
+            print_recovery_error(e, context="file", detail=f"Profile CSV file '{PROFILE_CSV_FILE}' cannot be opened for writing")
             sys.exit(1)
 
     if args.file_suffix:
@@ -4436,7 +4625,7 @@ def main():
     try:
         ascii_log_separators_enabled()
     except ValueError as e:
-        print(f"* Error: {e}")
+        print_recovery_error(e, context="config")
         sys.exit(1)
 
     if args.disable_logging is True:
