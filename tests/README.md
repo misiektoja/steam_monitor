@@ -37,6 +37,7 @@ and again before anything is published to PyPI.
 | File | Area under test |
 | --- | --- |
 | `test_config_effects.py` | Diagnostic flag precedence, exported secret loading and secret source attribution |
+| `test_config_upgrades.py` | Replay of every shipped config template, retired settings and generated-file destinations |
 | `test_config_loading.py` | Declarative config parsing, rejected content and the generated template |
 | `test_diagnostics_output.py` | Verbose and debug output for email, webhook, connectivity, TLS and secret redaction |
 | `test_documentation.py` | Documentation site pages, guide links, navigation, documented flags, settings and doctor markers |
