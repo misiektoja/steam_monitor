@@ -356,8 +356,8 @@ CROSS_TOOL_STRINGS = (
     "Doctor test email delivery failed",
     "Doctor test webhook delivered",
     "Doctor test webhook delivery failed",
-    "[SKIP] Test email was not sent",
-    "[SKIP] Test webhook was not sent",
+    "Test email was not sent",
+    "Test webhook was not sent",
     # Setup wizard
     "The setup wizard needs an interactive terminal (TTY).",
     "This asks a few questions and writes a ready-to-run configuration.",
@@ -421,6 +421,71 @@ CROSS_TOOL_STRINGS = (
 @pytest.mark.parametrize("text", CROSS_TOOL_STRINGS)
 def test_the_cross_tool_wording_is_unchanged(text):
     assert text in SOURCE, text
+
+
+# Verifies the config file decides screen clearing and colour before the banner, not the built-in defaults
+def test_the_config_file_settings_reach_the_banner(tmp_path, monkeypatch):
+    config = tmp_path / "steam_monitor.conf"
+    config.write_text("CLEAR_SCREEN = False\nCOLORED_OUTPUT = False\n", encoding="utf-8")
+    monkeypatch.setattr(monitor, "CLEAR_SCREEN", True)
+    monkeypatch.setattr(monitor, "COLORED_OUTPUT", True)
+    monkeypatch.setattr(monitor.sys, "argv", ["steam_monitor", "--config-file", str(config)])
+
+    monitor.apply_early_output_config()
+
+    assert monitor.CLEAR_SCREEN is False
+    assert monitor.COLORED_OUTPUT is False
+
+
+# Verifies an unreadable or absent config file leaves the built-in output settings alone
+@pytest.mark.parametrize("content", [None, "CLEAR_SCREEN = (", "CLEAR_SCREEN = 'yes'"])
+def test_an_unusable_config_leaves_the_output_settings_alone(tmp_path, monkeypatch, content):
+    config = tmp_path / "steam_monitor.conf"
+    if content is not None:
+        config.write_text(content, encoding="utf-8")
+    monkeypatch.setattr(monitor, "CLEAR_SCREEN", True)
+    monkeypatch.setattr(monitor, "COLORED_OUTPUT", True)
+    monkeypatch.setattr(monitor.sys, "argv", ["steam_monitor", "--config-file", str(config)])
+
+    monitor.apply_early_output_config()
+
+    assert monitor.CLEAR_SCREEN is True
+    assert monitor.COLORED_OUTPUT is True
+
+
+# Verifies '--config-file none' is respected before argparse, so no file is read to decide output settings
+def test_config_file_none_skips_the_early_config_read(monkeypatch):
+    monkeypatch.setattr(monitor, "COLORED_OUTPUT", True)
+    monkeypatch.setattr(monitor, "find_config_file", lambda _path=None: pytest.fail("a config file was searched for"))
+    monkeypatch.setattr(monitor.sys, "argv", ["steam_monitor", "--config-file", "none"])
+
+    monitor.apply_early_output_config()
+
+    assert monitor.COLORED_OUTPUT is True
+
+
+# Verifies the config path is read from argv in both spellings argparse accepts
+@pytest.mark.parametrize("arguments,expected", [
+    (["--config-file", "a.conf"], "a.conf"),
+    (["--config-file=a.conf"], "a.conf"),
+    (["--doctor"], None),
+    (["--config-file"], None),
+])
+def test_the_early_config_path_is_read_from_argv(arguments, expected):
+    assert monitor.early_config_file_argument(arguments) == expected
+
+
+# Verifies every doctor result marker keeps its bracketed spelling and its own colour
+def test_doctor_markers_are_bracketed_and_coloured(monkeypatch):
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", False)
+    assert [monitor.render_doctor_marker(status) for status in ("PASS", "WARN", "FAIL", "SKIP")] == ["[PASS]", "[WARN]", "[FAIL]", "[SKIP]"]
+
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", True)
+    monkeypatch.setattr(monitor, "_COLOR_STYLES", {name: monitor._build_ansi_sequence(value) for name, value in monitor.DEFAULT_COLOR_THEME.items() if monitor._build_ansi_sequence(value)})
+    coloured = {status: monitor.render_doctor_marker(status) for status in monitor.DOCTOR_MARK_STYLES}
+    for status, rendered in coloured.items():
+        assert rendered.endswith(f"[{status}]{monitor.ANSI_RESET}"), status
+    assert len(set(coloured.values())) == len(coloured)
 
 
 # Verifies the doctor sections keep the order the sibling monitors render them in

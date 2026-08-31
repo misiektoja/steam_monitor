@@ -16,6 +16,8 @@ import steam_monitor as monitor
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SECRET_API_KEY = "0123456789ABCDEF0123456789ABCDEF"
 SECRET_WEBHOOK_URL = "https://discord.com/api/webhooks/123456789/verysecrettokenvalue"
+# Colour changes only, so the screen-clearing escape a startup always writes is not read as colour
+SGR_SEQUENCE_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 @pytest.fixture
@@ -335,6 +337,37 @@ def test_the_summary_states_a_conclusion():
     assert "1 check(s) failed, 0 warning(s). Fix the failures above before relying on the tool." in monitor.render_doctor_report(failed)
 
 
+# Verifies a check whose detail only repeats its label renders that sentence once
+def test_a_detail_repeating_the_label_is_not_printed_twice(monkeypatch, doctor_globals):
+    monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", True)
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "discord")
+    monkeypatch.setattr(monitor, "WEBHOOK_URL", "not-a-url")
+    monkeypatch.setattr(monitor, "WEBHOOK_ERROR_NOTIFICATION", True)
+    report = monitor.DoctorReport()
+    report.checks.extend(monitor.doctor_check_webhook_notifications(report))
+
+    rendered = monitor.render_doctor_report(report)
+
+    assert "[FAIL] WEBHOOK_URL must contain a complete HTTPS link" in rendered
+    assert rendered.count("WEBHOOK_URL must contain a complete HTTPS link") == 1
+
+
+# Verifies every rendered result marker carries its status colour, not just the section headings
+def test_every_marker_is_coloured_in_the_rendered_report(monkeypatch, doctor_globals):
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", True)
+    monkeypatch.setattr(monitor, "_COLOR_STYLES", {name: monitor._build_ansi_sequence(value) for name, value in monitor.DEFAULT_COLOR_THEME.items() if monitor._build_ansi_sequence(value)})
+    report = build_report(monkeypatch, target_value=76561197960435530, client=FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 3}]))
+
+    rendered = monitor.render_doctor_report(report)
+
+    assert "[PASS]" in monitor.ANSI_ESCAPE_RE.sub("", rendered)
+    assert not re.search(r"^\[(PASS|WARN|FAIL|SKIP)\]", rendered, flags=re.MULTILINE)
+    for status in monitor.DOCTOR_MARK_STYLES:
+        marker = monitor.render_doctor_marker(status)
+        if f"[{status}]" in monitor.ANSI_ESCAPE_RE.sub("", rendered):
+            assert marker in rendered, status
+
+
 # Verifies there is exactly one conclusion, not a second per-channel summary before it
 def test_there_is_only_one_summary(monkeypatch, doctor_globals):
     report = build_report(monkeypatch)
@@ -468,10 +501,11 @@ def test_a_passing_run_prints_the_monitoring_command(monkeypatch, doctor_globals
 
 
 # Returns the doctor transcript from a real pseudo-terminal, the way a user actually sees it
-def capture_doctor_pty(config_path, env="none"):
+def capture_doctor_pty(config_path, env="none", extra_arguments=()):
     command = [
         sys.executable, str(REPO_ROOT / "steam_monitor.py"),
         "--config-file", str(config_path), "--env-file", env, "--doctor",
+        *extra_arguments,
     ]
     controller, worker = pty.openpty()
     process = subprocess.Popen(command, stdin=worker, stdout=worker, stderr=worker, cwd=str(REPO_ROOT), env={**os.environ, "STEAM_API_KEY": "A" * 32, "TERM": "xterm"})
@@ -547,6 +581,30 @@ def test_the_doctor_transcript_holds_the_output_contract(tmp_path):
     assert text.count("Summary") == 1
     assert f"Guide: {monitor.DOCTOR_GUIDE_URL}" in text
     assert exit_code in (0, 1)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="pty is not available on Windows")
+# Verifies doctor honours COLORED_OUTPUT from the config file, which it used to exit before ever reading
+def test_the_configured_colour_reaches_the_doctor_screen(tmp_path):
+    config = tmp_path / "doctor.conf"
+    config.write_text('CLEAR_SCREEN = False\nDISABLE_LOGGING = True\nCOLORED_OUTPUT = True\nCHECK_INTERNET_URL = "https://localhost:1/"\nCHECK_INTERNET_TIMEOUT = 1\n', encoding="utf-8")
+
+    raw, _exit_code = capture_doctor_pty(config)
+
+    assert SGR_SEQUENCE_RE.search(raw), "the configured colour never reached the screen"
+    # Every result marker carries a colour, which is the part the section headings never proved
+    assert not re.search(r"(?<!m)\[(PASS|WARN|FAIL|SKIP)\]", raw), "an uncoloured status marker reached the screen"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="pty is not available on Windows")
+# Verifies --no-color still wins over a config file that turns colour on
+def test_no_color_overrides_the_configured_colour(tmp_path):
+    config = tmp_path / "doctor.conf"
+    config.write_text('CLEAR_SCREEN = False\nDISABLE_LOGGING = True\nCOLORED_OUTPUT = True\nCHECK_INTERNET_URL = "https://localhost:1/"\nCHECK_INTERNET_TIMEOUT = 1\n', encoding="utf-8")
+
+    raw, _exit_code = capture_doctor_pty(config, extra_arguments=["--no-color"])
+
+    assert not SGR_SEQUENCE_RE.search(raw)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="pty is not available on Windows")

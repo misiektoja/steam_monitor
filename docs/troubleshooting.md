@@ -8,7 +8,7 @@ Before monitoring anything, `--doctor` checks whether the setup is actually read
 steam_monitor --doctor <steam_target>
 ```
 
-It is **read-only**: it writes no files and says so before the first check runs. Checks are grouped into **Environment**, **Configuration**, **Authentication**, **Connectivity**, **Target** and **Notifications** and each row is marked `[PASS]`, `[WARN]`, `[FAIL]` or `[SKIP]`. The Environment section reports the raw `manual`, `pip`, `docker` or `compose` install method. Every non-passing row carries a `To fix:` line and a link to the documentation page that covers it.
+It is **read-only**: it writes no files and says so before the first check runs. Checks are grouped into **Environment**, **Configuration**, **Authentication**, **Connectivity**, **Target** and **Notifications** and each row is marked `[PASS]`, `[WARN]`, `[FAIL]` or `[SKIP]`, colour-coded by status when colour output is on. The Environment section reports the raw `manual`, `pip`, `docker` or `compose` install method. Every non-passing row carries a `To fix:` line and a link to the documentation page that covers it.
 
 The Configuration section names the configuration and dotenv files in effect and reports **which secrets came from the dotenv file and which came from the environment**, by name only. No secret value is ever printed.
 

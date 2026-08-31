@@ -20,14 +20,20 @@ WEBHOOK_URL = "https://discord.com/api/webhooks/123456789/verysecrettokenvalue"
 
 
 @pytest.fixture
-# Restores every module-level setting the wizard reads or writes back
+# Restores every module-level setting the wizard reads or writes back, plus the secrets it exports on save
 def wizard_globals(monkeypatch):
     snapshot = {name: value for name, value in vars(monitor).items() if name.isupper()}
+    environment_snapshot = {name: os.environ.get(name) for name in monitor.SECRET_KEYS}
     monkeypatch.setattr(monitor, "COLORED_OUTPUT", False)
     monkeypatch.setattr(monitor, "STEAM_API_KEY", "your_steam_web_api_key")
     yield
     for name, value in snapshot.items():
         setattr(monitor, name, value)
+    for name, value in environment_snapshot.items():
+        if value is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = value
 
 
 # Returns an input function that replays scripted answers and records the prompts it was asked
@@ -315,6 +321,76 @@ def test_the_shared_prompt_wording_is_used(tmp_path, monkeypatch, wizard_globals
     run_wizard(tmp_path, monkeypatch, minimal_answers(), transcript=transcript)
 
     assert any(prompt.startswith("Run doctor now? It writes no files and offers real delivery tests only with separate approval.") for prompt in transcript)
+
+
+# Runs the wizard with a real doctor call, so the values it hands over can be inspected
+def run_wizard_with_doctor(tmp_path, monkeypatch, answers, secrets, observed):
+    monkeypatch.setattr(monitor, "validate_steam_api_key", lambda _key, timeout=10: True)
+
+    def record_doctor(**kwargs):
+        observed["values"] = {name: getattr(monitor, name) for name in ("STEAM_API_KEY", "SMTP_PASSWORD", "WEBHOOK_URL")}
+        observed["sources"] = monitor.doctor_secret_sources(kwargs.get("env_path"))
+        return 0
+
+    monkeypatch.setattr(monitor, "run_doctor", record_doctor)
+    remaining_secrets = list(secrets)
+    return monitor.run_setup_wizard(
+        config_file=str(tmp_path / "steam_monitor.conf"),
+        env_file=str(tmp_path / ".env"),
+        input_func=scripted_input(answers),
+        getpass_func=lambda _prompt: remaining_secrets.pop(0) if remaining_secrets else "",
+        interactive=True,
+    )
+
+
+# Verifies the secrets just entered survive into doctor, which the config placeholders used to overwrite
+def test_doctor_sees_the_secrets_setup_just_saved(tmp_path, monkeypatch, wizard_globals):
+    observed = {}
+    monkeypatch.setattr(monitor, "EXPORTED_SECRET_KEYS", frozenset())
+    for secret in monitor.SECRET_KEYS:
+        monkeypatch.delenv(secret, raising=False)
+
+    answers = [
+        str(STEAM64), "y", "5m", "45s",
+        "y", "smtp.example.test", "587", "y", "user@example.test", "user@example.test", "rcpt@example.test", "1",
+        "y", "1", "1",
+        "1", "y", "n",
+    ]
+    assert run_wizard_with_doctor(tmp_path, monkeypatch, answers, [API_KEY, "smtp-password", WEBHOOK_URL], observed) == 0
+
+    assert observed["values"] == {"STEAM_API_KEY": API_KEY, "SMTP_PASSWORD": "smtp-password", "WEBHOOK_URL": WEBHOOK_URL}
+    from_file, from_environment, from_settings = observed["sources"]
+    assert sorted(from_file) == ["SMTP_PASSWORD", "STEAM_API_KEY", "WEBHOOK_URL"]
+    assert not from_environment and not from_settings
+
+
+# Verifies a secret exported before startup still wins over the value setup wrote, as it will when monitoring runs
+def test_an_exported_secret_still_wins_after_setup(tmp_path, monkeypatch, wizard_globals):
+    observed = {}
+    monkeypatch.setattr(monitor, "EXPORTED_SECRET_KEYS", frozenset({"STEAM_API_KEY"}))
+    monkeypatch.setenv("STEAM_API_KEY", "E" * 32)
+
+    answers = [str(STEAM64), "y", "5m", "45s", "n", "n", "1", "y", "n"]
+    assert run_wizard_with_doctor(tmp_path, monkeypatch, answers, [API_KEY], observed) == 0
+
+    assert observed["values"]["STEAM_API_KEY"] == "E" * 32
+    assert monitor.doctor_secret_sources(str(tmp_path / ".env"))[1] == ["STEAM_API_KEY"]
+
+
+# Verifies hidden prompts are colorized like the visible ones, so one question does not look different
+def test_hidden_prompts_are_colorized_like_the_visible_ones(monkeypatch):
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", True)
+    monkeypatch.setattr(monitor, "_COLOR_STYLES", {name: monitor._build_ansi_sequence(value) for name, value in monitor.DEFAULT_COLOR_THEME.items() if monitor._build_ansi_sequence(value)})
+    prompts = []
+
+    monitor._wizard_ask_secret("SMTP password", getpass_func=lambda prompt: prompts.append(prompt) or "secret")
+    visible = monitor._wizard_input("Receiver email: ", input_func=lambda prompt: prompts.append(prompt) or "")
+
+    assert visible == ""
+    hidden_prompt, visible_prompt = prompts
+    assert hidden_prompt == monitor.colorize("info", "SMTP password: ")
+    assert hidden_prompt.startswith(visible_prompt[:visible_prompt.index("R")])
+    assert hidden_prompt.endswith(monitor.ANSI_RESET)
 
 
 # Verifies the persist answer puts the target in the config file, so the tool runs without arguments

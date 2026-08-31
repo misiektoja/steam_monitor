@@ -291,6 +291,8 @@ As Windows supports limited number of signals, this functionality is available o
 
 The tool has native **color output** support for terminal since v1.5 (see `COLORED_OUTPUT` and `COLOR_THEME` config options), but you can also use [GRC](https://github.com/garabik/grc) to color logs.
 
+Both settings apply to monitoring output and to the `--setup` and `--doctor` screens. `--no-color` turns colour off for all of them.
+
 Add to your GRC config (`~/.grc/grc.conf`):
 
 ```

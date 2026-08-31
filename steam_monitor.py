@@ -2773,8 +2773,16 @@ def doctor_check_webhook_notifications(report):
 # The fixed section order the report renders in, chosen so each section depends only on the ones above it
 DOCTOR_SECTIONS = ("Environment", "Configuration", "Authentication", "Connectivity", "Target", "Notifications")
 
+# The theme entry each doctor result marker is drawn in, so a failure reads as one at a glance
+DOCTOR_MARK_STYLES = {"PASS": "boolean_true", "WARN": "warning", "FAIL": "error", "SKIP": "info"}
+
 # Width of the transient progress line currently on screen, so the next write can erase exactly what it drew
 DOCTOR_PROGRESS_WIDTH = 0
+
+
+# Renders one doctor result marker in the colour its status calls for
+def render_doctor_marker(status):
+    return colorize(DOCTOR_MARK_STYLES.get(status, "info"), f"[{status}]")
 
 
 # Renders one sectioned ASCII doctor report with a fix line on every non-passing row
@@ -2786,11 +2794,15 @@ def render_doctor_report(report):
             continue
         lines.extend(("", colorize("section", section)))
         for check in section_checks:
-            lines.append(f"[{check.status}] {check.label}")
-            if check.detail:
+            lines.append(f"{render_doctor_marker(check.status)} {check.label}")
+            # Recovery advice reuses its detail as the summary, so the detail line is dropped when it
+            # would only repeat the label back to the reader
+            if check.detail and check.detail.strip() != check.label.strip():
                 lines.append(f"  {check.detail}")
             if check.status in ("FAIL", "WARN") and check.advice is not None:
-                lines.append(f"To fix: {check.advice.fix}")
+                # The fix carries its own guide line, so each line is styled on its own rather than
+                # leaving one colour sequence open across the newline
+                lines.extend(colorize("info", advice_line) for advice_line in f"To fix: {check.advice.fix}".splitlines())
     failures = sum(check.status == "FAIL" for check in report.checks)
     warnings = sum(check.status == "WARN" for check in report.checks)
     if failures:
@@ -2799,7 +2811,7 @@ def render_doctor_report(report):
         summary_line = colorize("warning", f"  All critical checks passed with {warnings} warning(s). Review the warnings above.")
     else:
         summary_line = colorize("boolean_true", "  All checks passed. You are good to go!")
-    lines.extend(("", colorize("header", "Summary"), summary_line, "", f"Guide: {DOCTOR_GUIDE_URL}"))
+    lines.extend(("", colorize("header", "Summary"), summary_line, "", colorize("info", f"Guide: {DOCTOR_GUIDE_URL}")))
     return sanitize_error_text("\n".join(lines))
 
 
@@ -2845,7 +2857,7 @@ def render_doctor_notice():
 def _doctor_ask_yes_no(question):
     while True:
         try:
-            value = input(f"{question} [y/N]: ").strip().casefold()
+            value = input(colorize("info", f"{question} [y/N]: ")).strip().casefold()
         except (EOFError, KeyboardInterrupt):
             print("\nDelivery test skipped.")
             return False
@@ -2862,7 +2874,7 @@ def _doctor_offer_notification_tests(report):
         return []
     if not report.email_ready and not report.webhook_ready:
         return []
-    print("\nOptional delivery tests\n")
+    print(colorize("header", "\nOptional delivery tests\n"))
     print("Doctor will not write files. Each approved test sends one real message.\n")
     checks = []
     if report.email_ready:
@@ -2870,18 +2882,18 @@ def _doctor_offer_notification_tests(report):
             delivered = send_email("steam_monitor: doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "", SMTP_SSL, smtp_timeout=5) == 0
             check = make_doctor_check("Notifications", "PASS" if delivered else "FAIL", "Doctor test email delivered" if delivered else "Doctor test email delivery failed", "One real test email was sent after confirmation" if delivered else "The approved test email could not be delivered")
             checks.append(check)
-            print(f"[{check.status}] {check.label}")
+            print(f"{render_doctor_marker(check.status)} {check.label}")
         else:
-            print("[SKIP] Test email was not sent")
+            print(f"{render_doctor_marker('SKIP')} Test email was not sent")
     if report.webhook_ready:
         provider = webhook_provider_display_name()
         if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
             delivered = send_webhook("Steam Monitor doctor test", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", "status", force=True) == 0
             check = make_doctor_check("Notifications", "PASS" if delivered else "FAIL", "Doctor test webhook delivered" if delivered else "Doctor test webhook delivery failed", "One real test webhook was sent after confirmation" if delivered else "The approved test webhook could not be delivered")
             checks.append(check)
-            print(f"[{check.status}] {check.label}")
+            print(f"{render_doctor_marker(check.status)} {check.label}")
         else:
-            print("[SKIP] Test webhook was not sent")
+            print(f"{render_doctor_marker('SKIP')} Test webhook was not sent")
     return checks
 
 
@@ -3018,7 +3030,8 @@ def _wizard_ask_duration(question, default, input_func=None):
 def _wizard_ask_secret(question, getpass_func=None, required=False):
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     while True:
-        value = hidden_prompt(f"{question}: ").strip()
+        # Colorized like the visible prompts, so a hidden answer does not look like a different question
+        value = hidden_prompt(colorize("info", f"{question}: ")).strip()
         if value or not required:
             return value
         print("  This secret is required and cannot be empty.")
@@ -3499,9 +3512,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     try:
         if doctor_offered and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True, input_func=input_func):
             print()
-            for key, value in state.secret_updates.items():
-                globals()[key] = value
-            globals().update(state.config_values)
+            _wizard_apply_saved_values(state, env_path=state.env_path if secret_result else None)
             run_doctor(target_value=int(state.target), config_path=str(state.config_path), env_path=str(state.env_path) if secret_result else None)
     except (EOFError, KeyboardInterrupt):
         # The files are already written, so an interrupt here only skips the optional check
@@ -3522,6 +3533,24 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
         sys.stdout.flush()
         return _wizard_launch_monitor(launch_arguments)
     return 0
+
+
+# Puts the values setup just saved into effect, so doctor checks the written files instead of the pre-setup state
+def _wizard_apply_saved_values(state, env_path=None):
+    # Config values first: they carry the unset placeholders for every secret, which would otherwise
+    # overwrite the secrets applied below and make doctor report a working setup as unconfigured
+    globals().update(state.config_values)
+    if env_path:
+        try:
+            reload_dotenv_secrets(str(env_path))
+        except Exception:
+            # Reading the file back needs python-dotenv, so the entered values are applied directly below
+            pass
+    load_secrets_from_environment()
+    # Secrets exported before startup keep winning here, exactly as they will when monitoring runs
+    for key, value in state.secret_updates.items():
+        if key not in EXPORTED_SECRET_KEYS and not doctor_value_is_set(globals().get(key)):
+            globals()[key] = value
 
 
 # Builds the exact local command that starts this monitor, used when setup offers to launch it
@@ -3964,6 +3993,37 @@ def reload_secrets_signal_handler(sig, frame):
             print(f"* Updated webhook provider to {detected_provider}")
 
     print_cur_ts("Timestamp:\t\t\t")
+
+
+# Returns the --config-file value straight from argv, needed before argparse has run
+def early_config_file_argument(arguments=None):
+    values = list(sys.argv[1:] if arguments is None else arguments)
+    for index, argument in enumerate(values):
+        if argument == "--config-file" and index + 1 < len(values):
+            return values[index + 1]
+        if argument.startswith("--config-file="):
+            return argument.split("=", 1)[1]
+    return None
+
+
+# Applies the terminal settings needed before argument parsing, leaving any failure to normal config loading
+def apply_early_output_config():
+    global CLEAR_SCREEN, COLORED_OUTPUT
+    try:
+        cli_path = early_config_file_argument()
+        if cli_path is not None and cli_path.casefold() == "none":
+            return
+        expanded_path = os.path.expanduser(cli_path) if cli_path else None
+        config_path = find_config_file(expanded_path)
+        if not config_path:
+            return
+        values = parse_config_content(Path(config_path).read_text(encoding="utf-8"), str(config_path))
+    except (MemoryError, OSError, RecursionError, SyntaxError, UnicodeError, ValueError):
+        return
+    if isinstance(values.get("CLEAR_SCREEN"), bool):
+        CLEAR_SCREEN = values["CLEAR_SCREEN"]
+    if isinstance(values.get("COLORED_OUTPUT"), bool):
+        COLORED_OUTPUT = values["COLORED_OUTPUT"]
 
 
 # Finds an optional config file
@@ -5427,6 +5487,10 @@ def main():
 
     stdout_bck = sys.stdout
 
+    # The screen clearing and the banner run before argparse, so their settings are resolved from the
+    # config file first rather than from the built-in defaults alone
+    apply_early_output_config()
+
     # Initialise colour handling based on CLI args (early check) and terminal capabilities
     if "--no-color" in sys.argv:
         globals()["COLORED_OUTPUT"] = False
@@ -5940,6 +6004,12 @@ def main():
         STEAM_API_KEY = args.steam_api_key
 
     apply_webhook_cli_overrides(args, parser)
+
+    # Setup and doctor exit before the monitoring path re-initializes colour, so the configured
+    # COLORED_OUTPUT, COLOR_THEME and --no-color are applied here rather than leaving both screens plain
+    if args.no_color is True:
+        COLORED_OUTPUT = False
+    init_color_output(stdout_bck)
 
     if args.setup:
         # Runs here rather than earlier so the values already in effect become the defaults it offers
