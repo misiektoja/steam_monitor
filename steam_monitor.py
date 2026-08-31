@@ -279,13 +279,14 @@ ST_LOGFILE = "steam_monitor"
 DISABLE_LOGGING = False
 
 # Whether to print extra startup and runtime detail
-# Can also be enabled via the --verbose flag, which always wins over this setting
+# Independent of DEBUG_MODE, so enable both to see everything
+# Can also be enabled via the --verbose flag, which turns it on regardless of this setting
 VERBOSE_MODE = False
 
 # Whether to print timestamped diagnostic detail, including every outbound call,
 # each notification delivery attempt and the technical cause of failures
 # Independent of VERBOSE_MODE, so enable both to see everything
-# Can also be enabled via the --debug flag, which always wins over this setting
+# Can also be enabled via the --debug flag, which turns it on regardless of this setting
 DEBUG_MODE = False
 
 # Controls conversion of separator-only log lines to ASCII:
