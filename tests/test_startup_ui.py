@@ -26,9 +26,9 @@ def rendered_summary(rows, show_full):
 # Verifies each row is routed independently rather than the whole block being shown or hidden together
 def test_rows_are_routed_independently(summary_globals):
     rows = [
-        monitor.StartupSummaryRow("Always", "a"),
-        monitor.StartupSummaryRow("Verbose only", "b", concise=False),
-        monitor.StartupSummaryRow("Concise only", "c", full=False),
+        monitor.StartupSummaryRow("Always", "a", concise=True),
+        monitor.StartupSummaryRow("Verbose only", "b"),
+        monitor.StartupSummaryRow("Concise only", "c", concise=True, full=False),
     ]
 
     concise = rendered_summary(rows, show_full=False)
@@ -46,9 +46,12 @@ def test_the_real_summary_hides_diagnostics_until_asked(summary_globals):
     concise = rendered_summary(rows, show_full=False)
     full = rendered_summary(rows, show_full=True)
 
-    assert "Steam polling intervals" in concise
-    assert "Configuration file" in concise
-    for label in ("Install method", "Secrets from dotenv file", "Secrets from environment", "Diagnostics", "ASCII log separators"):
+    assert "Polling intervals" in concise
+    assert "Config" in concise
+    # Points a newcomer at the two modes, so the full view has no reason to repeat it
+    assert "More details" in concise and "More details" not in full
+    assert "Output:" in concise and "Output:" not in full
+    for label in ("Install method", "Secrets from dotenv", "Secrets from environment", "Verbose mode", "ASCII log separators"):
         assert label not in concise, f"{label} should not be in the concise view"
         assert label in full, f"{label} should be in the full view"
 
@@ -84,7 +87,7 @@ def test_the_notification_rollups_name_their_categories(monkeypatch, summary_glo
 def test_an_overlong_value_is_truncated_visibly(monkeypatch, summary_globals):
     monkeypatch.setattr(monitor, "TRUNCATE_CHARS", 20)
 
-    rendered = rendered_summary([monitor.StartupSummaryRow("Path", "/very/long/path/" + "x" * 100)], show_full=False)
+    rendered = rendered_summary([monitor.StartupSummaryRow("Path", "/very/long/path/" + "x" * 100, concise=True)], show_full=False)
 
     value = rendered.split(":", 1)[1].strip()
     assert len(value) == 20
@@ -120,9 +123,9 @@ def test_an_unusable_width_setting_disables_truncation(monkeypatch, summary_glob
     assert monitor.startup_summary_value_width() == 0
 
 
-# Verifies a long unbounded value wraps into the value column rather than running off the terminal
-def test_an_unbounded_value_wraps_into_its_column(summary_globals):
-    rendered = rendered_summary([monitor.StartupSummaryRow("Alerts", "On (" + ", ".join(["category"] * 20) + ")")], show_full=False)
+# Verifies the notification rollups wrap into the value column rather than running off the terminal
+def test_the_notification_rollups_wrap_into_their_column(summary_globals):
+    rendered = rendered_summary([monitor.StartupSummaryRow("Notifications (email)", "On (" + ", ".join(["category"] * 20) + ")", concise=True)], show_full=False)
 
     lines = rendered.split("\n")
     assert len(lines) > 1
@@ -155,3 +158,51 @@ def test_the_help_examples_suit_the_install(monkeypatch):
 @pytest.mark.parametrize("flag", ["--setup", "--doctor", "--generate-config", "--set-steam-api-key", "--send-test-email", "--send-test-webhook"])
 def test_the_help_examples_cover_the_first_commands(flag):
     assert flag in monitor.help_examples()
+
+
+# Verifies a row is verbose-only unless it opts in, which is what keeps the concise view short
+def test_rows_are_verbose_only_by_default():
+    row = monitor.StartupSummaryRow("Label", "value")
+
+    assert row.concise is False
+    assert row.full is True and row.log is True
+
+
+# Verifies a feature row reaches the concise view only when that feature is switched on
+@pytest.mark.parametrize("enabled", [True, False])
+def test_a_feature_row_is_concise_only_when_it_is_on(monkeypatch, summary_globals, enabled):
+    monkeypatch.setattr(monitor, "FRIENDS_CHECK", enabled)
+
+    concise = rendered_summary(monitor.build_startup_summary("tool.conf", None, None), show_full=False)
+
+    assert ("Friends tracking" in concise) is enabled
+
+
+# Verifies the concise view ends by naming the flags that reveal the rest
+def test_the_concise_view_points_at_the_verbose_flags(summary_globals):
+    concise = rendered_summary(monitor.build_startup_summary("tool.conf", None, None), show_full=False)
+
+    assert concise.rstrip().endswith("use --verbose or --debug")
+
+
+# Verifies the welcome screen keeps the block shape shared with the sibling tools
+def test_the_welcome_screen_keeps_the_shared_block_shape(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "COLORED_OUTPUT", False)
+    monkeypatch.delenv(monitor.INSTALL_METHOD_ENV_VAR, raising=False)
+    monkeypatch.setattr("sys.argv", ["/usr/local/bin/steam_monitor"])
+
+    monitor.print_welcome_screen(interactive=False)
+    lines = capsys.readouterr().out.split("\n")
+
+    # Label on its own line, command indented four spaces below it, one blank line between blocks
+    for label, command in (
+        ("Quickest start (already configured):", "steam_monitor <steam_target>"),
+        ("Easiest start (guided setup wizard):", "steam_monitor --setup"),
+        ("Check setup before monitoring:", "steam_monitor --doctor <steam_target>"),
+    ):
+        index = lines.index(label)
+        assert lines[index + 1] == f"    {command}", lines[index + 1]
+        assert lines[index + 2] == ""
+    # These two are single lines rather than blocks, and the guide value is column aligned
+    assert "Full options: steam_monitor --help" in lines
+    assert f"Guide:        {monitor.QUICK_START_GUIDE_URL}" in lines

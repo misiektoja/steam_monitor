@@ -444,7 +444,8 @@ WEBHOOK_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#webhook-settings"
 SECRETS_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#storing-secrets"
 USAGE_GUIDE_URL = f"{DOCS_BASE_URL}/usage/"
 STEAM_API_KEY_REGISTRATION_URL = "https://steamcommunity.com/dev/apikey"
-STEAM_TARGET_INPUT_ERROR = "Enter a Steam64 ID, a vanity name, or a full profile URL such as https://steamcommunity.com/id/<name>/"
+STEAM_TARGET_FORMS = "Steam64 ID, Steam3 identifier, vanity name or full profile URL"
+STEAM_TARGET_INPUT_ERROR = f"Enter a {STEAM_TARGET_FORMS}, for example https://steamcommunity.com/id/<name>/"
 DOCTOR_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#doctor-preflight"
 
 # Shared prefixes for the checks a delivery test depends on, kept as constants because the labels are dynamic
@@ -1965,7 +1966,7 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
         if "cannot connect" in message:
             return advice("network.unavailable", "The Steam Web API could not be reached", "Check connectivity, DNS and any proxy then try again", True)
         if any(term in message for term in ("invalid steam", "only steam user", "not supported")):
-            return advice("target.invalid", safe_detail or "That is not a recognized Steam profile", "Pass a Steam64 ID, or a full profile URL such as https://steamcommunity.com/id/<name>/", False, USAGE_GUIDE_URL)
+            return advice("target.invalid", safe_detail or "That is not a recognized Steam profile", f"Pass a {STEAM_TARGET_FORMS}", False, USAGE_GUIDE_URL)
         return advice("target.not_found", safe_detail or "No Steam user matches that profile", "Check the Steam64 ID or profile URL and try again", False, USAGE_GUIDE_URL)
 
     if context == "email":
@@ -2656,7 +2657,7 @@ def doctor_check_authentication(report):
 # Confirms the monitored profile exists and is visible, reusing the client the authentication check opened
 def doctor_check_target(report, target_value=None):
     if not target_value:
-        advice = make_recovery_advice("target.invalid", "No Steam profile is configured", recovery_fix_with_guide("Pass a Steam64 ID, Steam3 identifier, vanity name or profile URL", USAGE_GUIDE_URL), False)
+        advice = make_recovery_advice("target.invalid", "No Steam profile is configured", recovery_fix_with_guide(f"Pass a {STEAM_TARGET_FORMS}", USAGE_GUIDE_URL), False)
         return [make_doctor_check("Target", "WARN", advice.summary, "Nothing will be monitored until one is given", advice)]
     if report.steam_client is None:
         return [make_doctor_check("Target", "SKIP", "The monitored profile was not checked", "The Steam Web API key did not validate, so no lookup was attempted")]
@@ -3008,7 +3009,7 @@ def _wizard_reset_section(state, config_keys, secret_keys):
 # Asks for the monitored profile, accepting every form people paste and storing one canonical Steam64 ID
 def _wizard_collect_target_section(state, initial_target=None, input_func=None):
     print(colorize("section", "Target"))
-    print("Accepts a Steam64 ID, Steam3 identifier, vanity name or full profile URL.")
+    print(f"Accepts a {STEAM_TARGET_FORMS}.")
     state.pending_vanity = ""
     while True:
         answer = _wizard_ask_text("Steam profile to monitor", default=str(initial_target or state.target or ""), required=True, input_func=input_func)
@@ -3222,10 +3223,9 @@ def write_config_file(destination, content):
 
 # Prints where setup will write and which install method the printed commands are written for
 def _wizard_print_setup_destinations(config_path, env_path):
-    print(f"Detected install method: {install_method_display_name()}")
-    print(f"Configuration:           {config_path}")
-    print(f"Dotenv:                  {env_path}")
-    print()
+    print(f"Detected install method: {colorize('username', install_method_display_name())}")
+    print(f"Configuration:          {config_path}")
+    print(f"Dotenv:                 {env_path}\n")
 
 
 # Runs the guided setup, holding every answer until the user saves
@@ -3325,18 +3325,22 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     return 0
 
 
+# Prints one labelled command on its own indented line, the shared shape across these tools
+def _wizard_print_command(label, command, suffix=""):
+    print(label)
+    print(f"    {colorize('section', command)}{colorize('info', suffix) if suffix else ''}\n")
+
+
 # Prints the four commands a newcomer needs next, instead of an argparse usage error
 def print_welcome_screen(input_func=None, interactive=None):
     terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
-    print("For <steam_target>, use a Steam64 ID, Steam3 identifier, vanity name or full profile URL.")
-    print()
-    print(f"  Quickest start (already configured):  {render_command(['<steam_target>'], include_paths=False)}")
-    print(f"  Easiest start (guided setup wizard):  {render_command(['--setup'], include_paths=False)}" + ("   (or just answer Y below)" if terminal_is_interactive else ""))
-    print(f"  Check setup before monitoring:        {render_command(['--doctor', '<steam_target>'], include_paths=False)}")
-    print(f"  Full options:                         {render_command(['--help'], include_paths=False)}")
-    print()
-    print(f"Guide: {QUICK_START_GUIDE_URL}")
-    print()
+    print(f"For <steam_target>, use a {STEAM_TARGET_FORMS}.\n")
+    _wizard_print_command("Quickest start (already configured):", render_command(["<steam_target>"], include_paths=False))
+    setup_suffix = "   (or just answer Y below)" if terminal_is_interactive else ""
+    _wizard_print_command("Easiest start (guided setup wizard):", render_command(["--setup"], include_paths=False), setup_suffix)
+    _wizard_print_command("Check setup before monitoring:", render_command(["--doctor", "<steam_target>"], include_paths=False))
+    print(f"Full options: {colorize('section', render_command(['--help'], include_paths=False))}")
+    print(f"\nGuide:        {QUICK_START_GUIDE_URL}\n")
     if terminal_is_interactive and _wizard_ask_yes_no("Run the guided setup wizard now?", default=True, input_func=input_func):
         print()
         return run_setup_wizard()
@@ -3345,7 +3349,7 @@ def print_welcome_screen(input_func=None, interactive=None):
 
 # One startup summary setting, routed independently to the concise view, the verbose view and the log file
 StartupSummaryRow = namedtuple("StartupSummaryRow", ["label", "value", "concise", "full", "log"])
-StartupSummaryRow.__new__.__defaults__ = (True, True, True)
+StartupSummaryRow.__new__.__defaults__ = (False, True, True)
 
 
 # Returns the width a summary value may occupy, resolving the Auto setting against the real terminal
@@ -3385,9 +3389,11 @@ def emit_startup_summary(rows, show_full=False, printer=None):
         width = startup_summary_value_width()
         if width:
             write(f"{prefix}{truncate_summary_value(row.value, width)}")
-            continue
-        # Unbounded values wrap into the value column rather than running off the edge of the terminal
-        write(textwrap.fill(str(row.value), width=100, initial_indent=prefix, subsequent_indent=" " * len(prefix), break_long_words=False, break_on_hyphens=False))
+        elif row.label in ("Notifications (email)", "Notifications (webhook)"):
+            # Only the rollups grow long enough to need wrapping into the value column
+            write(textwrap.fill(str(row.value), width=100, initial_indent=prefix, subsequent_indent=" " * len(prefix), break_long_words=False, break_on_hyphens=False))
+        else:
+            write(f"{prefix}{row.value}")
 
 
 # Builds every startup summary row, deciding per row whether it belongs in the concise view, the full view and the log
@@ -3395,27 +3401,32 @@ def build_startup_summary(config_path=None, env_path=None, log_path=None):
     startup_secret_sources = secret_sources(env_path)
     dotenv_supplied = sorted(name for name, source in startup_secret_sources.items() if source != "environment")
     environment_supplied = sorted(name for name, source in startup_secret_sources.items() if source == "environment")
+    logging_enabled = bool(log_path) and not DISABLE_LOGGING
+    output_state = str(log_path) if logging_enabled else "Terminal only (logging disabled)"
     rows = [
-        StartupSummaryRow("Steam polling intervals", f"[offline: {display_time(STEAM_CHECK_INTERVAL)}] [online: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]"),
-        StartupSummaryRow("Notifications (email)", _startup_notification_state(_startup_email_notification_categories())),
-        StartupSummaryRow("Notifications (webhook)", _startup_notification_state(_startup_webhook_notification_categories())),
-        StartupSummaryRow("Liveness check", f"{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else "")),
-        StartupSummaryRow("Level/XP tracking enabled", str(STEAM_LEVEL_XP_CHECK)),
-        StartupSummaryRow("Friends tracking enabled", str(FRIENDS_CHECK)),
-        StartupSummaryRow("Games tracking enabled", str(GAMES_LIBRARY_CHECK)),
-        StartupSummaryRow("CSV logging enabled", f"{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else "")),
-        StartupSummaryRow("Profile CSV logging enabled", f"{bool(PROFILE_CSV_FILE)}" + (f" ({PROFILE_CSV_FILE})" if PROFILE_CSV_FILE else "")),
-        StartupSummaryRow("Output logging enabled", f"{not DISABLE_LOGGING}" + (f" ({log_path})" if not DISABLE_LOGGING and log_path else "")),
-        # Only interesting when troubleshooting how a log file renders elsewhere
-        StartupSummaryRow("ASCII log separators", f"{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})", concise=False),
-        StartupSummaryRow("Configuration file", str(config_path)),
-        StartupSummaryRow("Dotenv file", str(env_path or "None")),
-        StartupSummaryRow("Install method", install_method_display_name(), concise=False),
-        StartupSummaryRow("Secrets from dotenv file", ", ".join(dotenv_supplied) if dotenv_supplied else "None", concise=False),
-        StartupSummaryRow("Secrets from environment", ", ".join(environment_supplied) if environment_supplied else "None", concise=False),
-        StartupSummaryRow("Diagnostics", f"[verbose: {VERBOSE_MODE}] [debug: {DEBUG_MODE}]", concise=False),
-        # Points at the two modes for a reader who does not know they exist, so it is dropped once one of them is on
-        StartupSummaryRow("More details", "use --verbose or --debug", concise=True, full=False),
+        StartupSummaryRow("Polling intervals", f"[offline: {display_time(STEAM_CHECK_INTERVAL)}] [online: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]", concise=True),
+        StartupSummaryRow("Notifications (email)", _startup_notification_state(_startup_email_notification_categories()), concise=True),
+        StartupSummaryRow("Notifications (webhook)", _startup_notification_state(_startup_webhook_notification_categories()), concise=True),
+        StartupSummaryRow("Output", output_state, concise=True, full=False, log=False),
+        StartupSummaryRow("Output logging", str(log_path) if logging_enabled else "Disabled"),
+        StartupSummaryRow("ASCII log separators", f"{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})"),
+        StartupSummaryRow("Config", str(config_path) if config_path else "None", concise=True),
+        StartupSummaryRow("Dotenv", str(env_path) if env_path else "None", concise=True),
+        StartupSummaryRow("Install method", install_method_display_name()),
+        StartupSummaryRow("Secrets from dotenv", ", ".join(dotenv_supplied) if dotenv_supplied else "None"),
+        StartupSummaryRow("Secrets from environment", ", ".join(environment_supplied) if environment_supplied else "None"),
+        # Each tracked feature earns a concise row only when it is actually switched on
+        StartupSummaryRow("Level/XP tracking", str(STEAM_LEVEL_XP_CHECK), concise=bool(STEAM_LEVEL_XP_CHECK)),
+        StartupSummaryRow("Friends tracking", str(FRIENDS_CHECK), concise=bool(FRIENDS_CHECK)),
+        StartupSummaryRow("Games tracking", str(GAMES_LIBRARY_CHECK), concise=bool(GAMES_LIBRARY_CHECK)),
+        StartupSummaryRow("Liveness output", display_time(LIVENESS_CHECK_INTERVAL) if LIVENESS_CHECK_INTERVAL else "Disabled", concise=bool(LIVENESS_CHECK_INTERVAL)),
+        StartupSummaryRow("CSV output", CSV_FILE or "Disabled", concise=bool(CSV_FILE)),
+        StartupSummaryRow("Profile CSV output", PROFILE_CSV_FILE or "Disabled", concise=bool(PROFILE_CSV_FILE)),
+        StartupSummaryRow("Terminal truncation", f"{TRUNCATE_CHARS} chars" if TRUNCATE_CHARS else "Disabled", concise=bool(TRUNCATE_CHARS)),
+        StartupSummaryRow("Verbose mode", str(VERBOSE_MODE), concise=bool(VERBOSE_MODE)),
+        StartupSummaryRow("Debug mode", str(DEBUG_MODE), concise=bool(DEBUG_MODE)),
+        # Points at the two modes for a reader who does not know they exist, so the full view drops it
+        StartupSummaryRow("More details", "use --verbose or --debug", concise=True, full=False, log=False),
     ]
     return rows
 
