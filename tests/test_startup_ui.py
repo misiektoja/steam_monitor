@@ -10,6 +10,38 @@ import steam_monitor as monitor
 SOURCE = (Path(__file__).resolve().parents[1] / "steam_monitor.py").read_text(encoding="utf-8")
 
 
+# Verifies the selected Steam banner remains exact and version independent
+def test_selected_banner_exact_content():
+    assert monitor.STARTUP_BANNER == r"""
+ .---------------.     ____  _
+|         .--.   |   / ___|| |_ ___  __ _ _ __ ___
+|    O===|  O |  |   \___ \| __/ _ \/ _` | '_ ` _ \
+|   /     '--'   |    ___) | ||  __/ (_| | | | | | |
+|  O             |   |____/ \__\___|\__,_|_| |_| |_|
+ '---------------'
+                     __  __             _ _
+                    |  \/  | ___  _ __ (_) |_ ___  _ __
+                    | |\/| |/ _ \| '_ \| | __/ _ \| '__|
+                    | |  | | (_) | | | | | || (_) | |
+                    |_|  |_|\___/|_| |_|_|\__\___/|_|"""
+
+
+# Verifies the art is portable, bounded and free of trailing whitespace
+def test_banner_ascii_width_and_whitespace():
+    monitor.STARTUP_BANNER.encode("ascii")
+    lines = monitor.STARTUP_BANNER.splitlines()
+    assert max(map(len, lines)) <= 90
+    assert all(line == line.rstrip() for line in lines)
+
+
+# Verifies the printed version stays dynamic and followed by one blank line
+def test_banner_dynamic_version_line(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "VERSION", "9.9-test")
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", False)
+    monitor.print_startup_banner()
+    assert capsys.readouterr().out == monitor.STARTUP_BANNER + "\n" + (" " * 21) + "v9.9-test\n\n"
+
+
 @pytest.fixture
 # Restores every module-level setting the summary reads
 def summary_globals(monkeypatch):

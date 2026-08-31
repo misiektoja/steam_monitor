@@ -481,6 +481,19 @@ EXPORTED_SECRET_KEYS = frozenset()
 # to solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
 nl_ch = "\n"
 
+STARTUP_BANNER = r"""
+ .---------------.     ____  _
+|         .--.   |   / ___|| |_ ___  __ _ _ __ ___
+|    O===|  O |  |   \___ \| __/ _ \/ _` | '_ ` _ \
+|   /     '--'   |    ___) | ||  __/ (_| | | | | | |
+|  O             |   |____/ \__\___|\__,_|_| |_| |_|
+ '---------------'
+                     __  __             _ _
+                    |  \/  | ___  _ __ (_) |_ ___  _ __
+                    | |\/| |/ _ \| '_ \| | __/ _ \| '__|
+                    | |  | | (_) | | | | | || (_) | |
+                    |_|  |_|\___/|_| |_|_|\__\___/|_|"""
+
 
 import sys
 
@@ -1383,6 +1396,12 @@ def clear_screen(enabled=True):
             os.system('clear')
     except Exception:
         print("* Cannot clear the screen contents")
+
+
+# Prints the ASCII startup banner with a separately aligned version
+def print_startup_banner():
+    print("\n".join(colorize("header", line) if line else line for line in STARTUP_BANNER.splitlines()))
+    print(colorize("info", f"{'':21}v{VERSION}") + "\n")
 
 
 # Converts absolute value of seconds to human readable format
@@ -5420,7 +5439,7 @@ def main():
 
     clear_screen(CLEAR_SCREEN)
 
-    print(colorize("header", f"Steam Monitoring Tool v{VERSION}\n"))
+    print_startup_banner()
 
     parser = argparse.ArgumentParser(
         prog="steam_monitor",
