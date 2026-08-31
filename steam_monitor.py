@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.9.2
+v2.0
 
 Tool implementing real-time tracking of Steam players activities:
 https://github.com/misiektoja/steam_monitor/
@@ -16,7 +16,7 @@ Pillow (optional, needed only when NTFY_IMAGES attaches artwork to ntfy alerts)
 colorama (optional, for better colours on Windows terminals)
 """
 
-VERSION = "1.9.2"
+VERSION = "2.0"
 
 # ---------------------------
 # CONFIGURATION SECTION START
