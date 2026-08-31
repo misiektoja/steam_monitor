@@ -12,7 +12,7 @@ steam_monitor --setup
 
 It asks for the profile to monitor, how often to check, your Steam Web API key and whether you want email or webhook alerts. **Nothing is written until you choose Save**: the answers are held until the end, where a summary shows exactly what is about to be written and lets you go back and change **one section without losing the other answers**.
 
-Answers are accepted in the formats people actually paste. The profile takes a **Steam64 ID, a Steam3 identifier, a vanity name, or a full profile URL**, and is normalized to one canonical Steam64 ID. Intervals take **`30s`, `2m`, `1.5h`, `1h 30m`, `1d`** or a plain number of seconds, and the normalized value is echoed back.
+Answers are accepted in the formats people actually paste. The profile takes a **Steam64 ID, a Steam3 identifier, a vanity name or a full profile URL**, and is normalized to one canonical Steam64 ID. During fresh setup, a vanity name is resolved after the API key step. Intervals take **`30s`, `2m`, `1.5h`, `1h 30m`, `1d`** or a plain number of seconds, and the normalized value is echoed back.
 
 Secrets are typed at a hidden prompt and go to the dotenv file. Non-secret settings go to the config file. Existing files are backed up before being replaced. When it finishes, setup offers to run [`--doctor`](troubleshooting.md#doctor-preflight) and prints the exact commands to start monitoring.
 
@@ -28,17 +28,17 @@ If you would rather configure it by hand, first save your [Steam Web API key](#s
 steam_monitor --set-steam-api-key
 ```
 
-Then track the `steam_user_id` gaming activities:
+Then pass the profile as `steam_target` to start monitoring:
 
 ```sh
-steam_monitor <steam_user_id>
+steam_monitor <steam_target>
 ```
 
 Or if you installed [manually](installation.md#manual-installation):
 
 ```sh
 python3 steam_monitor.py --set-steam-api-key
-python3 steam_monitor.py <steam_user_id>
+python3 steam_monitor.py <steam_target>
 ```
 
 To get the list of all supported command-line arguments / flags:

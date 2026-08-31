@@ -4,13 +4,13 @@ The tool has two modes. **Monitoring mode** watches a profile continuously and s
 
 ## Detailed User Information Display Mode
 
-To display comprehensive Steam profile information for a user without starting monitoring, type the player's Steam64 ID (`steam_user_id` in the example below) and use the `-i` / `--info` flag:
+To display comprehensive Steam profile information for a user without starting monitoring, pass a Steam64 ID, Steam3 identifier, vanity name or full profile URL as `steam_target` and use the `-i` / `--info` flag:
 
 ```sh
-steam_monitor <steam_user_id> -i
+steam_monitor <steam_target> -i
 ```
 
-Or with a Steam community URL:
+For compatibility with existing scripts, `-r` / `--resolve-community-url` still resolves a Steam community URL:
 
 ```sh
 steam_monitor -r "https://steamcommunity.com/id/steam_username/" -i
@@ -19,7 +19,7 @@ steam_monitor -r "https://steamcommunity.com/id/steam_username/" -i
 If you have not set `STEAM_API_KEY` secret, you can use `-u` flag:
 
 ```sh
-steam_monitor <steam_user_id> -i -u "your_steam_web_api_key"
+steam_monitor <steam_target> -i -u "your_steam_web_api_key"
 # or
 steam_monitor -r "https://steamcommunity.com/id/steam_username/" -i -u "your_steam_web_api_key"
 ```
@@ -40,7 +40,7 @@ This mode displays detailed information including:
 Optionally, you can also display the **persona (display) name history** using the `--name-history` flag:
 
 ```sh
-steam_monitor <steam_user_id> -i --name-history
+steam_monitor <steam_target> -i --name-history
 ```
 
 This lists the user's previous display names with the date each one was changed, as reported by Steam.
@@ -48,9 +48,9 @@ This lists the user's previous display names with the date each one was changed,
 Optionally, you can also display **recently earned achievements** using the `--achievements` flag:
 
 ```sh
-steam_monitor <steam_user_id> -i --achievements                    # show recent achievements (default: 10)
-steam_monitor <steam_user_id> -i --achievements -n 20              # show up to 20 recent achievements
-steam_monitor <steam_user_id> -i --achievements --achievements-all-games  # check all owned games instead of only recently played
+steam_monitor <steam_target> -i --achievements                    # show recent achievements (default: 10)
+steam_monitor <steam_target> -i --achievements -n 20              # show up to 20 recent achievements
+steam_monitor <steam_target> -i --achievements --achievements-all-games  # check all owned games instead of only recently played
 ```
 
 Recent achievements show game name, achievement name, description (if available) and earn time.
@@ -67,19 +67,19 @@ The tool displays this information and then exits (does not start monitoring).
 
 ## Monitoring Mode
 
-To monitor specific user activity, just type the player's Steam64 ID (`steam_user_id` in the example below):
+To monitor specific user activity, pass a Steam64 ID, Steam3 identifier, vanity name or full profile URL:
 
 ```sh
-steam_monitor <steam_user_id>
+steam_monitor <steam_target>
 ```
 
 If you have not set `STEAM_API_KEY` secret, you can use `-u` flag:
 
 ```sh
-steam_monitor <steam_user_id> -u "your_steam_web_api_key"
+steam_monitor <steam_target> -u "your_steam_web_api_key"
 ```
 
-If you do not know the user's Steam64 ID, but you know the Steam profile/community URL (which can be customized by the user), you can also run the tool with `-r` flag which will automatically resolve it to Steam64 ID:
+The legacy `-r` flag remains supported for commands that explicitly resolve a community URL:
 
 ```sh
 steam_monitor -r "https://steamcommunity.com/id/steam_username/"
@@ -95,7 +95,7 @@ By default, the tool looks for a configuration file named `steam_monitor.conf` i
  If you generated a configuration file as described in [Configuration](configuration.md), but saved it under a different name or in a different directory, you can specify its location using the `--config-file` flag:
 
 ```sh
-steam_monitor <steam_user_id> --config-file /path/steam_monitor_new.conf
+steam_monitor <steam_target> --config-file /path/steam_monitor_new.conf
 ```
 
 The tool runs until interrupted (`Ctrl+C`). Use `tmux` or `screen` for persistence.
@@ -129,7 +129,7 @@ To enable email notifications when a user gets online or offline:
 - or use the `-a` flag
 
 ```sh
-steam_monitor <steam_user_id> -a
+steam_monitor <steam_target> -a
 ```
 
 To be informed when a user starts, stops or changes the played game:
@@ -137,7 +137,7 @@ To be informed when a user starts, stops or changes the played game:
 - or use the `-g` flag
 
 ```sh
-steam_monitor <steam_user_id> -g
+steam_monitor <steam_target> -g
 ```
 
 To get email notifications about any changes in user status (online/away/snooze/offline):
@@ -145,7 +145,7 @@ To get email notifications about any changes in user status (online/away/snooze/
 - or use the `-s` flag
 
 ```sh
-steam_monitor <steam_user_id> -s
+steam_monitor <steam_target> -s
 ```
 
 To get email notifications when the user's **display (persona) name** changes:
@@ -155,7 +155,7 @@ To get email notifications when the user's **display (persona) name** changes:
 Display name changes are always detected and logged to the console, log file and profile CSV. This flag only controls whether an email is also sent.
 
 ```sh
-steam_monitor <steam_user_id> --notify-name-change
+steam_monitor <steam_target> --notify-name-change
 ```
 
 To get email notifications when the user's **Steam level and total XP** changes:
@@ -165,7 +165,7 @@ To get email notifications when the user's **Steam level and total XP** changes:
 It requires Steam level and total XP tracking (`STEAM_LEVEL_XP_CHECK` / `--check-level-xp`) to be enabled.
 
 ```sh
-steam_monitor <steam_user_id> --check-level-xp --notify-level-xp
+steam_monitor <steam_target> --check-level-xp --notify-level-xp
 ```
 
 To get email notifications when the user's **friends list** changes:
@@ -175,7 +175,7 @@ To get email notifications when the user's **friends list** changes:
 It requires friends tracking (`FRIENDS_CHECK` / `--check-friends`) to be enabled.
 
 ```sh
-steam_monitor <steam_user_id> --check-friends --notify-friends
+steam_monitor <steam_target> --check-friends --notify-friends
 ```
 
 To get email notifications when the user's **games library** changes:
@@ -185,7 +185,7 @@ To get email notifications when the user's **games library** changes:
 It requires games library tracking (`GAMES_LIBRARY_CHECK` / `--check-games`) to be enabled.
 
 ```sh
-steam_monitor <steam_user_id> --check-games --notify-games
+steam_monitor <steam_target> --check-games --notify-games
 ```
 
 To disable sending an email on errors (enabled by default):
@@ -193,7 +193,7 @@ To disable sending an email on errors (enabled by default):
 - or use the `-e` flag
 
 ```sh
-steam_monitor <steam_user_id> -e
+steam_monitor <steam_target> -e
 ```
 
 Make sure you have configured your [SMTP settings](configuration.md#smtp-settings) first.
@@ -225,8 +225,8 @@ Use `--webhook` or `--no-webhook` to override the master switch for one run. Eve
 For example:
 
 ```sh
-steam_monitor <steam_user_id> --webhook-active --webhook-inactive --webhook-game-changes
-steam_monitor <steam_user_id> --check-friends --webhook-friends
+steam_monitor <steam_target> --webhook-active --webhook-inactive --webhook-game-changes
+steam_monitor <steam_target> --check-friends --webhook-friends
 ```
 
 Known Discord and `ntfy.sh` URLs automatically select the matching request format even if the configured provider is stale. Set `WEBHOOK_PROVIDER` in `steam_monitor.conf` or use `--webhook-provider {discord,ntfy}` for self-hosted ntfy or compatible endpoints. For automation or one-time tests, `--webhook-url URL` overrides the destination without changing `.env`:
@@ -242,7 +242,7 @@ A URL passed on the command line may remain visible in shell history or process 
 If you want to save all reported activities of the Steam user to a CSV file, set `CSV_FILE` or use `-b` flag:
 
 ```sh
-steam_monitor <steam_user_id> -b steam_user_id.csv
+steam_monitor <steam_target> -b steam_user_id.csv
 ```
 
 The file will be automatically created if it does not exist.
@@ -250,7 +250,7 @@ The file will be automatically created if it does not exist.
 If you want to save **profile-related changes** (Steam level changes, total XP changes, display name changes, friends count changes, games library changes and individual added/removed friends) to a **separate CSV file**, set `PROFILE_CSV_FILE` or use the `--profile-csv-file` flag:
 
 ```sh
-steam_monitor <steam_user_id> --profile-csv-file steam_user_id_profile.csv
+steam_monitor <steam_target> --profile-csv-file steam_user_id_profile.csv
 ```
 
 Each row contains a timestamp, event type and associated values (for example: old/new Steam level or XP, friends count delta or one friend per row for added/removed friends, when available).
@@ -276,7 +276,7 @@ List of supported signals:
 Send signals with `kill` or `pkill`, e.g.:
 
 ```sh
-pkill -USR1 -f "steam_monitor <steam_user_id>"
+pkill -USR1 -f "steam_monitor <steam_target>"
 ```
 
 As Windows supports limited number of signals, this functionality is available only on Linux/Unix/macOS.

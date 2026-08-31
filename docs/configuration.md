@@ -119,13 +119,13 @@ By default the tool will auto-search for dotenv file named `.env` in current dir
 You can specify a custom file with `DOTENV_FILE` or `--env-file` flag:
 
 ```sh
-steam_monitor <steam_user_id> --env-file /path/.env-steam_monitor
+steam_monitor <steam_target> --env-file /path/.env-steam_monitor
 ```
 
  You can also disable `.env` auto-search with `DOTENV_FILE = "none"` or `--env-file none`:
 
 ```sh
-steam_monitor <steam_user_id> --env-file none
+steam_monitor <steam_target> --env-file none
 ```
 
 As a fallback, you can also store secrets in the configuration file or source code.
@@ -135,7 +135,7 @@ As a fallback, you can also store secrets in the configuration file or source co
 If you want to customize polling intervals, use `-k` and `-c` flags (or corresponding configuration options):
 
 ```sh
-steam_monitor <steam_user_id> -k 30 -c 120
+steam_monitor <steam_target> -k 30 -c 120
 ```
 
 * `STEAM_ACTIVE_CHECK_INTERVAL`, `-k`: check interval when the user is online, away or snooze (seconds)

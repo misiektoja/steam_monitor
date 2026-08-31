@@ -510,6 +510,7 @@ from typing import Any, Dict  # noqa: F401
 import platform
 from platform import system
 import importlib.util
+import math
 import re
 import shlex
 from collections import namedtuple
@@ -539,6 +540,7 @@ WEBHOOK_SESSION = req.Session()
 WEBHOOK_MAX_ATTEMPTS = 2
 WEBHOOK_MAX_RETRY_AFTER_SECONDS = 5.0
 WEBHOOK_FALLBACK_RETRY_SECONDS = 1.0
+STEAM_MAX_RETRY_AFTER_SECONDS = 3600.0
 WEBHOOK_TIMEOUT_SECONDS = 10
 WEBHOOK_EMBED_TITLE_LIMIT = 256
 WEBHOOK_EMBED_DESCRIPTION_LIMIT = 4096
@@ -1346,6 +1348,18 @@ def normalize_steam_target(value):
     raise ValueError(STEAM_TARGET_INPUT_ERROR)
 
 
+# Resolves any accepted Steam target form to one canonical Steam64 ID
+def resolve_steam_target(value, api_key):
+    steam64, vanity = normalize_steam_target(value)
+    if steam64 is not None:
+        return steam64
+    original = str(value).strip()
+    if original.casefold().startswith(("steamcommunity.com/", "www.steamcommunity.com/")):
+        original = "https://" + original
+    community_url = original if original.casefold().startswith(("http://", "https://")) else f"https://steamcommunity.com/id/{vanity}/"
+    return resolve_steam_community_url(community_url, api_key)
+
+
 # Clears the terminal screen
 def clear_screen(enabled=True):
     if not enabled:
@@ -2054,7 +2068,7 @@ class DoctorReport:
     # Starts an empty report with no shared Steam state and no channel marked ready for a delivery test
     def __init__(self):
         self.checks = []
-        self.steam_client = None
+        self.steam_client: Any = None
         self.player_summary = None
         self.steam_id = None
         # Structural flags, so offering a delivery test never depends on matching a rendered label
@@ -2088,31 +2102,49 @@ def webhook_event_enabled(notification_type):
     return bool(WEBHOOK_ENABLED and settings.get(notification_type, False))
 
 
+# Parses one numeric or HTTP-date retry value into seconds
+def parse_retry_after_seconds(candidate):
+    if candidate is None or candidate == "":
+        return None
+    try:
+        seconds = float(candidate)
+        return seconds if math.isfinite(seconds) else None
+    except (TypeError, ValueError):
+        try:
+            retry_at = parsedate_to_datetime(str(candidate))
+            seconds = (retry_at - datetime.now(retry_at.tzinfo)).total_seconds()
+            return seconds if math.isfinite(seconds) else None
+        except Exception:
+            return None
+
+
+# Returns the first valid retry delay bounded between zero and a caller-selected maximum
+def bounded_retry_after_seconds(candidates, fallback, maximum):
+    for candidate in candidates:
+        seconds = parse_retry_after_seconds(candidate)
+        if seconds is not None:
+            return max(0.0, min(seconds, maximum))
+    return max(0.0, min(float(fallback), maximum))
+
+
 # Parses a webhook rate-limit delay and caps untrusted server values to a short wait
 def webhook_retry_after_seconds(response):
-    candidates = []
     headers = getattr(response, "headers", {}) or {}
-    if hasattr(headers, "get"):
-        candidates.append(headers.get("Retry-After"))
+    candidates = [headers.get("Retry-After")] if hasattr(headers, "get") else []
     try:
         payload = response.json()
     except Exception:
         payload = None
     if isinstance(payload, dict):
         candidates.append(payload.get("retry_after"))
-    for candidate in candidates:
-        if candidate is None or candidate == "":
-            continue
-        try:
-            seconds = float(candidate)
-        except (TypeError, ValueError):
-            try:
-                retry_at = parsedate_to_datetime(str(candidate))
-                seconds = (retry_at - datetime.now(retry_at.tzinfo)).total_seconds()
-            except Exception:
-                continue
-        return max(0.0, min(seconds, WEBHOOK_MAX_RETRY_AFTER_SECONDS))
-    return WEBHOOK_FALLBACK_RETRY_SECONDS
+    return bounded_retry_after_seconds(candidates, WEBHOOK_FALLBACK_RETRY_SECONDS, WEBHOOK_MAX_RETRY_AFTER_SECONDS)
+
+
+# Parses a Steam rate-limit delay and caps untrusted server values to one hour
+def steam_retry_after_seconds(response, fallback):
+    headers = getattr(response, "headers", {}) or {}
+    candidate = headers.get("Retry-After") if hasattr(headers, "get") else None
+    return max(1, int(round(bounded_retry_after_seconds([candidate], fallback, STEAM_MAX_RETRY_AFTER_SECONDS))))
 
 
 # Applies configured placeholders recursively to a webhook template
@@ -2579,8 +2611,11 @@ def doctor_check_configuration(config_path=None, env_path=None):
         checks.append(make_doctor_check("Configuration", "PASS", "Configuration file loaded", f"Path: {config_path}"))
     else:
         checks.append(make_doctor_check("Configuration", "PASS", "No configuration file selected", "Using built-in defaults and command-line overrides"))
-    if env_path:
+    if env_path and os.path.isfile(str(env_path)):
         checks.append(make_doctor_check("Configuration", "PASS", "Dotenv file loaded", f"Path: {env_path}"))
+    elif env_path:
+        advice = make_recovery_advice("config.missing", "The selected dotenv file does not exist", recovery_fix_with_guide("Create the file or select an existing path with --env-file", SECRETS_GUIDE_URL), False, f"Path: {env_path}")
+        checks.append(make_doctor_check("Configuration", "WARN", advice.summary, advice.detail, advice))
     else:
         checks.append(make_doctor_check("Configuration", "PASS", "No dotenv file loaded", "Secrets can still come from environment variables or the configuration file"))
     checks.extend(doctor_secret_checks(env_path))
@@ -2620,22 +2655,23 @@ def doctor_check_authentication(report):
 # Confirms the monitored profile exists and is visible, reusing the client the authentication check opened
 def doctor_check_target(report, target_value=None):
     if not target_value:
-        advice = make_recovery_advice("target.invalid", "No Steam64 ID is configured", recovery_fix_with_guide("Pass a Steam64 ID, or a profile URL with -r", USAGE_GUIDE_URL), False)
+        advice = make_recovery_advice("target.invalid", "No Steam profile is configured", recovery_fix_with_guide("Pass a Steam64 ID, Steam3 identifier, vanity name or profile URL", USAGE_GUIDE_URL), False)
         return [make_doctor_check("Target", "WARN", advice.summary, "Nothing will be monitored until one is given", advice)]
     if report.steam_client is None:
         return [make_doctor_check("Target", "SKIP", "The monitored profile was not checked", "The Steam Web API key did not validate, so no lookup was attempted")]
     try:
-        summary = report.steam_client.call("ISteamUser.GetPlayerSummaries", steamids=str(target_value))
+        steam_id = resolve_steam_target(target_value, STEAM_API_KEY)
+        summary = report.steam_client.call("ISteamUser.GetPlayerSummaries", steamids=str(steam_id))
         players = summary["response"]["players"]
     except Exception as exc:
         advice = classify_recovery_error(exc, context="target")
         return [make_doctor_check("Target", "FAIL", advice.summary, advice.detail, advice)]
     if not players:
-        advice = classify_recovery_error(context="target", detail=f"Steam returned no profile for Steam64 ID {target_value}")
+        advice = classify_recovery_error(context="target", detail=f"Steam returned no profile for Steam64 ID {steam_id}")
         return [make_doctor_check("Target", "FAIL", advice.summary, advice.detail, advice)]
     report.player_summary = players[0]
-    report.steam_id = target_value
-    checks = [make_doctor_check("Target", "PASS", "The monitored profile exists", f"Display name: {sanitize_untrusted_text(players[0].get('personaname'))} (Steam64 ID {target_value})")]
+    report.steam_id = steam_id
+    checks = [make_doctor_check("Target", "PASS", "The monitored profile exists", f"Display name: {sanitize_untrusted_text(players[0].get('personaname'))} (Steam64 ID {steam_id})")]
     visibility = int(players[0].get("communityvisibilitystate", 1))
     if visibility >= 3:
         checks.append(make_doctor_check("Target", "PASS", "The monitored profile is publicly visible", "Status and game details can be read"))
@@ -2943,6 +2979,7 @@ class WizardSetupState:
         self.config_values = dict(baseline_values)
         self.secret_updates = {}
         self.target = ""
+        self.pending_vanity = ""
         self.persist_target = True
 
 
@@ -2970,7 +3007,8 @@ def _wizard_reset_section(state, config_keys, secret_keys):
 # Asks for the monitored profile, accepting every form people paste and storing one canonical Steam64 ID
 def _wizard_collect_target_section(state, initial_target=None, input_func=None):
     print(colorize("section", "Target"))
-    print("Accepts a Steam64 ID, a vanity name, or a full profile URL.")
+    print("Accepts a Steam64 ID, Steam3 identifier, vanity name or full profile URL.")
+    state.pending_vanity = ""
     while True:
         answer = _wizard_ask_text("Steam profile to monitor", default=str(initial_target or state.target or ""), required=True, input_func=input_func)
         try:
@@ -2993,8 +3031,29 @@ def _wizard_collect_target_section(state, initial_target=None, input_func=None):
             state.target = str(resolved)
             print(f"  Resolved '{vanity}' to Steam64 ID {resolved}.")
             return
-        print(f"  '{vanity}' needs a Steam Web API key to resolve, which is set up in a later step.")
-        print("  Enter the Steam64 ID instead, or open the profile and copy the number from its URL.")
+        state.pending_vanity = vanity
+        print(f"  '{vanity}' will be resolved after the Steam Web API key is set up.")
+        return
+
+
+# Resolves a vanity target after authentication or asks for another target when resolution is unavailable
+def _wizard_resolve_pending_target(state, input_func=None):
+    while state.pending_vanity:
+        vanity = state.pending_vanity
+        api_key = state.secret_updates.get("STEAM_API_KEY") or state.config_values.get("STEAM_API_KEY")
+        if doctor_value_is_set(api_key):
+            try:
+                resolved = resolve_steam_community_url(f"https://steamcommunity.com/id/{vanity}/", api_key)
+                state.target = str(resolved)
+                state.pending_vanity = ""
+                print(f"  Resolved '{vanity}' to Steam64 ID {resolved}.")
+                return
+            except ValueError as exc:
+                print(f"  Could not resolve '{vanity}': {exc}")
+        else:
+            print(f"  '{vanity}' cannot be resolved without a Steam Web API key.")
+        print("  Enter another supported profile value.")
+        _wizard_collect_target_section(state, input_func=input_func)
 
 
 # Asks how often the tool checks, in whichever duration format the user prefers
@@ -3093,6 +3152,8 @@ def _wizard_edit_setup_section(state, input_func=None, getpass_func=None):
         "Webhook": lambda: _wizard_collect_webhook_section(state, input_func=input_func, getpass_func=getpass_func),
     }
     collectors[name]()
+    if name in ("Target", "Authentication"):
+        _wizard_resolve_pending_target(state, input_func=input_func)
 
 
 # Shows everything that is about to be written, by name and never by secret value
@@ -3198,6 +3259,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
         _wizard_collect_polling_section(state, input_func=input_func)
         print()
         _wizard_collect_auth_section(state, input_func=input_func, getpass_func=getpass_func)
+        _wizard_resolve_pending_target(state, input_func=input_func)
         print()
         _wizard_collect_email_section(state, input_func=input_func, getpass_func=getpass_func)
         print()
@@ -3265,11 +3327,11 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
 # Prints the four commands a newcomer needs next, instead of an argparse usage error
 def print_welcome_screen(input_func=None, interactive=None):
     terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
-    print("For <steam_user_id>, use a Steam64 ID, a vanity name or a full profile URL.")
+    print("For <steam_target>, use a Steam64 ID, Steam3 identifier, vanity name or full profile URL.")
     print()
-    print(f"  Quickest start (already configured):  {render_command(['<steam_user_id>'], include_paths=False)}")
+    print(f"  Quickest start (already configured):  {render_command(['<steam_target>'], include_paths=False)}")
     print(f"  Easiest start (guided setup wizard):  {render_command(['--setup'], include_paths=False)}" + ("   (or just answer Y below)" if terminal_is_interactive else ""))
-    print(f"  Check setup before monitoring:        {render_command(['--doctor', '<steam_user_id>'], include_paths=False)}")
+    print(f"  Check setup before monitoring:        {render_command(['--doctor', '<steam_target>'], include_paths=False)}")
     print(f"  Full options:                         {render_command(['--help'], include_paths=False)}")
     print()
     print(f"Guide: {QUICK_START_GUIDE_URL}")
@@ -3360,8 +3422,8 @@ def help_examples():
     groups = (
         ("Getting started", (
             ("Answer a few questions and write a configuration", ["--setup"]),
-            ("Check the setup before relying on it", ["--doctor", "<steam_user_id>"]),
-            ("Start monitoring", ["<steam_user_id>"]),
+            ("Check the setup before relying on it", ["--doctor", "<steam_target>"]),
+            ("Start monitoring", ["<steam_target>"]),
         )),
         ("Configuration and secrets", (
             ("Write a configuration template to edit by hand", ["--generate-config", "steam_monitor.conf"]),
@@ -3369,14 +3431,14 @@ def help_examples():
             ("Save a Discord or ntfy webhook URL through a hidden prompt", ["--set-webhook-url"]),
         )),
         ("Notifications", (
-            ("Email when the user goes online or offline, and on game changes", ["<steam_user_id>", "-a", "-g"]),
+            ("Email when the user goes online or offline, and on game changes", ["<steam_target>", "-a", "-g"]),
             ("Send one test email", ["--send-test-email"]),
             ("Send one test webhook", ["--send-test-webhook"]),
         )),
         ("Information and diagnostics", (
-            ("Show detailed profile information and exit", ["-i", "<steam_user_id>"]),
+            ("Show detailed profile information and exit", ["-i", "<steam_target>"]),
             ("Resolve a profile URL to a Steam64 ID", ["-r", "https://steamcommunity.com/id/<name>/"]),
-            ("Trace what the tool is doing", ["<steam_user_id>", "--debug"]),
+            ("Trace what the tool is doing", ["<steam_target>", "--debug"]),
         )),
     )
     lines = ["Examples:"]
@@ -4541,7 +4603,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 error_delivery_code = advice.code
             if advice.code == "steam.rate_limited":
                 # Rate limits carry their own wait, so they skip the retry path rather than burning an attempt
-                retry_after = int(response.headers.get('Retry-After') or sleep_interval) if response is not None else sleep_interval
+                retry_after = steam_retry_after_seconds(response, sleep_interval) if response is not None else sleep_interval
                 print_monitor_recovery(e, "runtime", recovery_hint_tracker, "* ")
                 print_verbose(f"Waiting {display_time(retry_after)} before retrying")
                 print_cur_ts("Timestamp:\t\t\t")
@@ -5151,9 +5213,9 @@ def main():
     parser.add_argument(
         "steam64_id",
         nargs="?",
-        metavar="STEAM64_ID",
-        help="User's Steam64 ID",
-        type=int
+        metavar="STEAM_TARGET",
+        help="Steam64 ID, Steam3 identifier, vanity name or profile URL",
+        type=str
     )
 
     # Version, just to list in help, it is handled earlier
@@ -5575,7 +5637,7 @@ def main():
         complex_args = [] if utility_action else [a for a in sys.argv[1:] if a not in utility_flags]
 
         if complex_args or not utility_action:
-            print("\n* Error: STEAM64_ID needs to be defined !\n", flush=True)
+            print("\n* Error: A Steam profile target needs to be defined !\n", flush=True)
 
             parser.print_help(sys.stderr)
             sys.exit(1)
@@ -5635,14 +5697,18 @@ def main():
         for secret, _ in applied_secrets:
             print_debug(f"Loaded {secret} from {secret_source_map.get(secret, 'environment')} ({mask_secret(globals().get(secret))})")
 
+    if args.steam_api_key:
+        STEAM_API_KEY = args.steam_api_key
+
     apply_webhook_cli_overrides(args, parser)
 
     if args.setup:
         # Runs here rather than earlier so the values already in effect become the defaults it offers
-        sys.exit(run_setup_wizard(initial_target=args.steam64_id, config_file=args.config_file or cfg_path, env_file=args.env_file or env_path))
+        setup_target = args.resolve_community_url or args.steam64_id
+        sys.exit(run_setup_wizard(initial_target=setup_target, config_file=args.config_file or cfg_path, env_file=args.env_file or env_path))
 
     if args.doctor:
-        doctor_target = args.steam64_id if args.steam64_id else None
+        doctor_target = args.resolve_community_url or args.steam64_id
         sys.exit(run_doctor(target_value=doctor_target, config_path=cfg_path, env_path=env_path))
 
     if not check_internet():
@@ -5666,9 +5732,6 @@ def main():
             sys.exit(1)
         sys.exit(0)
 
-    if args.steam_api_key:
-        STEAM_API_KEY = args.steam_api_key
-
     if not STEAM_API_KEY or STEAM_API_KEY == "your_steam_web_api_key":
         print_recovery_error(context="set_steam_api_key", detail="No Steam Web API key is configured")
         sys.exit(1)
@@ -5681,20 +5744,19 @@ def main():
         STEAM_ACTIVE_CHECK_INTERVAL = args.active_interval
 
     s_id = 0
-    if args.steam64_id:
-        s_id = int(args.steam64_id)
-
-    if args.resolve_community_url:
-        print(f"* Resolving Steam community URL to Steam64 ID: {args.resolve_community_url}\n")
-        try:
+    try:
+        if args.resolve_community_url:
+            print(f"* Resolving Steam community URL to Steam64 ID: {args.resolve_community_url}\n")
             s_id = resolve_steam_community_url(args.resolve_community_url, STEAM_API_KEY)
-        except ValueError as e:
-            print_recovery_error(e, context="target")
-            sys.exit(1)
+        elif args.steam64_id:
+            s_id = resolve_steam_target(args.steam64_id, STEAM_API_KEY)
+    except ValueError as e:
+        print_recovery_error(e, context="target")
+        sys.exit(1)
 
     if not s_id:
         # Check should have been handled earlier by the utility_flags logic
-        print_recovery_error(context="target", detail="No Steam64 ID or profile URL was given")
+        print_recovery_error(context="target", detail="No Steam profile target was given")
         sys.exit(1)
 
     if args.csv_file:

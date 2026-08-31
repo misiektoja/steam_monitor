@@ -1,6 +1,7 @@
 """Tests that configuration, exported secrets and diagnostic flags reach the code that consumes them."""
 
 from pathlib import Path
+from typing import Optional
 
 import pytest
 
@@ -30,7 +31,7 @@ def write_config(directory, extra=""):
 
 
 # Drives the real command line and returns the diagnostic state observed inside the config loader and the connectivity check
-def run_startup(monkeypatch, argv, config_path, env_path="none", exported_api_key="test-api-key-value"):
+def run_startup(monkeypatch, argv, config_path, env_path="none", exported_api_key="test-api-key-value", target: Optional[str] = "76561197960435530"):
     observed = {}
     real_load_config_file = monitor.load_config_file
 
@@ -50,16 +51,15 @@ def run_startup(monkeypatch, argv, config_path, env_path="none", exported_api_ke
         observed["debug_at_monitoring_start"] = monitor.DEBUG_MODE
         observed["verbose_at_monitoring_start"] = monitor.VERBOSE_MODE
         observed["steam_api_key_at_monitoring_start"] = monitor.STEAM_API_KEY
+        observed["monitored_steam_id"] = _args[0]
         raise SystemExit(0)
 
     monkeypatch.setattr(monitor, "load_config_file", recording_load_config_file)
     monkeypatch.setattr(monitor, "check_internet", recording_check_internet)
     monkeypatch.setattr(monitor, "steam_monitor_user", stop_before_monitoring)
     monkeypatch.setenv("STEAM_API_KEY", exported_api_key)
-    monkeypatch.setattr(
-        "sys.argv",
-        ["steam_monitor.py", "76561197960435530", "--env-file", str(env_path), "--config-file", str(config_path)] + argv,
-    )
+    command = ["steam_monitor.py"] + ([str(target)] if target is not None else []) + ["--env-file", str(env_path), "--config-file", str(config_path)] + argv
+    monkeypatch.setattr("sys.argv", command)
 
     with pytest.raises(SystemExit) as exit_info:
         monitor.main()
@@ -203,3 +203,30 @@ def test_connectivity_check_honors_the_configured_url_and_timeout(tmp_path, monk
 
     assert observed["connectivity_url"] == "https://example.invalid/probe"
     assert observed["connectivity_timeout"] == 9
+
+
+# Verifies positional vanity forms reach the real startup consumer as one canonical Steam64 ID
+@pytest.mark.parametrize("target,expected_url", [
+    ("misiektoja", "https://steamcommunity.com/id/misiektoja/"),
+    ("https://steamcommunity.com/id/name.with.dot/?view=all", "https://steamcommunity.com/id/name.with.dot/?view=all"),
+])
+def test_positional_vanity_forms_are_resolved_before_monitoring(tmp_path, monkeypatch, restored_globals, target, expected_url):
+    config = write_config(tmp_path)
+    resolved = 76561197960435530
+    monkeypatch.setattr(monitor, "resolve_steam_community_url", lambda url, _key: resolved if url == expected_url else pytest.fail("unexpected URL"))
+
+    observed = run_startup(monkeypatch, [], config, target=target)
+
+    assert observed["monitored_steam_id"] == resolved
+
+
+# Verifies the legacy -r URL option still reaches the same monitoring consumer
+def test_legacy_resolve_url_option_remains_supported(tmp_path, monkeypatch, restored_globals):
+    config = write_config(tmp_path)
+    resolved = 76561197960435530
+    profile_url = "https://steamcommunity.com/id/misiektoja/"
+    monkeypatch.setattr(monitor, "resolve_steam_community_url", lambda url, _key: resolved if url == profile_url else pytest.fail("unexpected URL"))
+
+    observed = run_startup(monkeypatch, ["-r", profile_url], config, target=None)
+
+    assert observed["monitored_steam_id"] == resolved

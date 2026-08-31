@@ -107,9 +107,14 @@ def test_a_steam3_identifier_is_accepted():
 
 
 # Verifies a vanity name is handed back for resolution rather than guessed at
-@pytest.mark.parametrize("value", ["misiektoja", "https://steamcommunity.com/id/misiektoja/", "steamcommunity.com/id/misiektoja"])
-def test_a_vanity_name_is_returned_for_resolution(value):
-    assert monitor.normalize_steam_target(value) == (None, "misiektoja")
+@pytest.mark.parametrize("value,expected", [
+    ("misiektoja", "misiektoja"),
+    ("https://steamcommunity.com/id/misiektoja/", "misiektoja"),
+    ("steamcommunity.com/id/misiektoja", "misiektoja"),
+    ("https://steamcommunity.com/id/name.with.dot/", "name.with.dot"),
+])
+def test_a_vanity_name_is_returned_for_resolution(value, expected):
+    assert monitor.normalize_steam_target(value) == (None, expected)
 
 
 # Verifies an unusable target is refused with guidance rather than accepted and failing later
@@ -154,6 +159,15 @@ def test_saving_writes_both_files(tmp_path, monkeypatch, wizard_globals):
     assert values["STEAM_CHECK_INTERVAL"] == 300
     assert values["STEAM_ACTIVE_CHECK_INTERVAL"] == 45
     assert f'STEAM_API_KEY="{API_KEY}"' in env_file.read_text(encoding="utf-8")
+
+
+# Verifies a fresh wizard resolves a vanity target after collecting its Steam Web API key
+def test_fresh_setup_resolves_vanity_after_authentication(tmp_path, monkeypatch, wizard_globals, capsys):
+    monkeypatch.setattr(monitor, "resolve_steam_community_url", lambda _url, key: STEAM64 if key == API_KEY else pytest.fail("wrong API key"))
+
+    assert run_wizard(tmp_path, monkeypatch, minimal_answers(target="misiektoja")) == 0
+
+    assert f"Resolved 'misiektoja' to Steam64 ID {STEAM64}." in capsys.readouterr().out
 
 
 # Verifies the generated configuration survives the tool's own parser, so the next run can read it
@@ -326,8 +340,8 @@ def test_the_welcome_commands_suit_the_install(monkeypatch, capsys):
     monitor.print_welcome_screen(interactive=False)
 
     output = capsys.readouterr().out
-    assert "steam_monitor <steam_user_id>" in output
-    assert "'<steam_user_id>'" not in output
+    assert "steam_monitor <steam_target>" in output
+    assert "'<steam_target>'" not in output
 
 
 # Verifies the wizard is not offered when there is no terminal to answer on

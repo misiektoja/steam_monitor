@@ -155,6 +155,19 @@ def test_secrets_are_attributed_to_their_source(tmp_path, monkeypatch, doctor_gl
     assert f"Path: {env_file}" in labels["Dotenv file loaded"]
 
 
+# Verifies an explicitly selected missing dotenv file is reported as missing rather than loaded
+def test_a_missing_dotenv_file_is_a_warning(tmp_path, doctor_globals):
+    missing = tmp_path / "missing.env"
+
+    checks = monitor.doctor_check_configuration(env_path=str(missing))
+    missing_check = next(check for check in checks if check.label == "The selected dotenv file does not exist")
+
+    assert missing_check.status == "WARN"
+    assert missing_check.advice is not None
+    assert "--env-file" in missing_check.advice.fix
+    assert not any(check.label == "Dotenv file loaded" for check in checks)
+
+
 # Verifies a secret value never reaches the report, only its name
 def test_no_secret_value_reaches_the_report(monkeypatch, doctor_globals):
     monkeypatch.setattr(monitor, "WEBHOOK_URL", SECRET_WEBHOOK_URL)
@@ -270,6 +283,20 @@ def test_the_steam_client_is_opened_once(monkeypatch, doctor_globals):
 
     assert len(opened) == 1
     assert report.player_summary is not None
+
+
+# Verifies doctor accepts a vanity target and checks the resolved Steam64 ID
+def test_doctor_resolves_a_vanity_target(monkeypatch, doctor_globals):
+    resolved = 76561197960435530
+    client = FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 3}])
+    report = monitor.DoctorReport()
+    report.steam_client = client
+    monkeypatch.setattr(monitor, "resolve_steam_community_url", lambda _url, key: resolved if key == SECRET_API_KEY else pytest.fail("wrong API key"))
+
+    checks = monitor.doctor_check_target(report, "misiektoja")
+
+    assert checks[0].status == "PASS"
+    assert report.steam_id == resolved
 
 
 # Verifies a private profile warns rather than passing silently, since nothing can be detected while it is private
@@ -545,6 +572,29 @@ def test_piped_output_has_no_progress_line(monkeypatch, doctor_globals, capsys):
     output = capsys.readouterr().out
     assert "* Checking " not in output
     assert "\r" not in output
+
+
+# Verifies the command-line API key is effective before doctor checks authentication
+def test_doctor_consumes_the_command_line_api_key(monkeypatch, doctor_globals):
+    observed = {}
+    command_line_key = "B" * 32
+    monkeypatch.setattr(monitor, "find_config_file", lambda _path=None: None)
+    monkeypatch.setattr(monitor, "CLEAR_SCREEN", False)
+    monkeypatch.setattr(monitor, "stdout_bck", None)
+    monkeypatch.setattr("sys.argv", ["steam_monitor.py", "--doctor", "--env-file", "none", "-u", command_line_key])
+
+    # Records the key visible at the real doctor call boundary
+    def record_doctor(**_kwargs):
+        observed["key"] = monitor.STEAM_API_KEY
+        return 0
+
+    monkeypatch.setattr(monitor, "run_doctor", record_doctor)
+
+    with pytest.raises(SystemExit) as exit_info:
+        monitor.main()
+
+    assert exit_info.value.code == 0
+    assert observed["key"] == command_line_key
 
 
 # The user-visible strings that must read identically across the sibling tools, since users learn them once

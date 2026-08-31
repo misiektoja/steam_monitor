@@ -5,7 +5,7 @@
 Before monitoring anything, `--doctor` checks whether the setup is actually ready and reports what is not:
 
 ```sh
-steam_monitor --doctor <steam_user_id>
+steam_monitor --doctor <steam_target>
 ```
 
 It is **read-only**: it writes no files, and it says so before the first check runs. Checks are grouped into **Environment**, **Configuration**, **Connectivity**, **Authentication**, **Target** and **Notifications**, and each row is marked `[PASS]`, `[WARN]`, `[FAIL]` or `[SKIP]`. Every non-passing row carries a `To fix:` line and a link to the documentation page that covers it.
@@ -17,10 +17,10 @@ When email or webhook alerts validate and you are at a terminal, doctor then off
 It exits `0` when every check passed and `1` when any check or approved delivery test failed, so it can be used as a container healthcheck or a CI smoke test:
 
 ```sh
-steam_monitor --doctor <steam_user_id> && echo "ready"
+steam_monitor --doctor <steam_target> && echo "ready"
 ```
 
-Running it without a Steam64 ID checks everything except the monitored profile.
+`steam_target` can be a Steam64 ID, Steam3 identifier, vanity name or full profile URL. Running doctor without a target checks everything except the monitored profile. An explicitly selected dotenv path that does not exist is reported as a warning with the path and recovery command.
 
 ## When Something Goes Wrong
 
@@ -45,13 +45,13 @@ Two flags control how much the tool explains about itself.
 `--verbose` adds startup detail, including the detected install method and which secrets came from the dotenv file versus the environment:
 
 ```sh
-steam_monitor <steam_user_id> --verbose
+steam_monitor <steam_target> --verbose
 ```
 
 `--debug` traces the whole run in timestamped `[DEBUG HH:MM:SS]` lines: the configuration file being loaded, the connectivity endpoint being probed, every Steam Web API call each polling cycle makes, the SMTP host an email is sent through, each webhook attempt with its HTTP status and retry decision, the state files being read and written, and the technical cause of any failure:
 
 ```sh
-steam_monitor <steam_user_id> --debug
+steam_monitor <steam_target> --debug
 ```
 
 The two modes are independent, so pass both to see everything. Either one on its own expands the startup summary, adding the detected install method, which secrets came from where, and the diagnostic state.

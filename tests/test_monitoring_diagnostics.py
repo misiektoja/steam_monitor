@@ -1,5 +1,8 @@
 """Tests that one monitoring cycle explains the Steam calls it makes and the ones that quietly degraded."""
 
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
+
 import pytest
 
 import steam_monitor as monitor
@@ -207,6 +210,30 @@ def test_a_rate_limit_waits_instead_of_retrying_quickly(tmp_path, monkeypatch, c
     assert monitor.TRANSIENT_RETRY_SECONDS not in sleeps
     output = capsys.readouterr().out
     assert "Steam is rate limiting requests" in output
+
+
+# Verifies a standard HTTP-date Retry-After value reaches the real monitoring sleep without crashing
+def test_a_rate_limit_accepts_an_http_date(tmp_path, monkeypatch):
+    error = http_error(429)
+    assert error.response is not None
+    error.response.headers["Retry-After"] = format_datetime(datetime.now(timezone.utc) + timedelta(seconds=120), usegmt=True)
+
+    _api, sleeps = run_one_cycle(tmp_path, monkeypatch, poll_error=error, stop_after_sleeps=3)
+
+    assert sleeps[0] == 60
+    assert 115 <= sleeps[1] <= 120
+
+
+# Verifies malformed and excessive Steam retry values fall back safely or stop at the one-hour cap
+def test_steam_retry_after_values_are_bounded():
+    malformed = http_error(429)
+    excessive = http_error(429)
+    assert malformed.response is not None and excessive.response is not None
+    malformed.response.headers["Retry-After"] = "not-a-delay"
+    excessive.response.headers["Retry-After"] = "999999"
+
+    assert monitor.steam_retry_after_seconds(malformed.response, 60) == 60
+    assert monitor.steam_retry_after_seconds(excessive.response, 60) == int(monitor.STEAM_MAX_RETRY_AFTER_SECONDS)
 
 
 # Verifies a failure that cannot be retried goes straight to the polling interval
