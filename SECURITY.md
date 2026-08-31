@@ -18,7 +18,7 @@ Security fixes are made on the default branch and shipped in the next release to
 
 This tool holds credentials for your own Steam access and records what other accounts do. Both matter when you deploy it.
 
-- **The configuration file is executed as Python.** When no `--config-file` is given, the tool loads the first configuration it finds in the current working directory, then your home directory, then the script directory, and runs it. Treat a configuration file as code: only load one you wrote yourself, and do not run the tool from a directory whose contents you do not control. This is a known limitation, tracked for a future release that will parse the file as data instead.
+- **Configuration files are parsed, not executed.** Only documented `SETTING = value` lines with plain literal values are accepted, plus a setting that reuses another setting. Imports, function calls, expressions and control flow are rejected without being run, so a configuration file sitting in the working directory cannot execute code. The offending line and setting are named on rejection, and a file that fails leaves every setting at its previous value rather than applying the lines before the bad one.
 - **Secrets belong in `.env`, not in the configuration file.** Point the tool at a dotenv file with `--env-file` and keep it owner-readable only. A secret placed in the configuration file is read by anything that can read that file.
 - **Credentials are masked in output.** Tokens and keys are redacted in the log and in error messages, so a log you attach to an issue does not carry them. Check anything you paste regardless.
 - **Monitoring an account is subject to the law where you are.** The tool is intended for accounts you own or are authorized to observe.

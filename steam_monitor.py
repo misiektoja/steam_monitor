@@ -442,6 +442,7 @@ from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import argparse
+import ast
 import csv
 import getpass
 # Referenced from the type comments below, which the linter does not parse
@@ -2086,6 +2087,91 @@ def find_config_file(cli_path=None):
         if p.is_file():
             return str(p)
     return None
+
+
+# Settings an older version wrote that this version no longer defines, ignored instead of rejected
+RETIRED_CONFIG_SETTINGS = frozenset(())
+
+
+# Collects the setting names the built-in configuration template defines
+def _config_allowed_names():
+    template_tree = ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec")
+    return frozenset(statement.targets[0].id for statement in template_tree.body if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name))
+
+
+# Parses allowlisted literal config assignments without executing any file content
+def parse_config_content(content, filename="<config>", retired_out=None, reference_values=None):
+    tree = ast.parse(content, filename, "exec")
+    allowed_names = _config_allowed_names()
+    parsed_values = {}
+    for statement in tree.body:
+        if not isinstance(statement, ast.Assign) or len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
+            raise ValueError(f"Line {getattr(statement, 'lineno', '?')}: only NAME = value assignments are allowed")
+        name = statement.targets[0].id
+        if name in RETIRED_CONFIG_SETTINGS and name not in allowed_names:
+            if retired_out is not None and name not in retired_out:
+                retired_out.append(name)
+            continue
+        if name not in allowed_names:
+            raise ValueError(f"Line {statement.lineno}: unsupported configuration setting {name!r}")
+        # One setting may reuse another, which the built-in template does and existing configs copy
+        if isinstance(statement.value, ast.Name):
+            referenced = statement.value.id
+            if referenced not in allowed_names:
+                raise ValueError(f"Line {statement.lineno}: {name} may only reference another configuration setting")
+            source = parsed_values if referenced in parsed_values else (reference_values if reference_values is not None else globals())
+            if referenced not in source:
+                raise ValueError(f"Line {statement.lineno}: {name} references {referenced!r} before it has a value")
+            parsed_values[name] = source[referenced]
+            continue
+        try:
+            parsed_values[name] = ast.literal_eval(statement.value)
+        except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError) as exc:
+            raise ValueError(f"Line {statement.lineno}: {name} must be a plain value such as a number, string, True, False, None, list, tuple or dict") from exc
+    return parsed_values
+
+
+# Validates config content through the same restricted parser used at startup
+def validate_config_content(content, filename="<generated-config>"):
+    parse_config_content(content, filename)
+
+
+# Reports settings an older version wrote that this version no longer defines
+def describe_retired_settings(names, quoted_path):
+    listed = ", ".join(sorted(names))
+    return f"Config file {quoted_path} contains settings this version no longer uses, which were ignored: {listed}"
+
+
+# Loads a config file as data and applies only recognized literal settings
+def load_config_file(config_path, namespace=None, report_errors=True):
+    selected_namespace = globals() if namespace is None else namespace
+    retired_settings = []
+    try:
+        content = Path(config_path).read_text(encoding="utf-8")
+        # Parsed as data rather than executed, so a config file picked up from the working directory cannot run code
+        parsed_values = parse_config_content(content, str(config_path), retired_settings)
+        selected_namespace.update(parsed_values)
+        if retired_settings and report_errors:
+            print(f"* Note: {describe_retired_settings(retired_settings, chr(39) + str(config_path) + chr(39))}")
+        return True
+    except SyntaxError as exc:
+        detail = f"Config file '{config_path}' has invalid Python syntax"
+        if exc.lineno is not None:
+            detail += f" at line {exc.lineno}"
+        if exc.text:
+            detail += f" | Source: {exc.text.rstrip()}"
+        detail += f" | Parser: {exc.msg}"
+    # Checked before ValueError because UnicodeDecodeError derives from it
+    except UnicodeDecodeError:
+        detail = f"Config file '{config_path}' is not valid UTF-8"
+    except ValueError as exc:
+        detail = f"Config file '{config_path}' contains unsupported content: {exc}"
+    except Exception as exc:
+        detail = f"Config file '{config_path}' failed with {type(exc).__name__}: {exc}"
+    if report_errors:
+        print(f"* Error: {detail}")
+        print("* Config files are read as data. Only documented SETTING = value lines with plain literal values are accepted.")
+    return False
 
 
 # Resolves an executable path by checking if it's a valid file or searching in $PATH
@@ -3811,11 +3897,7 @@ def main():
         sys.exit(1)
 
     if cfg_path:
-        try:
-            with open(cfg_path, "r") as cf:
-                exec(cf.read(), globals())
-        except Exception as e:
-            print(f"* Error loading config file '{cfg_path}': {e}")
+        if not load_config_file(cfg_path):
             sys.exit(1)
 
     if args.env_file:
