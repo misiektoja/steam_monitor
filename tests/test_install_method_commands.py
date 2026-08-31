@@ -36,7 +36,7 @@ def test_a_pypi_install_is_detected(monkeypatch):
 # Verifies detection can be pinned explicitly, which containers and packaged builds need
 def test_the_install_method_can_be_overridden(monkeypatch):
     monkeypatch.setattr("sys.argv", ["/home/user/steam_monitor.py"])
-    monkeypatch.setenv(monitor.INSTALL_METHOD_ENV_VAR, "pypi")
+    monkeypatch.setenv(monitor.INSTALL_METHOD_ENV_VAR, "pip")
 
     assert monitor.install_method() == monitor.INSTALL_METHOD_PYPI
 

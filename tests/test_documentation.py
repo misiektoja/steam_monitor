@@ -139,14 +139,14 @@ def test_the_documentation_does_not_promise_removed_settings():
 def test_every_wizard_setting_is_a_real_setting():
     allowed = monitor._config_allowed_names()
 
-    for _name, config_keys, _secret_keys in monitor.WIZARD_SECTIONS:
+    for _name, _label, _description, config_keys, _secret_keys in monitor.WIZARD_SECTIONS:
         for key in config_keys:
             assert key in allowed, f"the wizard writes {key}, which is not a configuration setting"
 
 
 # Verifies every secret the wizard collects is one the dotenv writer will accept
 def test_every_wizard_secret_is_a_real_secret():
-    for _name, _config_keys, secret_keys in monitor.WIZARD_SECTIONS:
+    for _name, _label, _description, _config_keys, secret_keys in monitor.WIZARD_SECTIONS:
         for key in secret_keys:
             assert key in monitor.SECRET_KEYS, f"the wizard collects {key}, which is not a known secret"
 

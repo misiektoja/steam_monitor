@@ -225,17 +225,27 @@ def test_declining_email_turns_every_email_alert_off(tmp_path, monkeypatch, wiza
         assert values[key] is False
 
 
-# Verifies the webhook provider is detected from the URL rather than asked for a second time
-def test_the_webhook_provider_is_detected(tmp_path, monkeypatch, wizard_globals, capsys):
-    answers = [str(STEAM64), "5m", "45s", "n", "y", "y", "y", "y", "y", "1", "n"]
+# Verifies the webhook service is chosen before the URL is pasted, the shared order across these tools
+def test_the_webhook_service_is_chosen_before_the_url(tmp_path, monkeypatch, wizard_globals, capsys):
+    answers = [str(STEAM64), "5m", "45s", "n", "y", "1", "1", "1", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers, secrets=[API_KEY, WEBHOOK_URL]) == 0
 
     values = monitor.parse_config_content((tmp_path / "steam_monitor.conf").read_text(encoding="utf-8"))
     assert values["WEBHOOK_ENABLED"] is True
     assert values["WEBHOOK_PROVIDER"] == "discord"
-    assert "Detected Discord." in capsys.readouterr().out
+    assert values["WEBHOOK_ACTIVE_NOTIFICATION"] is True and values["WEBHOOK_STATUS_NOTIFICATION"] is False
+    assert "Which webhook service should receive alerts?" in capsys.readouterr().out
     assert WEBHOOK_URL in (tmp_path / ".env").read_text(encoding="utf-8")
+
+
+# Verifies a bare ntfy topic name is expanded to a full ntfy.sh URL, as the shared prompt promises
+def test_a_bare_ntfy_topic_becomes_a_full_url(tmp_path, monkeypatch, wizard_globals):
+    answers = [str(STEAM64), "5m", "45s", "n", "y", "2", "n", "n", "1", "1", "n"]
+
+    assert run_wizard(tmp_path, monkeypatch, answers, secrets=[API_KEY, "my-topic"]) == 0
+
+    assert "https://ntfy.sh/my-topic" in (tmp_path / ".env").read_text(encoding="utf-8")
 
 
 # Verifies a rejected duration is asked again instead of being stored as something else
@@ -244,7 +254,7 @@ def test_a_rejected_duration_is_asked_again(tmp_path, monkeypatch, wizard_global
 
     assert run_wizard(tmp_path, monkeypatch, answers) == 0
 
-    assert "Enter a duration such as" in capsys.readouterr().out
+    assert "Enter a positive duration such as" in capsys.readouterr().out
     assert monitor.parse_config_content((tmp_path / "steam_monitor.conf").read_text(encoding="utf-8"))["STEAM_CHECK_INTERVAL"] == 300
 
 
@@ -461,7 +471,7 @@ def test_the_wizard_transcript_holds_the_output_contract(tmp_path):
         "Detected install method:",
         "Configuration:",
         "Dotenv:",
-        "Target",
+        "Steam profile URL or ID to monitor",
         "Setup summary",
         "Saved files",
         "Next steps",

@@ -1,8 +1,13 @@
-"""Tests the startup summary row model, its per-row routing, truncation and the grouped help."""
+"""Tests the startup summary row model, its per-row routing, truncation, the grouped help and the cross-tool wording."""
+
+from pathlib import Path
 
 import pytest
 
 import steam_monitor as monitor
+
+
+SOURCE = (Path(__file__).resolve().parents[1] / "steam_monitor.py").read_text(encoding="utf-8")
 
 
 @pytest.fixture
@@ -206,3 +211,84 @@ def test_the_welcome_screen_keeps_the_shared_block_shape(monkeypatch, capsys):
     # These two are single lines rather than blocks, and the guide value is column aligned
     assert "Full options: steam_monitor --help" in lines
     assert f"Guide:        {monitor.QUICK_START_GUIDE_URL}" in lines
+
+
+# The wording these tools share, so a user who runs two of them reads the same sentences in both.
+# Each entry was copied from spotify_monitor, spotify_profile_monitor and instagram_monitor, where all
+# three already agree. Changing one here without changing it there is the drift this test exists to catch.
+CROSS_TOOL_STRINGS = (
+    # Doctor
+    "Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval.",
+    "No dotenv file selected",
+    "Using environment variables and other configured sources",
+    "No secrets loaded",
+    "Nothing was read from a dotenv file, the environment or the command line",
+    "The requested dotenv file was not found",
+    "Email notifications are disabled",
+    "Webhook alerts are disabled",
+    "Doctor will not write files. Each approved test sends one real message.",
+    "Send one test email now? This will deliver a real message",
+    "Doctor test email delivered",
+    "Doctor test email delivery failed",
+    "Doctor test webhook delivered",
+    "Doctor test webhook delivery failed",
+    "[SKIP] Test email was not sent",
+    "[SKIP] Test webhook was not sent",
+    # Setup wizard
+    "The setup wizard needs an interactive terminal (TTY).",
+    "This asks a few questions and writes a ready-to-run configuration.",
+    "Press Enter to accept the shown default. Ctrl+C cancels.",
+    "Secrets go to the dotenv file. Non-secret settings go to the config file.",
+    "Detected install method: ",
+    "This value is required.",
+    "This secret is required and cannot be empty.",
+    "Enter a positive duration such as 120, 2m, 1.5h, 1h 30m or 1d.",
+    "Configure email notifications?",
+    "Which email notifications should be enabled?",
+    "Set up webhook alerts (Discord, ntfy etc.)?",
+    "Which webhook service should receive alerts?",
+    "Sends a Discord embed to one channel webhook.",
+    "Sends a native notification to one ntfy topic URL.",
+    "Which webhook URL should be used?",
+    "Keep the saved URL",
+    "Paste a new URL",
+    "Keeps the private value without displaying or changing it.",
+    "Paste the Discord webhook URL",
+    "Paste the ntfy topic URL or ntfy.sh topic name",
+    "That does not look like a complete HTTPS webhook URL. Copy it from the webhook service and try again.",
+    "Enter a complete HTTPS ntfy topic URL or a topic name containing up to 64 letters, numbers, dashes or underscores.",
+    "Which ntfy authentication should be used?",
+    "Paste the ntfy access token only",
+    "Paste only the access token without a Bearer or Basic prefix.",
+    "Which webhook alerts should be sent?",
+    "Which setup section should be changed?",
+    "Return to summary",
+    "Keep every current answer.",
+    "What would you like to do?",
+    "Save settings",
+    "Write the displayed settings to the selected files.",
+    "Review or change settings",
+    "Edit one section without losing the other answers.",
+    "Discard answers and exit",
+    "Leave the destination files unchanged.",
+    "Discard all entered answers and exit?",
+    "Run doctor now? It writes no files and offers real delivery tests only with separate approval.",
+)
+
+
+# Verifies every sentence shared with the sibling monitors is still spelled the way they spell it
+@pytest.mark.parametrize("text", CROSS_TOOL_STRINGS)
+def test_the_cross_tool_wording_is_unchanged(text):
+    assert text in SOURCE, text
+
+
+# Verifies the doctor sections keep the order the sibling monitors render them in
+def test_the_doctor_section_order_matches_the_sibling_tools():
+    assert monitor.DOCTOR_SECTIONS == ("Environment", "Configuration", "Authentication", "Connectivity", "Target", "Notifications")
+
+
+# Verifies the install method is named with the vocabulary every one of these tools prints
+def test_the_install_method_vocabulary_is_shared():
+    assert (monitor.INSTALL_METHOD_PYPI, monitor.INSTALL_METHOD_SCRIPT) == ("pip", "manual")
+    assert monitor.install_method_display_name("pip") == "PyPI install"
+    assert monitor.install_method_display_name("manual") == "downloaded script"

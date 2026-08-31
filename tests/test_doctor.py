@@ -160,7 +160,7 @@ def test_a_missing_dotenv_file_is_a_warning(tmp_path, doctor_globals):
     missing = tmp_path / "missing.env"
 
     checks = monitor.doctor_check_configuration(env_path=str(missing))
-    missing_check = next(check for check in checks if check.label == "The selected dotenv file does not exist")
+    missing_check = next(check for check in checks if check.label == "The requested dotenv file was not found")
 
     assert missing_check.status == "WARN"
     assert missing_check.advice is not None
@@ -188,7 +188,7 @@ def test_deliberate_configuration_is_a_pass(monkeypatch, doctor_globals):
     report = build_report(monkeypatch)
     labels = {check.label: check.status for check in report.checks}
 
-    assert labels["Email alerts are disabled"] == "PASS"
+    assert labels["Email notifications are disabled"] == "PASS"
     assert labels["Webhook alerts are disabled"] == "PASS"
     assert labels["Output logging is disabled"] == "PASS"
 
@@ -263,7 +263,7 @@ def test_the_default_error_alert_alone_does_not_enable_a_channel(monkeypatch, do
     checks = monitor.doctor_check_email_notifications(report)
 
     assert checks[0].status == "PASS"
-    assert checks[0].label == "Email alerts are disabled"
+    assert checks[0].label == "Email notifications are disabled"
 
 
 # Verifies the authentication check runs once and later checks reuse its client rather than reauthenticating
@@ -398,7 +398,7 @@ def test_a_warned_channel_is_not_offered_a_delivery_test(monkeypatch, doctor_glo
     capsys.readouterr()
 
 
-# Verifies declining a delivery test records a skip rather than sending anything
+# Verifies declining a delivery test reports the skip on screen rather than sending anything
 def test_declining_a_delivery_test_sends_nothing(monkeypatch, doctor_globals, capsys):
     report = monitor.DoctorReport()
     report.email_ready = True
@@ -409,8 +409,8 @@ def test_declining_a_delivery_test_sends_nothing(monkeypatch, doctor_globals, ca
 
     checks = monitor._doctor_offer_notification_tests(report)
 
-    assert [check.status for check in checks] == ["SKIP"]
-    capsys.readouterr()
+    assert checks == []
+    assert "[SKIP] Test email was not sent" in capsys.readouterr().out
 
 
 # Verifies an approved delivery test sends exactly one message and reports the outcome

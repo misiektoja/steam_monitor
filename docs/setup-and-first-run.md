@@ -14,6 +14,8 @@ It asks for the profile to monitor, how often to check, your Steam Web API key a
 
 Answers are accepted in the formats people actually paste. The profile takes a **Steam64 ID, a Steam3 identifier, a vanity name or a full profile URL**, and is normalized to one canonical Steam64 ID. During fresh setup, a vanity name is resolved after the API key step. Intervals take **`30s`, `2m`, `1.5h`, `1h 30m`, `1d`** or a plain number of seconds, and the normalized value is echoed back.
 
+For webhook alerts, setup asks which service receives them, then takes the Discord webhook URL or an ntfy topic. A bare ntfy.sh topic name is expanded to its full URL. For ntfy it also offers a separate access token and artwork attachments.
+
 Secrets are typed at a hidden prompt and go to the dotenv file. Non-secret settings go to the config file. Existing files are backed up before being replaced. When it finishes, setup offers to run [`--doctor`](troubleshooting.md#doctor-preflight) and prints the exact commands to start monitoring.
 
 Running the tool **with no arguments at all** prints the same four commands and offers to start the wizard.

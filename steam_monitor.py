@@ -567,8 +567,8 @@ NTFY_IMAGES_AVAILABLE = PILImage is not None
 
 
 # Install methods the tool can detect, used to tailor every command it prints
-INSTALL_METHOD_PYPI = "pypi"
-INSTALL_METHOD_SCRIPT = "script"
+INSTALL_METHOD_PYPI = "pip"
+INSTALL_METHOD_SCRIPT = "manual"
 INSTALL_METHOD_ENV_VAR = "STEAM_MONITOR_INSTALL_METHOD"
 
 
@@ -596,8 +596,9 @@ def install_method():
 
 
 # Returns a readable name for the detected install method
-def install_method_display_name():
-    base = "PyPI install" if install_method() == INSTALL_METHOD_PYPI else "downloaded script"
+def install_method_display_name(method=None):
+    selected = install_method() if method is None else method
+    base = {"pip": "PyPI install", "manual": "downloaded script"}.get(selected, selected)
     return f"{base} in a container" if running_in_container() else base
 
 
@@ -1741,6 +1742,18 @@ def validate_webhook_url(url=None):
     return parsed.scheme.casefold() == "https" and bool(parsed.hostname) and not parsed.username and not parsed.password and bool(parsed.path.strip("/"))
 
 
+# Accepts a complete HTTPS ntfy URL or a bare ntfy.sh topic name and returns the full URL
+def normalize_ntfy_topic_url(value):
+    if not isinstance(value, str):
+        return ""
+    normalized = value.strip()
+    if validate_webhook_url(normalized):
+        return normalized
+    if re.fullmatch(r"[-_A-Za-z0-9]{1,64}", normalized):
+        return f"https://ntfy.sh/{normalized}"
+    return ""
+
+
 # Detects Discord and public ntfy webhook providers from distinctive URL shapes
 def detect_webhook_provider(url):
     if not validate_webhook_url(url):
@@ -2617,10 +2630,10 @@ def doctor_check_configuration(config_path=None, env_path=None):
     if env_path and os.path.isfile(str(env_path)):
         checks.append(make_doctor_check("Configuration", "PASS", "Dotenv file loaded", f"Path: {env_path}"))
     elif env_path:
-        advice = make_recovery_advice("config.missing", "The selected dotenv file does not exist", recovery_fix_with_guide("Create the file or select an existing path with --env-file", SECRETS_GUIDE_URL), False, f"Path: {env_path}")
+        advice = make_recovery_advice("config.missing", "The requested dotenv file was not found", recovery_fix_with_guide("Create the file or select an existing path with --env-file", SECRETS_GUIDE_URL), False, f"Path: {env_path}")
         checks.append(make_doctor_check("Configuration", "WARN", advice.summary, advice.detail, advice))
     else:
-        checks.append(make_doctor_check("Configuration", "PASS", "No dotenv file loaded", "Secrets can still come from environment variables or the configuration file"))
+        checks.append(make_doctor_check("Configuration", "PASS", "No dotenv file selected", "Using environment variables and other configured sources"))
     checks.extend(doctor_secret_checks(env_path))
 
     if DISABLE_LOGGING:
@@ -2691,7 +2704,7 @@ def doctor_check_email_notifications(report):
     # The error alert ships on by default, so it alone cannot mean the channel is switched on
     deliberate_categories = [category for category in enabled_categories if category != "errors"]
     if not deliberate_categories and not configured:
-        return [make_doctor_check("Notifications", "PASS", "Email alerts are disabled", "No SMTP connection was attempted and no email was sent")]
+        return [make_doctor_check("Notifications", "PASS", "Email notifications are disabled", "No SMTP connection was attempted and no email was sent")]
     if not configured:
         advice = classify_recovery_error(context="email", detail="SMTP settings are incomplete")
         return [make_doctor_check("Notifications", "WARN", "Email alerts are selected but SMTP is not configured", "Set SMTP_HOST, SENDER_EMAIL and RECEIVER_EMAIL, or turn the alerts off", advice)]
@@ -2732,7 +2745,7 @@ def doctor_check_webhook_notifications(report):
 
 
 # The fixed section order the report renders in, chosen so each section depends only on the ones above it
-DOCTOR_SECTIONS = ("Environment", "Configuration", "Connectivity", "Authentication", "Target", "Notifications")
+DOCTOR_SECTIONS = ("Environment", "Configuration", "Authentication", "Connectivity", "Target", "Notifications")
 
 # Width of the transient progress line currently on screen, so the next write can erase exactly what it drew
 DOCTOR_PROGRESS_WIDTH = 0
@@ -2823,29 +2836,26 @@ def _doctor_offer_notification_tests(report):
         return []
     if not report.email_ready and not report.webhook_ready:
         return []
-    print("")
-    print(colorize("header", "Optional delivery tests"))
-    print("")
-    print("Doctor will not write files. Each approved test sends one real message.")
-    print("")
+    print("\nOptional delivery tests\n")
+    print("Doctor will not write files. Each approved test sends one real message.\n")
     checks = []
     if report.email_ready:
         if _doctor_ask_yes_no("Send one test email now? This will deliver a real message"):
-            delivered = send_email("steam_monitor: test email", "This is a test email from steam_monitor --doctor.", "", SMTP_SSL, smtp_timeout=5) == 0
-            checks.append(make_doctor_check("Notifications", "PASS" if delivered else "FAIL", "Test email delivered" if delivered else "Test email could not be delivered", advice=None if delivered else classify_recovery_error(context="email", detail="The test email was not delivered")))
+            delivered = send_email("steam_monitor: doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "", SMTP_SSL, smtp_timeout=5) == 0
+            check = make_doctor_check("Notifications", "PASS" if delivered else "FAIL", "Doctor test email delivered" if delivered else "Doctor test email delivery failed", "One real test email was sent after confirmation" if delivered else "The approved test email could not be delivered")
+            checks.append(check)
+            print(f"[{check.status}] {check.label}")
         else:
-            checks.append(make_doctor_check("Notifications", "SKIP", "Test email declined"))
+            print("[SKIP] Test email was not sent")
     if report.webhook_ready:
         provider = webhook_provider_display_name()
         if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
-            delivered = send_webhook("Steam Monitor test", "Your webhook alerts are set up correctly.", "status", force=True) == 0
-            checks.append(make_doctor_check("Notifications", "PASS" if delivered else "FAIL", f"Test webhook delivered through {provider}" if delivered else f"Test webhook could not be delivered through {provider}", advice=None if delivered else classify_recovery_error(context="webhook", detail="The test webhook was not delivered")))
+            delivered = send_webhook("Steam Monitor doctor test", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", "status", force=True) == 0
+            check = make_doctor_check("Notifications", "PASS" if delivered else "FAIL", "Doctor test webhook delivered" if delivered else "Doctor test webhook delivery failed", "One real test webhook was sent after confirmation" if delivered else "The approved test webhook could not be delivered")
+            checks.append(check)
+            print(f"[{check.status}] {check.label}")
         else:
-            checks.append(make_doctor_check("Notifications", "SKIP", "Test webhook declined"))
-    for check in checks:
-        print(f"[{check.status}] {check.label}")
-        if check.status == "FAIL" and check.advice is not None:
-            print(f"To fix: {check.advice.fix}")
+            print("[SKIP] Test webhook was not sent")
     return checks
 
 
@@ -2877,6 +2887,11 @@ def run_doctor(target_value=None, config_path=None, env_path=None):
     return 1 if failed else 0
 
 
+# Returns a stored value only when it is a real answer, so template placeholders are never offered as defaults
+def _wizard_default(value):
+    return str(value) if doctor_value_is_set(value if isinstance(value, str) else str(value or "")) else ""
+
+
 # Asks one free-text question, returning the shown default when the answer is empty
 def _wizard_ask_text(question, default="", required=False, input_func=None):
     prompt = input if input_func is None else input_func
@@ -2887,7 +2902,7 @@ def _wizard_ask_text(question, default="", required=False, input_func=None):
             return default
         if answer or not required:
             return answer
-        print("  This one is required.")
+        print("  This value is required.")
 
 
 # Asks one yes or no question with a visible default
@@ -2908,18 +2923,20 @@ def _wizard_ask_yes_no(question, default=True, input_func=None):
 # Asks one numbered multiple-choice question and returns the chosen index
 def _wizard_ask_choice(question, options, default_index=0, input_func=None):
     prompt = input if input_func is None else input_func
+    print()
+    print(question)
+    for index, (label, description) in enumerate(options, 1):
+        marker = " (default)" if index - 1 == default_index else ""
+        print(f"  {colorize('username', str(index))}. {label}{colorize('info', marker)}")
+        if description:
+            print(f"     {description}")
     while True:
-        print(question)
-        for index, (label, description) in enumerate(options, 1):
-            print(f"  {index}) {label}")
-            if description:
-                print(f"     {description}")
-        answer = prompt(f"Choice [{default_index + 1}]: ").strip()
+        answer = prompt(f"Choose [1-{len(options)}]: ").strip()
         if not answer:
             return default_index
         if answer.isdigit() and 1 <= int(answer) <= len(options):
             return int(answer) - 1
-        print(f"  Please enter a number between 1 and {len(options)}.")
+        print(f"  Enter a number between 1 and {len(options)}.")
 
 
 # Asks one duration, accepting the formats people actually type and echoing back the normalized value
@@ -2933,13 +2950,17 @@ def _wizard_ask_duration(question, default, input_func=None):
         if seconds is not None:
             print(f"  Using {display_time(seconds)}.")
             return seconds
-        print("  Enter a duration such as 30s, 2m, 1.5h, 1h 30m or 1d.")
+        print("  Enter a positive duration such as 120, 2m, 1.5h, 1h 30m or 1d.")
 
 
 # Asks one secret through a hidden prompt, so it never reaches the screen or the shell history
-def _wizard_ask_secret(question, getpass_func=None):
+def _wizard_ask_secret(question, getpass_func=None, required=False):
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
-    return hidden_prompt(f"{question}: ").strip()
+    while True:
+        value = hidden_prompt(f"{question}: ").strip()
+        if value or not required:
+            return value
+        print("  This secret is required and cannot be empty.")
 
 
 # Renders one configuration file from the built-in template with the chosen values substituted in
@@ -2986,13 +3007,18 @@ class WizardSetupState:
         self.persist_target = True
 
 
-# The config and secret keys each editable section owns, used to revert exactly one section
+# The email and webhook alert settings the wizard offers, in the order the questions are asked
+WIZARD_EMAIL_NOTIFICATION_KEYS = ("ACTIVE_INACTIVE_NOTIFICATION", "GAME_CHANGE_NOTIFICATION", "STATUS_NOTIFICATION", "NAME_CHANGE_NOTIFICATION", "ERROR_NOTIFICATION")
+WIZARD_WEBHOOK_NOTIFICATION_KEYS = ("WEBHOOK_ACTIVE_NOTIFICATION", "WEBHOOK_INACTIVE_NOTIFICATION", "WEBHOOK_GAME_CHANGE_NOTIFICATION", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_NAME_CHANGE_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION")
+
+
+# Each editable section: internal name, menu label and description, then the keys reverted when it is re-entered
 WIZARD_SECTIONS = (
-    ("Target", (), ()),
-    ("Polling", ("STEAM_CHECK_INTERVAL", "STEAM_ACTIVE_CHECK_INTERVAL"), ()),
-    ("Authentication", (), ("STEAM_API_KEY",)),
-    ("Email", ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL", "ACTIVE_INACTIVE_NOTIFICATION", "GAME_CHANGE_NOTIFICATION", "ERROR_NOTIFICATION"), ("SMTP_PASSWORD",)),
-    ("Webhook", ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "WEBHOOK_ACTIVE_NOTIFICATION", "WEBHOOK_INACTIVE_NOTIFICATION", "WEBHOOK_GAME_CHANGE_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION"), ("WEBHOOK_URL",)),
+    ("Target", "Target", "Change the Steam profile that is monitored.", (), ()),
+    ("Polling", "Polling interval", "Change how often Steam is checked.", ("STEAM_CHECK_INTERVAL", "STEAM_ACTIVE_CHECK_INTERVAL"), ()),
+    ("Authentication", "Authentication", "Enter the Steam Web API key again.", (), ("STEAM_API_KEY",)),
+    ("Email", "Email notifications", "Change SMTP details and email events.", ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL") + WIZARD_EMAIL_NOTIFICATION_KEYS, ("SMTP_PASSWORD",)),
+    ("Webhook", "Webhook alerts", "Change Discord or ntfy details and events.", ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "NTFY_IMAGES") + WIZARD_WEBHOOK_NOTIFICATION_KEYS, ("WEBHOOK_URL", "NTFY_ACCESS_TOKEN")),
 )
 
 
@@ -3009,11 +3035,9 @@ def _wizard_reset_section(state, config_keys, secret_keys):
 
 # Asks for the monitored profile, accepting every form people paste and storing one canonical Steam64 ID
 def _wizard_collect_target_section(state, initial_target=None, input_func=None):
-    print(colorize("section", "Target"))
-    print(f"Accepts a {STEAM_TARGET_FORMS}.")
     state.pending_vanity = ""
     while True:
-        answer = _wizard_ask_text("Steam profile to monitor", default=str(initial_target or state.target or ""), required=True, input_func=input_func)
+        answer = _wizard_ask_text("Steam profile URL or ID to monitor", default=str(initial_target or state.target or ""), required=True, input_func=input_func)
         try:
             steam64, vanity = normalize_steam_target(answer)
         except ValueError as exc:
@@ -3061,14 +3085,12 @@ def _wizard_resolve_pending_target(state, input_func=None):
 
 # Asks how often the tool checks, in whichever duration format the user prefers
 def _wizard_collect_polling_section(state, input_func=None):
-    print(colorize("section", "Polling"))
     state.config_values["STEAM_CHECK_INTERVAL"] = _wizard_ask_duration("How often to check while the user is offline", int(state.config_values.get("STEAM_CHECK_INTERVAL") or STEAM_CHECK_INTERVAL), input_func=input_func)
     state.config_values["STEAM_ACTIVE_CHECK_INTERVAL"] = _wizard_ask_duration("How often to check while the user is online", int(state.config_values.get("STEAM_ACTIVE_CHECK_INTERVAL") or STEAM_ACTIVE_CHECK_INTERVAL), input_func=input_func)
 
 
 # Asks for the Steam Web API key through a hidden prompt and validates it against Steam before accepting it
 def _wizard_collect_auth_section(state, input_func=None, getpass_func=None, validator=None):
-    print(colorize("section", "Authentication"))
     print(f"Create or view your Steam Web API key: {STEAM_API_KEY_REGISTRATION_URL}")
     existing = doctor_value_is_set(state.config_values.get("STEAM_API_KEY"))
     if existing and not _wizard_ask_yes_no("Replace the Steam Web API key already configured?", default=False, input_func=input_func):
@@ -3089,60 +3111,165 @@ def _wizard_collect_auth_section(state, input_func=None, getpass_func=None, vali
 
 # Asks whether to send email alerts and collects only the settings that choice needs
 def _wizard_collect_email_section(state, input_func=None, getpass_func=None):
-    print(colorize("section", "Email"))
-    if not _wizard_ask_yes_no("Send email alerts?", default=False, input_func=input_func):
-        for key in ("ACTIVE_INACTIVE_NOTIFICATION", "GAME_CHANGE_NOTIFICATION", "STATUS_NOTIFICATION", "NAME_CHANGE_NOTIFICATION", "STEAM_LEVEL_XP_NOTIFICATION", "FRIENDS_NOTIFICATION", "GAMES_LIBRARY_NOTIFICATION", "ERROR_NOTIFICATION"):
+    if not _wizard_ask_yes_no("Configure email notifications?", default=False, input_func=input_func):
+        for key in WIZARD_EMAIL_NOTIFICATION_KEYS + ("STEAM_LEVEL_XP_NOTIFICATION", "FRIENDS_NOTIFICATION", "GAMES_LIBRARY_NOTIFICATION"):
             state.config_values[key] = False
         return
-    state.config_values["SMTP_HOST"] = _wizard_ask_text("SMTP server", default=str(state.config_values.get("SMTP_HOST") or ""), required=True, input_func=input_func)
+    state.config_values["SMTP_HOST"] = _wizard_ask_text("SMTP host", default=_wizard_default(state.config_values.get("SMTP_HOST")), required=True, input_func=input_func)
     port_answer = _wizard_ask_text("SMTP port", default=str(state.config_values.get("SMTP_PORT") or 587), input_func=input_func)
     state.config_values["SMTP_PORT"] = int(port_answer) if port_answer.isdigit() else 587
-    state.config_values["SMTP_SSL"] = _wizard_ask_yes_no("Use STARTTLS?", default=True, input_func=input_func)
-    state.config_values["SMTP_USER"] = _wizard_ask_text("SMTP username", default=str(state.config_values.get("SMTP_USER") or ""), required=True, input_func=input_func)
+    state.config_values["SMTP_SSL"] = _wizard_ask_yes_no("Enable TLS/SSL for SMTP?", default=True, input_func=input_func)
+    state.config_values["SMTP_USER"] = _wizard_ask_text("SMTP username", default=_wizard_default(state.config_values.get("SMTP_USER")), required=True, input_func=input_func)
+    state.config_values["SENDER_EMAIL"] = _wizard_ask_text("Sender email", default=_wizard_default(state.config_values.get("SENDER_EMAIL")), required=True, input_func=input_func)
+    state.config_values["RECEIVER_EMAIL"] = _wizard_ask_text("Receiver email", default=_wizard_default(state.config_values.get("RECEIVER_EMAIL")), required=True, input_func=input_func)
     password = _wizard_ask_secret("SMTP password", getpass_func=getpass_func)
     if password:
         state.secret_updates["SMTP_PASSWORD"] = password
-    state.config_values["SENDER_EMAIL"] = _wizard_ask_text("Send alerts from", default=str(state.config_values.get("SENDER_EMAIL") or ""), required=True, input_func=input_func)
-    state.config_values["RECEIVER_EMAIL"] = _wizard_ask_text("Send alerts to", default=str(state.config_values.get("RECEIVER_EMAIL") or ""), required=True, input_func=input_func)
-    state.config_values["ACTIVE_INACTIVE_NOTIFICATION"] = _wizard_ask_yes_no("Alert when the user goes online or offline?", default=True, input_func=input_func)
-    state.config_values["GAME_CHANGE_NOTIFICATION"] = _wizard_ask_yes_no("Alert when the user starts, changes or stops a game?", default=True, input_func=input_func)
-    state.config_values["ERROR_NOTIFICATION"] = _wizard_ask_yes_no("Alert on monitoring errors?", default=True, input_func=input_func)
+    preset = _wizard_ask_choice("Which email notifications should be enabled?", [
+        ("Status and errors, recommended", "Online, offline, game change and error notifications."),
+        ("Every supported event", "Enables all email notification types."),
+        ("Custom", "Choose each notification type separately."),
+    ], input_func=input_func)
+    if preset == 0:
+        selected = {"ACTIVE_INACTIVE_NOTIFICATION": True, "GAME_CHANGE_NOTIFICATION": True, "STATUS_NOTIFICATION": False, "NAME_CHANGE_NOTIFICATION": False, "ERROR_NOTIFICATION": True}
+    elif preset == 1:
+        selected = {name: True for name in WIZARD_EMAIL_NOTIFICATION_KEYS}
+    else:
+        print()
+        questions = (
+            ("ACTIVE_INACTIVE_NOTIFICATION", "Email when the user goes online or offline?"),
+            ("GAME_CHANGE_NOTIFICATION", "Email when the user starts, changes or stops a game?"),
+            ("STATUS_NOTIFICATION", "Email on every status change?"),
+            ("NAME_CHANGE_NOTIFICATION", "Email when the display name changes?"),
+            ("ERROR_NOTIFICATION", "Email on monitoring errors?"),
+        )
+        selected = {name: _wizard_ask_yes_no(question, default=False, input_func=input_func) for name, question in questions}
+    state.config_values.update(selected)
 
 
-# Asks whether to send webhook alerts, detecting the provider from the URL rather than asking twice
+# Asks whether to send webhook alerts and collects the provider, the hidden URL and the alert choices
 def _wizard_collect_webhook_section(state, input_func=None, getpass_func=None):
-    print(colorize("section", "Webhook"))
-    if not _wizard_ask_yes_no("Send Discord or ntfy webhook alerts?", default=False, input_func=input_func):
+    if not _wizard_ask_yes_no("Set up webhook alerts (Discord, ntfy etc.)?", default=False, input_func=input_func):
         state.config_values["WEBHOOK_ENABLED"] = False
+        state.config_values["NTFY_IMAGES"] = False
+        state.config_values.update({name: False for name in WIZARD_WEBHOOK_NOTIFICATION_KEYS})
+        return
+    provider_choice = _wizard_ask_choice("Which webhook service should receive alerts?", [
+        ("Discord", "Sends a Discord embed to one channel webhook."),
+        ("ntfy", "Sends a native notification to one ntfy topic URL."),
+    ], input_func=input_func)
+    provider = "discord" if provider_choice == 0 else "ntfy"
+    state.config_values["WEBHOOK_PROVIDER"] = provider
+    if provider == "discord":
+        print("  In Discord: Edit Channel > Integrations > Webhooks > New Webhook > Copy Webhook URL.")
+    else:
+        print("  In ntfy: choose a hard-to-guess topic. Paste its name for ntfy.sh or use the complete HTTPS URL for a self-hosted server.")
+    replace_webhook = True
+    if _wizard_existing_secret("WEBHOOK_URL", state.env_path):
+        choice = _wizard_ask_choice("Which webhook URL should be used?", [
+            ("Keep the saved URL", "Keeps the private value without displaying or changing it."),
+            ("Paste a new URL", "Uses a hidden prompt then saves the new private value in .env."),
+        ], input_func=input_func)
+        replace_webhook = choice == 1
+    if replace_webhook:
+        while True:
+            answer = _wizard_ask_secret("Paste the Discord webhook URL" if provider == "discord" else "Paste the ntfy topic URL or ntfy.sh topic name", getpass_func=getpass_func)
+            webhook_url = normalize_ntfy_topic_url(answer) if provider == "ntfy" else answer.strip()
+            if validate_webhook_url(webhook_url):
+                state.secret_updates["WEBHOOK_URL"] = webhook_url
+                break
+            if provider == "ntfy":
+                print("  Enter a complete HTTPS ntfy topic URL or a topic name containing up to 64 letters, numbers, dashes or underscores.")
+            else:
+                print("  That does not look like a complete HTTPS webhook URL. Copy it from the webhook service and try again.")
+    if provider == "ntfy":
+        _wizard_collect_ntfy_access_token(state, input_func=input_func, getpass_func=getpass_func)
+    state.config_values["NTFY_IMAGES"] = _wizard_collect_ntfy_images(input_func=input_func) if provider == "ntfy" else False
+    state.config_values["WEBHOOK_ENABLED"] = True
+    preset = _wizard_ask_choice("Which webhook alerts should be sent?", [
+        ("Status and errors, recommended", "Alerts when the user goes online, goes offline, changes game or monitoring has a problem."),
+        ("Every supported alert", "Also sends every-status-change and display-name alerts."),
+        ("Custom", "Choose each webhook alert separately."),
+    ], input_func=input_func)
+    if preset == 0:
+        selected = {"WEBHOOK_ACTIVE_NOTIFICATION": True, "WEBHOOK_INACTIVE_NOTIFICATION": True, "WEBHOOK_GAME_CHANGE_NOTIFICATION": True, "WEBHOOK_STATUS_NOTIFICATION": False, "WEBHOOK_NAME_CHANGE_NOTIFICATION": False, "WEBHOOK_ERROR_NOTIFICATION": True}
+    elif preset == 1:
+        selected = {name: True for name in WIZARD_WEBHOOK_NOTIFICATION_KEYS}
+    else:
+        print()
+        questions = (
+            ("WEBHOOK_ACTIVE_NOTIFICATION", "Send a webhook alert when the user goes online?"),
+            ("WEBHOOK_INACTIVE_NOTIFICATION", "Send a webhook alert when the user goes offline?"),
+            ("WEBHOOK_GAME_CHANGE_NOTIFICATION", "Send a webhook alert when the user starts, changes or stops a game?"),
+            ("WEBHOOK_STATUS_NOTIFICATION", "Send a webhook alert on every status change?"),
+            ("WEBHOOK_NAME_CHANGE_NOTIFICATION", "Send a webhook alert when the display name changes?"),
+            ("WEBHOOK_ERROR_NOTIFICATION", "Send a webhook alert when monitoring has a problem?"),
+        )
+        selected = {name: _wizard_ask_yes_no(question, default=False, input_func=input_func) for name, question in questions}
+    state.config_values.update(selected)
+
+
+# Collects an optional ntfy access token without displaying it or contacting the service
+def _wizard_collect_ntfy_access_token(state, input_func=None, getpass_func=None):
+    existing_token = _wizard_existing_secret("NTFY_ACCESS_TOKEN", state.env_path)
+    if existing_token:
+        choice = _wizard_ask_choice("Which ntfy authentication should be used?", [
+            ("Keep the saved access token", "Keeps the private value without displaying or changing it."),
+            ("Paste a new access token", "Uses a hidden prompt then saves the replacement in .env."),
+            ("Do not use an access token", "Disables the saved token. Authentication in the topic URL still works."),
+        ], input_func=input_func)
+        if choice == 0:
+            return
+        if choice == 2:
+            state.secret_updates["NTFY_ACCESS_TOKEN"] = ""
+            print("  The saved ntfy access token will be disabled without being displayed.")
+            return
+    elif not _wizard_ask_yes_no("Authenticate this ntfy topic with a separate access token?", default=False, input_func=input_func):
+        print("  No separate access token selected. Authentication already present in the topic URL still works.")
         return
     while True:
-        url = _wizard_ask_secret("Paste the Discord or ntfy webhook URL", getpass_func=getpass_func)
-        if not url:
-            state.config_values["WEBHOOK_ENABLED"] = False
-            return
-        if validate_webhook_url(url):
-            provider = detect_webhook_provider(url)
-            state.secret_updates["WEBHOOK_URL"] = url
-            state.config_values["WEBHOOK_ENABLED"] = True
-            if provider:
-                state.config_values["WEBHOOK_PROVIDER"] = provider
-                print(f"  Detected {webhook_provider_display_name(provider)}.")
-            else:
-                choice = _wizard_ask_choice("Which service is this?", [("Discord", ""), ("ntfy", "")], input_func=input_func)
-                state.config_values["WEBHOOK_PROVIDER"] = ("discord", "ntfy")[choice]
+        token = _wizard_ask_secret("Paste the ntfy access token only", getpass_func=getpass_func)
+        if token and "\r" not in token and "\n" not in token and not token.casefold().startswith(("bearer ", "basic ")):
             break
-        print("  That does not look like a complete HTTPS webhook URL.")
-    state.config_values["WEBHOOK_ACTIVE_NOTIFICATION"] = _wizard_ask_yes_no("Alert when the user goes online?", default=True, input_func=input_func)
-    state.config_values["WEBHOOK_INACTIVE_NOTIFICATION"] = _wizard_ask_yes_no("Alert when the user goes offline?", default=True, input_func=input_func)
-    state.config_values["WEBHOOK_GAME_CHANGE_NOTIFICATION"] = _wizard_ask_yes_no("Alert when the user starts, changes or stops a game?", default=True, input_func=input_func)
-    state.config_values["WEBHOOK_ERROR_NOTIFICATION"] = _wizard_ask_yes_no("Alert on monitoring errors?", default=True, input_func=input_func)
+        print("  Paste only the access token without a Bearer or Basic prefix.")
+    state.secret_updates["NTFY_ACCESS_TOKEN"] = token
+
+
+# Offers artwork attachments for ntfy alerts, which need the optional Pillow package
+def _wizard_collect_ntfy_images(input_func=None):
+    if not NTFY_IMAGES_AVAILABLE:
+        print("  Artwork attachments need the optional Pillow package, which is not installed.")
+    if not _wizard_ask_yes_no("Attach game and avatar artwork to ntfy alerts?", default=NTFY_IMAGES_AVAILABLE, input_func=input_func):
+        return False
+    if NTFY_IMAGES_AVAILABLE:
+        return True
+    print(f"  Keeping ntfy alerts text-only. Install Pillow with '{ntfy_images_install_command()}' then set NTFY_IMAGES to True.")
+    return False
+
+
+# Reports whether a usable secret is already saved, without reading its value into the transcript
+def _wizard_existing_secret(key, env_path):
+    value = None
+    path = Path(env_path)
+    if path.is_file():
+        try:
+            from dotenv import dotenv_values
+            value = dotenv_values(path, interpolate=False).get(key)
+        except Exception:
+            value = None
+    if value is None:
+        value = os.environ.get(key)
+    return doctor_value_is_set(value)
 
 
 # Runs one editable section again after resetting only the keys it owns
 def _wizard_edit_setup_section(state, input_func=None, getpass_func=None):
-    options = [(name, "") for name, _config_keys, _secret_keys in WIZARD_SECTIONS]
-    choice = _wizard_ask_choice("Which section would you like to change?", options, input_func=input_func)
-    name, config_keys, secret_keys = WIZARD_SECTIONS[choice]
+    options = [(label, description) for _name, label, description, _config_keys, _secret_keys in WIZARD_SECTIONS]
+    options.append(("Return to summary", "Keep every current answer."))
+    choice = _wizard_ask_choice("Which setup section should be changed?", options, input_func=input_func)
+    if choice == len(WIZARD_SECTIONS):
+        return
+    name, _label, _description, config_keys, secret_keys = WIZARD_SECTIONS[choice]
     _wizard_reset_section(state, config_keys, secret_keys)
     if name == "Target":
         state.target = ""
@@ -3161,25 +3288,25 @@ def _wizard_edit_setup_section(state, input_func=None, getpass_func=None):
 
 # Shows everything that is about to be written, by name and never by secret value
 def _wizard_print_setup_summary(state):
-    print()
-    print(colorize("header", "Setup summary"))
-    print()
-    print(f"  Target:              Steam64 ID {state.target}" if state.target else "  Target:              not set")
-    print(f"  Offline check every: {display_time(int(state.config_values.get('STEAM_CHECK_INTERVAL') or 0))}")
-    print(f"  Online check every:  {display_time(int(state.config_values.get('STEAM_ACTIVE_CHECK_INTERVAL') or 0))}")
+    email_labels = {"ACTIVE_INACTIVE_NOTIFICATION": "online/offline", "GAME_CHANGE_NOTIFICATION": "game", "STATUS_NOTIFICATION": "every status change", "NAME_CHANGE_NOTIFICATION": "name change", "ERROR_NOTIFICATION": "errors"}
+    webhook_labels = {"WEBHOOK_ACTIVE_NOTIFICATION": "online", "WEBHOOK_INACTIVE_NOTIFICATION": "offline", "WEBHOOK_GAME_CHANGE_NOTIFICATION": "game", "WEBHOOK_STATUS_NOTIFICATION": "every status change", "WEBHOOK_NAME_CHANGE_NOTIFICATION": "name change", "WEBHOOK_ERROR_NOTIFICATION": "errors"}
+    enabled_email = [email_labels[name] for name in WIZARD_EMAIL_NOTIFICATION_KEYS if state.config_values.get(name)]
+    enabled_webhooks = [webhook_labels[name] for name in WIZARD_WEBHOOK_NOTIFICATION_KEYS if state.config_values.get(name)] if state.config_values.get("WEBHOOK_ENABLED") else []
     api_key_set = "STEAM_API_KEY" in state.secret_updates or doctor_value_is_set(state.config_values.get("STEAM_API_KEY"))
-    print(f"  Steam Web API key:   {'set' if api_key_set else 'not set'}")
-    email_categories = [label for label, key in (("online/offline", "ACTIVE_INACTIVE_NOTIFICATION"), ("game", "GAME_CHANGE_NOTIFICATION"), ("errors", "ERROR_NOTIFICATION")) if state.config_values.get(key)]
-    print(f"  Email alerts:        {', '.join(email_categories) if email_categories else 'off'}")
-    if state.config_values.get("WEBHOOK_ENABLED"):
-        print(f"  Webhook alerts:      {webhook_provider_display_name(str(state.config_values.get('WEBHOOK_PROVIDER') or ''))}")
-    else:
-        print("  Webhook alerts:      off")
-    print(f"  Configuration:       {state.config_path}")
-    print(f"  Dotenv:              {state.env_path}")
+    print(colorize("header", "\nSetup summary\n"))
+    print(f"  Target: {state.target}" if state.target else "  Target: not set")
+    print(f"  Offline polling interval: {display_time(int(state.config_values.get('STEAM_CHECK_INTERVAL') or 0))}")
+    print(f"  Online polling interval: {display_time(int(state.config_values.get('STEAM_ACTIVE_CHECK_INTERVAL') or 0))}")
+    print(f"  Steam Web API key: {'set' if api_key_set else 'not set'}")
+    print(f"  Email: {'enabled' if enabled_email else 'disabled'}")
+    print(f"  Email notifications: {', '.join(enabled_email) if enabled_email else 'none'}")
+    print(f"  Webhook: {'enabled' if state.config_values.get('WEBHOOK_ENABLED') else 'disabled'}")
+    print(f"  Webhook alerts: {', '.join(enabled_webhooks) if enabled_webhooks else 'none'}")
+    print(f"  Config destination: {state.config_path}")
+    print(f"  Dotenv destination: {state.env_path}")
     if state.secret_updates:
-        print(f"  Secrets to save:     {', '.join(sorted(state.secret_updates))}")
-    print()
+        print(f"  Secrets to save: {', '.join(sorted(state.secret_updates))}")
+    print(f"  Install method: {install_method()}")
 
 
 # Loops on the summary until the user saves or explicitly discards, so nothing is written by accident
@@ -3223,8 +3350,8 @@ def write_config_file(destination, content):
 
 
 # Prints where setup will write and which install method the printed commands are written for
-def _wizard_print_setup_destinations(config_path, env_path):
-    print(f"Detected install method: {colorize('username', install_method_display_name())}")
+def _wizard_print_setup_destinations(method, config_path, env_path):
+    print(f"Detected install method: {colorize('username', method)}")
     print(f"Configuration:          {config_path}")
     print(f"Dotenv:                 {env_path}\n")
 
@@ -3233,13 +3360,17 @@ def _wizard_print_setup_destinations(config_path, env_path):
 def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input_func=None, getpass_func=None, interactive=None):
     terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
     if not terminal_is_interactive:
-        print("The setup wizard needs an interactive terminal.")
+        print("The setup wizard needs an interactive terminal (TTY).")
         print(f"Run it from an interactive shell, or write a configuration to edit by hand with '{render_command(['--generate-config', 'steam_monitor.conf'], include_paths=False)}'")
         print(f"Guide: {QUICK_START_GUIDE_URL}")
         return 1
 
+    if env_file and str(env_file).casefold() == "none":
+        print("--setup requires a dotenv destination. Replace '--env-file none' with a writable path.")
+        return 1
+
     config_path = Path(config_file).expanduser() if config_file else Path.cwd() / DEFAULT_CONFIG_FILENAME
-    env_path = Path(env_file).expanduser() if env_file and str(env_file).casefold() != "none" else Path.cwd() / ".env"
+    env_path = Path(env_file).expanduser() if env_file else Path.cwd() / ".env"
 
     print(colorize("header", "Setup Wizard"))
     print()
@@ -3247,9 +3378,8 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     print("Press Enter to accept the shown default. Ctrl+C cancels.")
     print()
     print("Secrets go to the dotenv file. Non-secret settings go to the config file.")
-    print("Nothing is written until you choose Save at the end.")
     print()
-    _wizard_print_setup_destinations(config_path, env_path)
+    _wizard_print_setup_destinations(install_method(), config_path, env_path)
 
     baseline_values = {name: value for name, value in globals().items() if name in _config_allowed_names()}
     state = WizardSetupState(config_path, env_path, baseline_values)
@@ -3289,16 +3419,14 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
             print_recovery_error(exc, context="file", detail=f"Could not write secrets to '{state.env_path}'")
             return 1
 
-    print()
-    print(colorize("header", "Saved files"))
-    print()
+    print(colorize("header", "\nSaved files\n"))
     print(f"  Configuration: {config_result['path']}")
     if config_result["backup_path"]:
-        print(f"  Previous copy: {config_result['backup_path']}")
+        print(f"  Backup:        {config_result['backup_path']}")
     if secret_result:
-        print(f"  Dotenv:        {secret_result['path']}")
+        print(f"  {'Secrets:' if state.secret_updates else 'Dotenv:':<15}{secret_result['path']}")
         if secret_result.get("backup_path"):
-            print(f"  Previous copy: {secret_result['backup_path']}")
+            print(f"  Backup:        {secret_result['backup_path']}")
 
     doctor_offered = bool(state.target)
     if doctor_offered:
@@ -3314,14 +3442,12 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
         # The files are already written, so an interrupt here only skips the optional check
         print()
 
-    print()
-    print(colorize("header", "Next steps"))
-    print()
-    monitoring_command = render_command([state.target] if state.target else [], config_path=str(state.config_path), env_path=str(state.env_path) if secret_result else "")
-    print(f"  1. Start monitoring:  {monitoring_command}")
-    print(f"  2. Check the setup:   {render_command(['--doctor'] + ([state.target] if state.target else []), config_path=str(state.config_path), env_path=str(state.env_path) if secret_result else '')}")
-    print(f"  3. See every option:  {render_command(['--help'], include_paths=False)}")
-    print()
+    env_argument = str(state.env_path) if secret_result else ""
+    target_arguments = [state.target] if state.target else []
+    print(colorize("header", "\nNext steps\n"))
+    _wizard_print_command("Check setup again:", render_command(["--doctor"] + target_arguments, config_path=str(state.config_path), env_path=env_argument))
+    _wizard_print_command("Start monitoring:", render_command(target_arguments, config_path=str(state.config_path), env_path=env_argument))
+    _wizard_print_command("See every option:", render_command(["--help"], include_paths=False))
     print(f"Guide: {QUICK_START_GUIDE_URL}")
     return 0
 
