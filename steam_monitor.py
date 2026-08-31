@@ -2403,7 +2403,8 @@ def build_ntfy_image(image_url=""):
                 canvas.close()
         finally:
             resized_img.close()
-    except Exception:
+    except Exception as exc:
+        print_debug_exception("Preparing ntfy image", exc)
         return None
 
 

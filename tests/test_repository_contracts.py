@@ -162,4 +162,3 @@ class TestWorkflowSupplyChain:
     def test_dependabot_watches_actions_and_python_dependencies(self):
         updates = read_yaml_asset(".github/dependabot.yml")["updates"]
         assert {"github-actions", "pip"} <= {entry["package-ecosystem"] for entry in updates}
-

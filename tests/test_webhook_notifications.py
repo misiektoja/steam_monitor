@@ -57,6 +57,8 @@ class WebhookNotificationTests(unittest.TestCase):
             "WEBHOOK_TRANSFORMS": [],
             "NTFY_ACCESS_TOKEN": "",
             "NTFY_IMAGES": False,
+            "NTFY_IMAGES_AVAILABLE": steam_monitor.NTFY_IMAGES_AVAILABLE,
+            "DEBUG_MODE": False,
         }
         self.originals = {name: getattr(steam_monitor, name) for name in self.settings}
         for name, value in self.settings.items():
@@ -192,6 +194,22 @@ class WebhookNotificationTests(unittest.TestCase):
         self.assertEqual(post.call_count, 2)
         self.assertEqual(post.call_args_list[0].kwargs["headers"]["Content-Type"], "image/jpeg")
         self.assertEqual(post.call_args_list[1].kwargs["data"], b"Steam body")
+
+    # Verifies an image preparation failure explains the text fallback in debug output
+    def test_ntfy_image_preparation_failure_is_debugged_and_falls_back_to_text(self):
+        steam_monitor.WEBHOOK_PROVIDER = "ntfy"
+        steam_monitor.WEBHOOK_URL = "https://ntfy.example.test/private-topic"
+        steam_monitor.NTFY_IMAGES = True
+        steam_monitor.NTFY_IMAGES_AVAILABLE = True
+        steam_monitor.DEBUG_MODE = True
+        image_url = "https://cdn.akamai.steamstatic.com/steam/apps/10/header.jpg"
+        with patch.object(steam_monitor.WEBHOOK_SESSION, "get", side_effect=steam_monitor.req.Timeout("image download timed out")), patch.object(steam_monitor.WEBHOOK_SESSION, "post", return_value=FakeResponse(200)) as post, patch("builtins.print") as output:
+            result = steam_monitor.send_webhook("Steam title", "Steam body", "game", force=True, image_url=image_url)
+
+        self.assertEqual(result, 0)
+        self.assertEqual(post.call_args.kwargs["data"], b"Steam body")
+        rendered = "\n".join(str(call.args[0]) for call in output.call_args_list if call.args)
+        self.assertIn("Preparing ntfy image failed with Timeout: image download timed out", rendered)
 
     # Verifies webhook templates, transformations and dynamic headers share placeholders
     def test_custom_template_transforms_and_headers(self):
