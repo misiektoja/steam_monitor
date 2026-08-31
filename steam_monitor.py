@@ -3414,6 +3414,8 @@ def build_startup_summary(config_path=None, env_path=None, log_path=None):
         StartupSummaryRow("Secrets from dotenv file", ", ".join(dotenv_supplied) if dotenv_supplied else "None", concise=False),
         StartupSummaryRow("Secrets from environment", ", ".join(environment_supplied) if environment_supplied else "None", concise=False),
         StartupSummaryRow("Diagnostics", f"[verbose: {VERBOSE_MODE}] [debug: {DEBUG_MODE}]", concise=False),
+        # Points at the two modes for a reader who does not know they exist, so it is dropped once one of them is on
+        StartupSummaryRow("More details", "use --verbose or --debug", concise=True, full=False),
     ]
     return rows
 

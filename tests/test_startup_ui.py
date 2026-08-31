@@ -53,6 +53,18 @@ def test_the_real_summary_hides_diagnostics_until_asked(summary_globals):
         assert label in full, f"{label} should be in the full view"
 
 
+# Verifies the concise view points at the diagnostic modes and stops once one of them is on
+def test_the_concise_summary_points_at_the_diagnostic_modes(summary_globals):
+    rows = monitor.build_startup_summary("tool.conf", None, "tool.log")
+
+    concise = rendered_summary(rows, show_full=False)
+    full = rendered_summary(rows, show_full=True)
+
+    assert "* More details:" in concise
+    assert "use --verbose or --debug" in concise
+    assert "* More details:" not in full
+
+
 # Verifies both notification channels are reported with the categories that are actually enabled
 def test_the_notification_rollups_name_their_categories(monkeypatch, summary_globals):
     monkeypatch.setattr(monitor, "ACTIVE_INACTIVE_NOTIFICATION", True)
