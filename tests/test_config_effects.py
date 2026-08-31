@@ -30,7 +30,7 @@ def write_config(directory, extra=""):
 
 
 # Drives the real command line and returns the diagnostic state observed inside the config loader and the connectivity check
-def run_startup(monkeypatch, argv, config_path):
+def run_startup(monkeypatch, argv, config_path, env_path="none", exported_api_key="test-api-key-value"):
     observed = {}
     real_load_config_file = monitor.load_config_file
 
@@ -49,15 +49,16 @@ def run_startup(monkeypatch, argv, config_path):
     def stop_before_monitoring(*_args, **_kwargs):
         observed["debug_at_monitoring_start"] = monitor.DEBUG_MODE
         observed["verbose_at_monitoring_start"] = monitor.VERBOSE_MODE
+        observed["steam_api_key_at_monitoring_start"] = monitor.STEAM_API_KEY
         raise SystemExit(0)
 
     monkeypatch.setattr(monitor, "load_config_file", recording_load_config_file)
     monkeypatch.setattr(monitor, "check_internet", recording_check_internet)
     monkeypatch.setattr(monitor, "steam_monitor_user", stop_before_monitoring)
-    monkeypatch.setenv("STEAM_API_KEY", "test-api-key-value")
+    monkeypatch.setenv("STEAM_API_KEY", exported_api_key)
     monkeypatch.setattr(
         "sys.argv",
-        ["steam_monitor.py", "76561197960435530", "--env-file", "none", "--config-file", str(config_path)] + argv,
+        ["steam_monitor.py", "76561197960435530", "--env-file", str(env_path), "--config-file", str(config_path)] + argv,
     )
 
     with pytest.raises(SystemExit) as exit_info:
@@ -85,19 +86,59 @@ def test_unchanged_secret_is_not_reported_as_changed(monkeypatch):
     assert ("STEAM_API_KEY", False) in monitor.load_secrets_from_environment(namespace=namespace)
 
 
-# Verifies each secret is attributed to the dotenv file or to the wider environment, never to both
+# Verifies each secret is attributed to its effective source when both sources define the same name
 def test_secret_sources_separate_the_dotenv_file_from_the_environment(tmp_path, monkeypatch):
     env_file = tmp_path / ".env"
-    env_file.write_text('STEAM_API_KEY="from-file"\n', encoding="utf-8")
-    # load_dotenv copies file values into the environment, which is the case the attribution has to survive
-    monkeypatch.setenv("STEAM_API_KEY", "from-file")
+    env_file.write_text('STEAM_API_KEY="from-file"\nWEBHOOK_URL="https://ntfy.sh/file-topic"\n', encoding="utf-8")
+    monkeypatch.setenv("STEAM_API_KEY", "from-environment")
     monkeypatch.setenv("SMTP_PASSWORD", "exported-only")
-    monkeypatch.delenv("WEBHOOK_URL", raising=False)
+    monkeypatch.setenv("WEBHOOK_URL", "https://ntfy.sh/file-topic")
     monkeypatch.delenv("NTFY_ACCESS_TOKEN", raising=False)
 
-    sources = monitor.secret_sources(env_file)
+    sources = monitor.secret_sources(env_file, exported_keys={"STEAM_API_KEY", "SMTP_PASSWORD"})
 
-    assert sources == {"STEAM_API_KEY": str(env_file), "SMTP_PASSWORD": "environment"}
+    assert sources == {"STEAM_API_KEY": "environment", "SMTP_PASSWORD": "environment", "WEBHOOK_URL": str(env_file)}
+
+
+# Verifies dotenv loading cannot replace a secret that was already exported by the caller
+def test_exported_secret_wins_over_the_dotenv_file(tmp_path, monkeypatch):
+    from dotenv import load_dotenv
+    env_file = tmp_path / ".env"
+    env_file.write_text('STEAM_API_KEY="from-file"\n', encoding="utf-8")
+    monkeypatch.setenv("STEAM_API_KEY", "from-environment")
+    exported_keys = frozenset(secret for secret in monitor.SECRET_KEYS if monitor.os.getenv(secret) is not None)
+
+    load_dotenv(env_file, override=False)
+    namespace = {"STEAM_API_KEY": "from-config"}
+    monitor.load_secrets_from_environment(namespace)
+
+    assert namespace["STEAM_API_KEY"] == "from-environment"
+    assert monitor.secret_sources(env_file, exported_keys=exported_keys)["STEAM_API_KEY"] == "environment"
+
+
+# Verifies the real startup consumer keeps the exported key when its dotenv file defines the same name
+def test_real_startup_keeps_exported_secret_precedence(tmp_path, monkeypatch, restored_globals):
+    config = write_config(tmp_path)
+    env_file = tmp_path / ".env"
+    env_file.write_text('STEAM_API_KEY="from-file"\n', encoding="utf-8")
+
+    observed = run_startup(monkeypatch, [], config, env_path=env_file, exported_api_key="from-environment")
+
+    assert observed["steam_api_key_at_monitoring_start"] == "from-environment"
+    assert monitor.secret_sources(env_file)["STEAM_API_KEY"] == "environment"
+
+
+# Verifies SIGHUP refreshes file secrets without replacing values exported when the process started
+def test_dotenv_reload_preserves_exported_secrets(tmp_path, monkeypatch):
+    env_file = tmp_path / ".env"
+    env_file.write_text('STEAM_API_KEY="new-file-key"\nSMTP_PASSWORD="new-file-password"\n', encoding="utf-8")
+    monkeypatch.setenv("STEAM_API_KEY", "exported-key")
+    monkeypatch.setenv("SMTP_PASSWORD", "old-file-password")
+
+    monitor.reload_dotenv_secrets(env_file, exported_keys={"STEAM_API_KEY"})
+
+    assert monitor.os.getenv("STEAM_API_KEY") == "exported-key"
+    assert monitor.os.getenv("SMTP_PASSWORD") == "new-file-password"
 
 
 # Verifies no source is reported when nothing was exported

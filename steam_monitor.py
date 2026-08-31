@@ -8,7 +8,7 @@ https://github.com/misiektoja/steam_monitor/
 
 Python pip3 requirements:
 
-steam[client]
+steam
 requests
 python-dateutil
 python-dotenv (optional)
@@ -468,6 +468,9 @@ steam_visibilitystates = ["private", "private", "private", "public"]
 
 CLI_CONFIG_PATH = None
 
+# Secret names already present in the process environment before dotenv loading
+EXPORTED_SECRET_KEYS = frozenset()
+
 # to solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
 nl_ch = "\n"
 
@@ -526,7 +529,7 @@ try:
     import steam.steamid
     import steam.webapi
 except ModuleNotFoundError:
-    raise SystemExit("Error: Couldn't find the Steam library !\n\nTo install it, run:\n    pip3 install \"steam[client]\"\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://github.com/ValvePython/steam/")
+    raise SystemExit("Error: Couldn't find the Steam library !\n\nTo install it, run:\n    pip3 install steam\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://github.com/ValvePython/steam/")
 import shutil
 from pathlib import Path
 
@@ -1558,16 +1561,27 @@ def dotenv_file_keys(env_path=None):
         return frozenset()
 
 
-# Returns where each currently exported secret came from, naming the dotenv file only for the keys that file defines
-def secret_sources(env_path=None):
-    # load_dotenv copies file values into the environment, so the file's own keys have to be checked first
+# Returns where each effective environment secret came from while preserving exported-value precedence
+def secret_sources(env_path=None, exported_keys=None):
     file_keys = dotenv_file_keys(env_path)
+    protected_keys = EXPORTED_SECRET_KEYS if exported_keys is None else frozenset(exported_keys)
     sources = {}
     for secret in SECRET_KEYS:
         if os.getenv(secret) is None:
             continue
-        sources[secret] = str(env_path) if secret in file_keys else "environment"
+        sources[secret] = "environment" if secret in protected_keys or secret not in file_keys else str(env_path)
     return sources
+
+
+# Reloads dotenv secrets without replacing values exported when the process started
+def reload_dotenv_secrets(env_path, exported_keys=None):
+    from dotenv import dotenv_values
+    protected_keys = EXPORTED_SECRET_KEYS if exported_keys is None else frozenset(exported_keys)
+    values = dotenv_values(str(env_path))
+    for secret in SECRET_KEYS:
+        value = values.get(secret)
+        if secret not in protected_keys and value is not None:
+            os.environ[secret] = value
 
 
 # Copies exported secrets into module globals and returns the applied names paired with whether the value changed
@@ -1845,7 +1859,7 @@ def sanitize_error_text(value):
         if isinstance(secret_value, str) and secret_value and not secret_value.startswith("your_"):
             text = text.replace(secret_value, "<redacted>")
     text = re.sub(r"(?i)([?&]key=)[^&\s]+", r"\1<redacted>", text)
-    text = re.sub(r"(?im)(\b(?:STEAM_API_KEY|SMTP_PASSWORD|WEBHOOK_URL|NTFY_ACCESS_TOKEN)\b\s*=\s*)[^\s]+", r"\1<redacted>", text)
+    text = re.sub(r"(?im)(\b(?:STEAM_API_KEY|SMTP_PASSWORD|WEBHOOK_URL|NTFY_ACCESS_TOKEN)\b\s*=\s*)[^\r\n]*", r"\1<redacted>", text)
     return text
 
 
@@ -2499,7 +2513,7 @@ def doctor_check_environment(version_info=None, spec_finder=None):
         except (ImportError, ValueError):
             return False
 
-    for module_name, package_name in (("requests", "requests"), ("dateutil", "python-dateutil"), ("steam", "steam[client]")):
+    for module_name, package_name in (("requests", "requests"), ("dateutil", "python-dateutil"), ("steam", "steam")):
         if module_present(module_name):
             checks.append(make_doctor_check("Environment", "PASS", f"Required dependency {package_name} is installed"))
         else:
@@ -2526,18 +2540,18 @@ def doctor_check_environment(version_info=None, spec_finder=None):
 
 # Groups the configured secret names by the source each value actually came from
 def doctor_secret_sources(env_path=None):
-    # The dotenv file's own keys are read first, because load_dotenv copies them into the environment
-    file_keys = dotenv_file_keys(env_path)
+    environment_sources = secret_sources(env_path)
     from_file = []
     from_environment = []
     from_settings = []
     for key in SECRET_KEYS:
         if not doctor_value_is_set(globals().get(key)):
             continue
-        if key in file_keys:
-            from_file.append(key)
-        elif os.environ.get(key):
+        source = environment_sources.get(key)
+        if source == "environment":
             from_environment.append(key)
+        elif source:
+            from_file.append(key)
         else:
             from_settings.append(key)
     return from_file, from_environment, from_settings
@@ -3622,13 +3636,13 @@ def reload_secrets_signal_handler(sig, frame):
     else:
         # reload .env if python-dotenv is installed
         try:
-            from dotenv import load_dotenv, find_dotenv
+            from dotenv import find_dotenv
             if DOTENV_FILE:
                 env_path = DOTENV_FILE
             else:
                 env_path = find_dotenv()
             if env_path:
-                load_dotenv(env_path, override=True)
+                reload_dotenv_secrets(env_path)
             else:
                 print("* No .env file found, reloading exported environment variables only")
         except ImportError:
@@ -3896,9 +3910,9 @@ def display_recent_achievements(steamid, s_api, s_played, max_games=15, max_achi
     print("─" * HORIZONTAL_LINE)
 
     for i, ach in enumerate(achievements, 1):
-        game_name = ach.get("game", "Unknown Game")
-        ach_name = ach.get("name", "Unknown Achievement")
-        description = ach.get("description", "")
+        game_name = sanitize_untrusted_text(ach.get("game", "Unknown Game"))
+        ach_name = sanitize_untrusted_text(ach.get("name", "Unknown Achievement"))
+        description = sanitize_untrusted_text(ach.get("description", ""))
         unlock_ts = ach.get("unlocktime", 0)
 
         print(f"\n{i}. {colorize('game', game_name)}")
@@ -3949,8 +3963,8 @@ def display_persona_name_history(steamid):
 
     print(f"\nPersona name history ({len(history)}):")
     for i, entry in enumerate(history, 1):
-        name = entry.get("name", "")
-        when = entry.get("timechanged", "")
+        name = sanitize_untrusted_text(entry.get("name", ""))
+        when = sanitize_untrusted_text(entry.get("timechanged", ""))
         if when:
             print(f"{i} {colorize('username', name)} (changed: {when})")
         else:
@@ -4123,7 +4137,7 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
             print("\nTop games by lifetime hours:")
             for i, g in enumerate(top, 1):
                 hours = int(g.get('playtime_forever', 0) / 60)
-                print(f"{i} {g.get('name')} - {hours}h")
+                print(f"{i} {sanitize_untrusted_text(g.get('name'))} - {hours}h")
     except Exception as exc:
         print_debug_exception("Fetching owned games (IPlayerService.GetOwnedGames)", exc)
 
@@ -4133,7 +4147,7 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
     if "games" in s_played["response"].keys() and s_played["response"]["games"]:
         print(f"\nList of recently played games:")
         for i, game in enumerate(s_played["response"]["games"]):
-            name = game.get('name')
+            name = sanitize_untrusted_text(game.get('name'))
             mins_2w = game.get('playtime_2weeks', 0) or 0
             mins_total = game.get('playtime_forever', 0) or 0
             hrs_2w = mins_2w // 60
@@ -4415,7 +4429,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     if "games" in s_played["response"].keys() and s_played["response"]["games"]:
         print(f"\nList of recently played games:")
         for i, game in enumerate(s_played["response"]["games"]):
-            name = game.get('name')
+            name = sanitize_untrusted_text(game.get('name'))
             mins_2w = game.get('playtime_2weeks', 0) or 0
             mins_total = game.get('playtime_forever', 0) or 0
             hrs_2w = mins_2w // 60
@@ -4429,7 +4443,9 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     print_cur_ts("\nTimestamp:\t\t\t")
 
     alive_counter = 0
-    email_sent = False
+    error_email_sent = False
+    error_webhook_sent = False
+    error_delivery_code = None
 
     m_subject = m_body = ""
 
@@ -4453,8 +4469,6 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         current_games_appids = None
         current_username = None
         current_avatar_url = avatar_url
-        email_sent = False
-        webhook_sent = False
         try:
             print_debug(f"Polling Steam for {steamid} (ISteamUser.GetPlayerSummaries, IPlayerService.GetRecentlyPlayedGames)")
             s_api = steam_web_api_client()
@@ -4521,6 +4535,10 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
             advice = classify_recovery_error(e, context="runtime")
             response = e.response if isinstance(e, req.exceptions.HTTPError) else None
+            if advice.code != error_delivery_code:
+                error_email_sent = False
+                error_webhook_sent = False
+                error_delivery_code = advice.code
             if advice.code == "steam.rate_limited":
                 # Rate limits carry their own wait, so they skip the retry path rather than burning an attempt
                 retry_after = int(response.headers.get('Retry-After') or sleep_interval) if response is not None else sleep_interval
@@ -4545,10 +4563,10 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 else:
                     m_subject = f"steam_monitor: monitoring error (user: {username})"
                     m_body = f"{advice.summary}{nl_ch}{nl_ch}To fix: {advice.fix}{nl_ch}{nl_ch}Steam Monitor will retry in {display_time(sleep_interval)}.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                if (ERROR_NOTIFICATION and not email_sent) or (webhook_event_enabled("error") and not webhook_sent):
-                    email_delivered, webhook_delivered = send_notification_channels("error", m_subject, m_body, email_enabled=ERROR_NOTIFICATION and not email_sent, webhook_enabled=webhook_event_enabled("error") and not webhook_sent, image_url=current_avatar_url, ntfy_priority=5, ntfy_tags="warning")
-                    email_sent = email_sent or email_delivered
-                    webhook_sent = webhook_sent or webhook_delivered
+                if (ERROR_NOTIFICATION and not error_email_sent) or (webhook_event_enabled("error") and not error_webhook_sent):
+                    email_delivered, webhook_delivered = send_notification_channels("error", m_subject, m_body, email_enabled=ERROR_NOTIFICATION and not error_email_sent, webhook_enabled=webhook_event_enabled("error") and not error_webhook_sent, image_url=current_avatar_url, ntfy_priority=5, ntfy_tags="warning")
+                    error_email_sent = error_email_sent or email_delivered
+                    error_webhook_sent = error_webhook_sent or webhook_delivered
 
             print_cur_ts("Timestamp:\t\t\t")
 
@@ -4558,6 +4576,9 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
         recovery_hint_tracker.reset()
         transient_retry_used = False
+        error_email_sent = False
+        error_webhook_sent = False
+        error_delivery_code = None
 
         # A tracked feature that returned nothing cannot raise its alert, which is invisible without this line
         if STEAM_LEVEL_XP_CHECK and (current_steam_level is None or current_player_xp is None):
@@ -5072,7 +5093,7 @@ def validate_secret_action_args(args, parser, action_dest, action_flag):
 
 # Parses configuration and starts the selected Steam Monitor action
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, NAME_CHANGE_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME, NTFY_IMAGES
+    global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, NAME_CHANGE_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME, NTFY_IMAGES, EXPORTED_SECRET_KEYS
 
     if "--generate-config" in sys.argv and "--set-steam-api-key" not in sys.argv and "--set-webhook-url" not in sys.argv:
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
@@ -5585,6 +5606,7 @@ def main():
         if DOTENV_FILE:
             DOTENV_FILE = os.path.expanduser(DOTENV_FILE)
 
+    EXPORTED_SECRET_KEYS = frozenset(secret for secret in SECRET_KEYS if os.getenv(secret) is not None)
     if DOTENV_FILE and DOTENV_FILE.lower() == 'none':
         env_path = None
     else:
@@ -5596,11 +5618,11 @@ def main():
                 if not os.path.isfile(env_path):
                     print(f"* Warning: dotenv file '{env_path}' does not exist\n")
                 else:
-                    load_dotenv(env_path, override=True)
+                    load_dotenv(env_path, override=False)
             else:
                 env_path = find_dotenv() or None
                 if env_path:
-                    load_dotenv(env_path, override=True)
+                    load_dotenv(env_path, override=False)
         except ImportError:
             env_path = DOTENV_FILE if DOTENV_FILE else None
             if env_path:

@@ -8,7 +8,7 @@ The distributed package contains no vendored third-party source. It declares the
 
 | Component | License | Use |
 | --- | --- | --- |
-| [steam](https://pypi.org/project/steam/) | MIT | Steam client and Web API access for presence and game activity |
+| [steam](https://pypi.org/project/steam/) | MIT | Steam identifiers and Web API access for presence and game activity |
 | [requests](https://pypi.org/project/requests/) | Apache-2.0 | HTTP for the monitored service, notifications and artwork |
 | [python-dateutil](https://pypi.org/project/python-dateutil/) | Apache-2.0 or BSD-3-Clause | Timestamp parsing and relative date arithmetic |
 | [python-dotenv](https://pypi.org/project/python-dotenv/) | BSD-3-Clause | Reading secrets from `.env` |

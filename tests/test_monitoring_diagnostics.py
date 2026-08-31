@@ -68,7 +68,7 @@ class FakeSteamWebAPI:
 
 
 # Runs one monitoring cycle with every tracked feature on and the named endpoints failing
-def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True, poll_error=None, stop_after_sleeps=2):
+def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True, poll_error=None, stop_after_sleeps=2, error_notifications=False):
     monkeypatch.setattr(monitor, "DEBUG_MODE", diagnostics)
     monkeypatch.setattr(monitor, "VERBOSE_MODE", diagnostics)
     monkeypatch.setattr(monitor, "STEAM_LEVEL_XP_CHECK", True)
@@ -78,11 +78,12 @@ def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True,
     monkeypatch.setattr(monitor, "STEAM_ACTIVE_CHECK_INTERVAL", 30)
     monkeypatch.setattr(monitor, "LIVENESS_CHECK_COUNTER", 0)
     monkeypatch.setattr(monitor, "ACTIVE_INACTIVE_NOTIFICATION", False)
-    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", False)
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", error_notifications)
     monkeypatch.setattr(monitor, "STEAM_LEVEL_XP_NOTIFICATION", False)
     monkeypatch.setattr(monitor, "FRIENDS_NOTIFICATION", False)
     monkeypatch.setattr(monitor, "GAMES_LIBRARY_NOTIFICATION", False)
-    monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", False)
+    monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", error_notifications)
+    monkeypatch.setattr(monitor, "WEBHOOK_ERROR_NOTIFICATION", error_notifications)
     monkeypatch.setattr(monitor, "FILE_SUFFIX", "")
     # Keep every generated file inside the temporary directory
     monkeypatch.chdir(tmp_path)
@@ -225,3 +226,18 @@ def test_a_continuing_outage_prints_one_hint(tmp_path, monkeypatch, capsys):
     output = capsys.readouterr().out
     assert output.count("The Steam Web API is temporarily unavailable") >= 3
     assert output.count("To fix: ") == 1
+
+
+# Verifies a delivered error channel stays suppressed while a failed channel retries during the same outage
+def test_a_continuing_outage_retries_only_failed_notification_channels(tmp_path, monkeypatch):
+    deliveries = []
+
+    # Records which delivery channels each outage cycle requests
+    def record_delivery(*_args, **kwargs):
+        deliveries.append((kwargs["email_enabled"], kwargs["webhook_enabled"]))
+        return True, False
+
+    monkeypatch.setattr(monitor, "send_notification_channels", record_delivery)
+    run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=http_error(503), stop_after_sleeps=4, error_notifications=True)
+
+    assert deliveries == [(True, True), (False, True)]

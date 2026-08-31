@@ -157,6 +157,19 @@ def test_a_secret_never_reaches_the_advice(restored_globals):
     assert "<redacted>" in rendered
 
 
+# Verifies malformed secret assignments cannot expose a value tail after whitespace
+def test_malformed_config_redacts_the_complete_secret_value(tmp_path, capsys, restored_globals):
+    config = tmp_path / "broken.conf"
+    config.write_text('SMTP_PASSWORD = "top secret value\n', encoding="utf-8")
+
+    assert monitor.load_config_file(config, namespace={}, report_errors=True) is False
+
+    output = capsys.readouterr().out
+    assert "top" not in output
+    assert "secret value" not in output
+    assert "SMTP_PASSWORD = <redacted>" in output
+
+
 # Verifies a repeated failure prints its hint once rather than on every cycle of a long outage
 def test_a_repeated_failure_prints_one_hint(capsys, restored_globals):
     monitor.DEBUG_MODE = False

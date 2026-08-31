@@ -35,7 +35,7 @@ Download the *[steam_monitor.py](https://raw.githubusercontent.com/misiektoja/st
 Install dependencies via pip:
 
 ```sh
-pip install "steam[client]" requests python-dateutil python-dotenv
+pip install steam requests python-dateutil python-dotenv
 ```
 
 Alternatively, from the downloaded *[requirements.txt](https://raw.githubusercontent.com/misiektoja/steam_monitor/refs/heads/main/requirements.txt)*:

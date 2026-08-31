@@ -169,6 +169,32 @@ def test_an_overlong_value_is_truncated():
     assert cleaned.endswith("...")
 
 
+# Verifies persona history sanitizes third-party names at the real terminal sink
+def test_persona_history_cannot_forge_an_output_line(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "fetch_persona_name_history", lambda _steamid: [{"name": "Player\n* Error: forged", "timechanged": "date\n* Error: time"}])
+
+    monitor.display_persona_name_history(76561197960265740)
+
+    output = capsys.readouterr().out
+    assert "\n* Error: forged" not in output
+    assert "\n* Error: time" not in output
+    assert "Player* Error: forged" in output
+
+
+# Verifies achievement text sanitizes every Steam-controlled field at the real terminal sink
+def test_achievement_text_cannot_forge_output_lines(monkeypatch, capsys):
+    achievement = {"game": "Game\n* Error: game", "name": "Badge\n* Error: badge", "description": "Text\n* Error: detail", "unlocktime": 0}
+    monkeypatch.setattr(monitor, "fetch_recent_achievements", lambda *_args, **_kwargs: [achievement])
+
+    monitor.display_recent_achievements(76561197960265740, object(), {})
+
+    output = capsys.readouterr().out
+    assert "\n* Error:" not in output
+    assert "Game* Error: game" in output
+    assert "Badge* Error: badge" in output
+    assert "Text* Error: detail" in output
+
+
 # Verifies no outbound request in the module can be added without the TLS setting, which a runtime test cannot prove
 def test_every_outbound_request_passes_the_tls_setting():
     source = (Path(__file__).resolve().parents[1] / "steam_monitor.py").read_text(encoding="utf-8")
