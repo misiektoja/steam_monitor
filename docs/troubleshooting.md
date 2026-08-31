@@ -8,9 +8,11 @@ Before monitoring anything, `--doctor` checks whether the setup is actually read
 steam_monitor --doctor <steam_target>
 ```
 
-It is **read-only**: it writes no files and says so before the first check runs. Checks are grouped into **Environment**, **Configuration**, **Authentication**, **Connectivity**, **Target** and **Notifications** and each row is marked `[PASS]`, `[WARN]`, `[FAIL]` or `[SKIP]`, colour-coded by status when colour output is on. The Environment section reports the raw `manual`, `pip`, `docker` or `compose` install method. Every non-passing row carries a `To fix:` line and a link to the documentation page that covers it.
+It is **read-only**: it writes no files and says so before the first check runs. It opens with the detected install method, then groups checks into **Environment**, **Configuration**, **Authentication**, **Connectivity**, **Target** and **Notifications**. Each row is marked `[PASS]`, `[WARN]`, `[FAIL]` or `[SKIP]`, colour-coded by status when colour output is on. Every non-passing row carries a `To fix:` line and a link to the documentation page that covers it.
 
 The Configuration section names the configuration and dotenv files in effect and reports **which secrets came from the dotenv file and which came from the environment**, by name only. No secret value is ever printed.
+
+It also names the **log and CSV files monitoring would write** and reports whether each one can be created. The log file name includes the Steam ID or `FILE_SUFFIX`, so it is only resolved when a target is given. Without one, the row reports the base path instead.
 
 When email or webhook alerts validate and you are at a terminal, doctor then offers to send **one real test message per channel**, each behind its own confirmation. Declining is the default. Nothing is sent without an explicit `y`, so a scripted or containerized run stays message-free.
 

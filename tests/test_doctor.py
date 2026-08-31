@@ -73,7 +73,7 @@ def build_report(monkeypatch, target_value=None, client=None, connected=True, co
     monkeypatch.setattr(monitor, "check_internet", lambda *_args, **_kwargs: connected)
     monkeypatch.setattr(monitor, "steam_web_api_client", lambda *_args, **_kwargs: client or FakeSteamClient())
     report.checks.extend(monitor.doctor_check_environment())
-    report.checks.extend(monitor.doctor_check_configuration(config_path, env_path))
+    report.checks.extend(monitor.doctor_check_configuration(config_path, env_path, target_value))
     report.checks.extend(monitor.doctor_check_connectivity())
     report.checks.extend(monitor.doctor_check_authentication(report))
     report.checks.extend(monitor.doctor_check_target(report, target_value))
@@ -124,7 +124,19 @@ def test_the_python_version_is_checked_not_just_printed():
     assert unsupported[0].status == "FAIL"
     assert unsupported[0].advice is not None
     assert monitor.MINIMUM_PYTHON_VERSION_TEXT in unsupported[0].advice.fix
-    assert any(check.status == "PASS" and check.label.startswith("Install method: ") for check in supported)
+
+
+# Verifies the install method is stated as context, not as a result row no marker can describe
+def test_the_install_method_is_reported_without_a_status_marker(monkeypatch, doctor_globals):
+    monkeypatch.setattr(monitor, "install_method", lambda: "manual")
+    report = build_report(monkeypatch)
+
+    assert not any("Install method" in check.label for check in monitor.doctor_check_environment())
+
+    rendered = monitor.render_doctor_report(report)
+
+    assert rendered.splitlines()[1] == "Detected install method: manual"
+    assert "[PASS] Install method" not in rendered
 
 
 # Verifies a missing required dependency fails while a missing optional one only warns
@@ -335,6 +347,60 @@ def test_the_summary_states_a_conclusion():
     failed = monitor.DoctorReport()
     failed.checks.append(monitor.make_doctor_check("Environment", "FAIL", "broken"))
     assert "1 check(s) failed, 0 warning(s). Fix the failures above before relying on the tool." in monitor.render_doctor_report(failed)
+
+
+# Verifies the log row names the file monitoring will actually open once a target is known
+def test_the_log_destination_is_resolved_when_a_target_is_known(tmp_path, monkeypatch, doctor_globals):
+    monkeypatch.setattr(monitor, "DISABLE_LOGGING", False)
+    monkeypatch.setattr(monitor, "ST_LOGFILE", str(tmp_path / "steam_monitor"))
+    monkeypatch.setattr(monitor, "FILE_SUFFIX", "")
+
+    checks = monitor.doctor_output_destination_checks(76561197960435530)
+
+    assert checks[0].status == "PASS"
+    assert checks[0].label == "Log destination appears writable"
+    assert checks[0].detail == f"Path: {tmp_path / 'steam_monitor_76561197960435530.log'}"
+    # The reported path is the one monitoring opens, not a separately assembled name
+    assert monitor.build_log_path(monitor.ST_LOGFILE, "76561197960435530") == tmp_path / "steam_monitor_76561197960435530.log"
+
+
+# Verifies a configured suffix replaces the Steam ID in the reported log destination
+def test_a_configured_file_suffix_names_the_log_destination(tmp_path, monkeypatch, doctor_globals):
+    monkeypatch.setattr(monitor, "DISABLE_LOGGING", False)
+    monkeypatch.setattr(monitor, "ST_LOGFILE", str(tmp_path / "steam_monitor"))
+    monkeypatch.setattr(monitor, "FILE_SUFFIX", "mybox")
+
+    checks = monitor.doctor_output_destination_checks(76561197960435530)
+
+    assert checks[0].detail == f"Path: {tmp_path / 'steam_monitor_mybox.log'}"
+
+
+# Verifies the log row defers instead of guessing when nothing names the file yet
+def test_the_log_destination_is_deferred_without_a_target(tmp_path, monkeypatch, doctor_globals):
+    monkeypatch.setattr(monitor, "DISABLE_LOGGING", False)
+    monkeypatch.setattr(monitor, "ST_LOGFILE", str(tmp_path / "steam_monitor"))
+    monkeypatch.setattr(monitor, "FILE_SUFFIX", "")
+
+    checks = monitor.doctor_output_destination_checks()
+
+    assert checks[0].status == "PASS"
+    assert checks[0].label == "Log destination will be finalized after a target is selected"
+    assert checks[0].detail == f"Base path: {tmp_path / 'steam_monitor'}"
+
+
+# Verifies an unwritable output path fails preflight rather than passing and crashing at startup
+@pytest.mark.parametrize("setting,label", [("ST_LOGFILE", "Log destination"), ("CSV_FILE", "CSV destination"), ("PROFILE_CSV_FILE", "Profile CSV destination")])
+def test_an_unwritable_output_path_fails(monkeypatch, doctor_globals, setting, label):
+    monkeypatch.setattr(monitor, "DISABLE_LOGGING", False)
+    monkeypatch.setattr(monitor, "ST_LOGFILE", "")
+    monkeypatch.setattr(monitor, setting, "/nonexistent-root-dir/steam_monitor")
+    monkeypatch.setattr(monitor.os, "access", lambda *_args, **_kwargs: False)
+
+    failures = [check for check in monitor.doctor_output_destination_checks(76561197960435530) if check.status == "FAIL"]
+
+    assert len(failures) == 1
+    assert failures[0].label.startswith(f"{label} is not writable")
+    assert failures[0].advice is not None
 
 
 # Verifies a check whose detail only repeats its label renders that sentence once

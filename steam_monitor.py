@@ -2608,7 +2608,6 @@ def doctor_check_environment(version_info=None, spec_finder=None):
         checks.append(make_doctor_check("Environment", "PASS", "Optional dependency colorama is installed", "Used only for coloured output on Windows terminals"))
     else:
         checks.append(make_doctor_check("Environment", "WARN", "Optional dependency colorama is not installed", "Coloured output may not render on older Windows terminals. Every other platform is unaffected. Install it with: pip3 install colorama"))
-    checks.append(make_doctor_check("Environment", "PASS", f"Install method: {install_method()}"))
     return checks
 
 
@@ -2646,8 +2645,58 @@ def doctor_secret_checks(env_path=None):
     return checks
 
 
+# Returns the log file monitoring will actually write, which needs the target-derived suffix
+def build_log_path(base_path, suffix):
+    log_path = Path(os.path.expanduser(str(base_path)))
+    if log_path.suffix == "" and suffix:
+        log_path = log_path.parent / f"{log_path.name}_{suffix}.log"
+    return log_path
+
+
+# Returns the closest parent that exists, so writability is judged without creating anything
+def nearest_existing_parent(path):
+    candidate = Path(path).expanduser()
+    if candidate.exists():
+        return candidate if candidate.is_dir() else candidate.parent
+    while not candidate.exists() and candidate != candidate.parent:
+        candidate = candidate.parent
+    return candidate
+
+
+# Reports whether one file monitoring will write can be created, without creating anything
+def doctor_destination_check(label, destination):
+    selected = Path(destination).expanduser()
+    parent = nearest_existing_parent(selected)
+    if parent.is_dir() and os.access(parent, os.W_OK):
+        return make_doctor_check("Configuration", "PASS", f"{label} appears writable", f"Path: {selected}")
+    advice = classify_recovery_error(context="file", detail=f"{label} is not writable: {selected}")
+    return make_doctor_check("Configuration", "FAIL", advice.summary, advice.detail, advice)
+
+
+# Reports each file monitoring will write, resolving the log name once a target is known
+def doctor_output_destination_checks(target_value=None):
+    checks = []
+    if DISABLE_LOGGING:
+        checks.append(make_doctor_check("Configuration", "PASS", "Output logging is disabled", "No log file will be written"))
+    elif ST_LOGFILE:
+        suffix = str(FILE_SUFFIX or "") or (str(target_value) if target_value else "")
+        if suffix:
+            checks.append(doctor_destination_check("Log destination", build_log_path(ST_LOGFILE, suffix)))
+        else:
+            checks.append(make_doctor_check("Configuration", "PASS", "Log destination will be finalized after a target is selected", f"Base path: {Path(os.path.expanduser(ST_LOGFILE))}"))
+    if CSV_FILE:
+        checks.append(doctor_destination_check("CSV destination", CSV_FILE))
+    else:
+        checks.append(make_doctor_check("Configuration", "PASS", "CSV logging is disabled", "No activity CSV file will be written"))
+    if PROFILE_CSV_FILE:
+        checks.append(doctor_destination_check("Profile CSV destination", PROFILE_CSV_FILE))
+    else:
+        checks.append(make_doctor_check("Configuration", "PASS", "Profile CSV logging is disabled", "No profile CSV file will be written"))
+    return checks
+
+
 # Reports the configuration and dotenv files in effect plus every file the tool will generate
-def doctor_check_configuration(config_path=None, env_path=None):
+def doctor_check_configuration(config_path=None, env_path=None, target_value=None):
     checks = []
     if config_path:
         checks.append(make_doctor_check("Configuration", "PASS", "Configuration file loaded", f"Path: {config_path}"))
@@ -2662,12 +2711,7 @@ def doctor_check_configuration(config_path=None, env_path=None):
         checks.append(make_doctor_check("Configuration", "PASS", "No dotenv file selected", "Using environment variables and other configured sources"))
     checks.extend(doctor_secret_checks(env_path))
 
-    if DISABLE_LOGGING:
-        checks.append(make_doctor_check("Configuration", "PASS", "Output logging is disabled", "No log file will be written"))
-    else:
-        checks.append(make_doctor_check("Configuration", "PASS", "Output logging is enabled", f"Log file base name: {ST_LOGFILE}"))
-    checks.append(make_doctor_check("Configuration", "PASS", "CSV logging is enabled" if CSV_FILE else "CSV logging is disabled", f"Path: {CSV_FILE}" if CSV_FILE else "No activity CSV file will be written"))
-    checks.append(make_doctor_check("Configuration", "PASS", "Profile CSV logging is enabled" if PROFILE_CSV_FILE else "Profile CSV logging is disabled", f"Path: {PROFILE_CSV_FILE}" if PROFILE_CSV_FILE else "No profile CSV file will be written"))
+    checks.extend(doctor_output_destination_checks(target_value))
     return checks
 
 
@@ -2787,7 +2831,9 @@ def render_doctor_marker(status):
 
 # Renders one sectioned ASCII doctor report with a fix line on every non-passing row
 def render_doctor_report(report):
-    lines = [colorize("header", "Doctor")]
+    # The install method is context rather than a check: it cannot fail, so it is stated once here
+    # instead of occupying a result row that no marker describes
+    lines = [colorize("header", "Doctor"), f"Detected install method: {colorize('username', install_method())}"]
     for section in DOCTOR_SECTIONS:
         section_checks = [check for check in report.checks if check.section == section]
         if not section_checks:
@@ -2905,7 +2951,7 @@ def run_doctor(target_value=None, config_path=None, env_path=None):
     try:
         for label, collect in (
             ("environment", lambda: doctor_check_environment()),
-            ("configuration", lambda: doctor_check_configuration(config_path, env_path)),
+            ("configuration", lambda: doctor_check_configuration(config_path, env_path, target_value)),
             ("connectivity", lambda: doctor_check_connectivity()),
             ("authentication", lambda: doctor_check_authentication(report)),
             ("the monitored profile", lambda: doctor_check_target(report, target_value)),
@@ -6017,6 +6063,9 @@ def main():
         sys.exit(run_setup_wizard(initial_target=setup_target, config_file=args.config_file or cfg_path, env_file=args.env_file or env_path))
 
     if args.doctor:
+        # Applied before the report so the log destination it names is the one monitoring would open
+        if args.file_suffix:
+            FILE_SUFFIX = args.file_suffix
         doctor_target = args.resolve_community_url or args.steam64_id or TARGET_STEAM_ID
         sys.exit(run_doctor(target_value=doctor_target, config_path=cfg_path, env_path=env_path))
 
@@ -6096,9 +6145,10 @@ def main():
             print_recovery_error(e, context="file", detail=f"Profile CSV file '{PROFILE_CSV_FILE}' cannot be opened for writing")
             sys.exit(1)
 
+    # A configured FILE_SUFFIX is documented as replacing the Steam ID, so only an unset value falls back to it
     if args.file_suffix:
         FILE_SUFFIX = args.file_suffix
-    else:
+    elif not FILE_SUFFIX:
         FILE_SUFFIX = str(s_id)
 
     if args.no_color is True:
@@ -6117,13 +6167,8 @@ def main():
     init_color_output(stdout_bck)
 
     if not DISABLE_LOGGING:
-        log_path = Path(os.path.expanduser(ST_LOGFILE))
-        if log_path.parent != Path('.'):
-            if log_path.suffix == "":
-                log_path = log_path.parent / f"{log_path.name}_{FILE_SUFFIX}.log"
-        else:
-            if log_path.suffix == "":
-                log_path = Path(f"{log_path.name}_{FILE_SUFFIX}.log")
+        # Shared with doctor, so the path it reports is the one monitoring opens
+        log_path = build_log_path(ST_LOGFILE, FILE_SUFFIX)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         FINAL_LOG_PATH = str(log_path)
         sys.stdout = Logger(FINAL_LOG_PATH, strip_ansi=True)

@@ -220,6 +220,36 @@ def test_positional_vanity_forms_are_resolved_before_monitoring(tmp_path, monkey
     assert observed["monitored_steam_id"] == resolved
 
 
+# Verifies a configured FILE_SUFFIX names the log file, which is what the setting documents
+def test_configured_file_suffix_names_the_log_file(tmp_path, monkeypatch, restored_globals, capsys):
+    config = tmp_path / "steam_monitor.conf"
+    config.write_text(f'CLEAR_SCREEN = False\nDISABLE_LOGGING = False\nST_LOGFILE = "{tmp_path / "steam_monitor"}"\nFILE_SUFFIX = "mybox"\n', encoding="utf-8")
+
+    run_startup(monkeypatch, [], config)
+
+    assert f"Output:{'':<23}{tmp_path / 'steam_monitor_mybox.log'}" in capsys.readouterr().out
+
+
+# Verifies the command line still wins over a configured suffix
+def test_the_file_suffix_flag_wins_over_the_configured_value(tmp_path, monkeypatch, restored_globals, capsys):
+    config = tmp_path / "steam_monitor.conf"
+    config.write_text(f'CLEAR_SCREEN = False\nDISABLE_LOGGING = False\nST_LOGFILE = "{tmp_path / "steam_monitor"}"\nFILE_SUFFIX = "mybox"\n', encoding="utf-8")
+
+    run_startup(monkeypatch, ["--file-suffix", "fromcli"], config)
+
+    assert f"Output:{'':<23}{tmp_path / 'steam_monitor_fromcli.log'}" in capsys.readouterr().out
+
+
+# Verifies an unset suffix still falls back to the monitored Steam ID
+def test_an_unset_file_suffix_falls_back_to_the_steam_id(tmp_path, monkeypatch, restored_globals, capsys):
+    config = tmp_path / "steam_monitor.conf"
+    config.write_text(f'CLEAR_SCREEN = False\nDISABLE_LOGGING = False\nST_LOGFILE = "{tmp_path / "steam_monitor"}"\n', encoding="utf-8")
+
+    run_startup(monkeypatch, [], config)
+
+    assert f"Output:{'':<23}{tmp_path / 'steam_monitor_76561197960435530.log'}" in capsys.readouterr().out
+
+
 # Verifies the legacy -r URL option still reaches the same monitoring consumer
 def test_legacy_resolve_url_option_remains_supported(tmp_path, monkeypatch, restored_globals):
     config = write_config(tmp_path)
