@@ -454,7 +454,7 @@ STEAM_TARGET_INPUT_ERROR = f"Enter a {STEAM_TARGET_FORMS}, for example https://s
 DOCTOR_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#doctor-preflight"
 
 # Shared prefixes for the checks a delivery test depends on, kept as constants because the labels are dynamic
-SMTP_READY_CHECK_LABEL = "SMTP settings and alert choices look valid"
+SMTP_READY_CHECK_LABEL = "SMTP connection and login succeeded"
 WEBHOOK_READY_CHECK_LABEL = "Webhook URL, headers and alert choices look valid"
 
 # List of secret keys to load from env/config
@@ -1497,7 +1497,23 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
         return '0 seconds'
 
 
-# Sends email notification
+# Opens one authenticated SMTP session and leaves closing it to the caller
+def smtp_connect_and_login(use_ssl, smtp_timeout=15):
+    smtp_object = smtplib.SMTP(SMTP_HOST, int(SMTP_PORT), timeout=smtp_timeout)
+    try:
+        if use_ssl:
+            smtp_object.starttls(context=ssl.create_default_context())
+        smtp_object.login(SMTP_USER, SMTP_PASSWORD)
+        return smtp_object
+    except Exception:
+        try:
+            smtp_object.quit()
+        except Exception:
+            pass
+        raise
+
+
+# Sends one email notification, validating the settings before it connects
 def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
     fqdn_re = re.compile(r'(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)')
     email_re = re.compile(r'[^@]+@[^@]+\.[^@]+')
@@ -1535,13 +1551,7 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
 
     print_debug(f"Connecting to SMTP {SMTP_HOST}:{SMTP_PORT} as {SMTP_USER} (STARTTLS: {bool(use_ssl)}, timeout: {smtp_timeout}s)")
     try:
-        if use_ssl:
-            ssl_context = ssl.create_default_context()
-            smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=smtp_timeout)
-            smtpObj.starttls(context=ssl_context)
-        else:
-            smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=smtp_timeout)
-        smtpObj.login(SMTP_USER, SMTP_PASSWORD)
+        smtpObj = smtp_connect_and_login(use_ssl, smtp_timeout=smtp_timeout)
         email_msg = MIMEMultipart('alternative')
         email_msg["From"] = SENDER_EMAIL
         email_msg["To"] = RECEIVER_EMAIL
@@ -1752,6 +1762,9 @@ def run_set_steam_api_key(env_file=None, interactive=None, input_func=None, getp
     print(f"* Updated private settings file: {destination}")
     if result.get("backup_path"):
         print(f"* Previous private settings file backed up to: {result['backup_path']}")
+    print()
+    _wizard_print_command("Check setup again:", render_command(["--doctor", "<steam_target>"], include_paths=False, env_path=destination))
+    _wizard_print_command("After Doctor passes, start monitoring:", render_command(["<steam_target>"], include_paths=False, env_path=destination))
     return str(destination)
 
 
@@ -1825,7 +1838,9 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
     print(f"* Updated private settings file: {destination}")
     if result.get("backup_path"):
         print(f"* Previous private settings file backed up to: {result['backup_path']}")
-    print(f"* Send a test webhook with: {render_command(['--send-test-webhook'], include_paths=False, env_path=destination)}")
+    print()
+    _wizard_print_command("Send a test webhook:", render_command(["--send-test-webhook"], include_paths=False, env_path=destination))
+    _wizard_print_command("Check setup again:", render_command(["--doctor", "<steam_target>"], include_paths=False, env_path=destination))
     return str(destination)
 
 
@@ -2767,7 +2782,7 @@ def doctor_check_target(report, target_value=None):
     return checks
 
 
-# Checks email alert settings without connecting to the SMTP server or sending anything
+# Checks email alert settings then confirms the SMTP sign-in without sending anything
 def doctor_check_email_notifications(report):
     enabled_categories = _startup_email_notification_categories()
     configured = doctor_value_is_set(SMTP_HOST) and doctor_value_is_set(SENDER_EMAIL) and doctor_value_is_set(RECEIVER_EMAIL)
@@ -2784,6 +2799,18 @@ def doctor_check_email_notifications(report):
     if not doctor_value_is_set(SMTP_USER) or not doctor_value_is_set(SMTP_PASSWORD):
         advice = classify_recovery_error(context="email", detail="SMTP_USER or SMTP_PASSWORD is missing")
         return [make_doctor_check("Notifications", "WARN", "Email alerts are selected but the SMTP sign-in is incomplete", "Set SMTP_USER and SMTP_PASSWORD, using an app password if the provider requires one", advice)]
+    smtp_object = None
+    try:
+        smtp_object = smtp_connect_and_login(SMTP_SSL, smtp_timeout=5)
+    except Exception as exc:
+        advice = classify_recovery_error(exc, "email")
+        return [make_doctor_check("Notifications", "FAIL", advice.summary, advice.detail, advice)]
+    finally:
+        if smtp_object is not None:
+            try:
+                smtp_object.quit()
+            except Exception:
+                pass
     report.email_ready = True
     return [make_doctor_check("Notifications", "PASS", SMTP_READY_CHECK_LABEL, f"Alerts: {', '.join(enabled_categories)}. No email was sent during this passive check")]
 
@@ -2811,7 +2838,7 @@ def doctor_check_webhook_notifications(report):
         advice = make_recovery_advice("webhook.invalid", "Webhook alerts are on but no alert types are selected", recovery_fix_with_guide("Turn on at least one webhook alert in the configuration file, or set WEBHOOK_ENABLED to False", WEBHOOK_GUIDE_URL), False)
         return [make_doctor_check("Notifications", "WARN", advice.summary, "Nothing would ever be delivered", advice)]
     report.webhook_ready = True
-    return [make_doctor_check("Notifications", "PASS", f"{WEBHOOK_READY_CHECK_LABEL} for {webhook_provider_display_name()}", f"Alerts: {', '.join(selected_categories)}. The private link was not displayed and no webhook was sent")]
+    return [make_doctor_check("Notifications", "PASS", f"{WEBHOOK_READY_CHECK_LABEL} for {webhook_provider_display_name()}", f"Alerts: {', '.join(selected_categories)}. The private link was not displayed. No webhook was sent during this passive check")]
 
 
 # The fixed section order the report renders in, chosen so each section depends only on the ones above it
@@ -3413,6 +3440,13 @@ def _wizard_edit_setup_section(state, input_func=None, getpass_func=None):
         _wizard_resolve_pending_target(state, input_func=input_func)
 
 
+# Prints one aligned label and value block, so every summary row lines up
+def _wizard_print_summary_rows(rows):
+    width = max(len(label) for label, _ in rows) + 1
+    for label, value in rows:
+        print(f"  {(label + ':'):<{width}} {value}")
+
+
 # Shows everything that is about to be written, by name and never by secret value
 def _wizard_print_setup_summary(state):
     email_labels = {"ACTIVE_INACTIVE_NOTIFICATION": "online/offline", "GAME_CHANGE_NOTIFICATION": "game", "STATUS_NOTIFICATION": "every status change", "NAME_CHANGE_NOTIFICATION": "name change", "ERROR_NOTIFICATION": "errors"}
@@ -3420,19 +3454,23 @@ def _wizard_print_setup_summary(state):
     enabled_email = [email_labels[name] for name in WIZARD_EMAIL_NOTIFICATION_KEYS if state.config_values.get(name)]
     enabled_webhooks = [webhook_labels[name] for name in WIZARD_WEBHOOK_NOTIFICATION_KEYS if state.config_values.get(name)] if state.config_values.get("WEBHOOK_ENABLED") else []
     api_key_set = "STEAM_API_KEY" in state.secret_updates or doctor_value_is_set(state.config_values.get("STEAM_API_KEY"))
+    webhook_state = f"enabled ({webhook_provider_display_name(state.config_values.get('WEBHOOK_PROVIDER'))})" if state.config_values.get("WEBHOOK_ENABLED") else "disabled"
+    rows = [
+        ("Target", state.target or "not set"),
+        ("Persist target", "yes" if state.persist_target else "no"),
+        ("Polling interval while offline", _wizard_format_duration(int(state.config_values.get("STEAM_CHECK_INTERVAL") or 0))),
+        ("Polling interval while online", _wizard_format_duration(int(state.config_values.get("STEAM_ACTIVE_CHECK_INTERVAL") or 0))),
+        ("Authentication status", "complete" if api_key_set else "incomplete"),
+        ("Email", "enabled" if enabled_email else "disabled"),
+        ("Email notifications", ", ".join(enabled_email) if enabled_email else "none"),
+        ("Webhook", webhook_state),
+        ("Webhook alerts", ", ".join(enabled_webhooks) if enabled_webhooks else "none"),
+        ("Config destination", state.config_path),
+        ("Dotenv destination", state.env_path),
+        ("Install method", install_method()),
+    ]
     print(colorize("header", "\nSetup summary\n"))
-    print(f"  Target: {state.target}" if state.target else "  Target: not set")
-    print(f"  Persist target: {'yes' if state.persist_target else 'no'}")
-    print(f"  Polling interval while offline: {_wizard_format_duration(int(state.config_values.get('STEAM_CHECK_INTERVAL') or 0))}")
-    print(f"  Polling interval while online: {_wizard_format_duration(int(state.config_values.get('STEAM_ACTIVE_CHECK_INTERVAL') or 0))}")
-    print(f"  Authentication status: {'complete' if api_key_set else 'incomplete'}")
-    print(f"  Email: {'enabled' if enabled_email else 'disabled'}")
-    print(f"  Email notifications: {', '.join(enabled_email) if enabled_email else 'none'}")
-    print(f"  Webhook: {'enabled' if state.config_values.get('WEBHOOK_ENABLED') else 'disabled'}")
-    print(f"  Webhook alerts: {', '.join(enabled_webhooks) if enabled_webhooks else 'none'}")
-    print(f"  Config destination: {state.config_path}")
-    print(f"  Dotenv destination: {state.env_path}")
-    print(f"  Install method: {install_method()}")
+    _wizard_print_summary_rows(rows)
 
 
 # Loops on the summary until the user saves or explicitly discards, so nothing is written by accident
@@ -3553,13 +3591,14 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
             print(f"  Backup:        {secret_result['backup_path']}")
 
     doctor_offered = bool(state.target)
+    doctor_exit = None
     if doctor_offered:
         print()
     try:
         if doctor_offered and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True, input_func=input_func):
             print()
             _wizard_apply_saved_values(state, env_path=state.env_path if secret_result else None)
-            run_doctor(target_value=int(state.target), config_path=str(state.config_path), env_path=str(state.env_path) if secret_result else None)
+            doctor_exit = run_doctor(target_value=int(state.target), config_path=str(state.config_path), env_path=str(state.env_path) if secret_result else None)
     except (EOFError, KeyboardInterrupt):
         # The files are already written, so an interrupt here only skips the optional check
         print()
@@ -3569,9 +3608,9 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     target_arguments = [] if state.persist_target or not state.target else [state.target]
     print(colorize("header", "\nNext steps\n"))
     _wizard_print_command("Check setup again:", render_command(["--doctor"] + target_arguments, config_path=str(state.config_path), env_path=env_argument))
-    _wizard_print_command("Start monitoring:", render_command(target_arguments, config_path=str(state.config_path), env_path=env_argument))
-    _wizard_print_command("See every option:", render_command(["--help"], include_paths=False))
-    print(f"Guide: {QUICK_START_GUIDE_URL}\n")
+    start_label = "After Doctor passes, start monitoring:" if doctor_exit not in (None, 0) else "Start monitoring:"
+    _wizard_print_command(start_label, render_command(target_arguments, config_path=str(state.config_path), env_path=env_argument))
+    print(f"Guide: {colorize('url', QUICK_START_GUIDE_URL)}\n")
 
     api_key_ready = "STEAM_API_KEY" in state.secret_updates or doctor_value_is_set(state.config_values.get("STEAM_API_KEY"))
     if state.target and api_key_ready and _wizard_ask_yes_no("Start monitoring now? Monitoring will continue until Ctrl+C.", default=True, input_func=input_func):
@@ -3639,7 +3678,7 @@ def print_welcome_screen(input_func=None, interactive=None):
     _wizard_print_command("Easiest start (guided setup wizard):", render_command(["--setup"], include_paths=False), setup_suffix)
     _wizard_print_command("Check setup before monitoring:", render_command(["--doctor", "<steam_target>"], include_paths=False))
     print(f"Full options: {colorize('section', render_command(['--help'], include_paths=False))}")
-    print(f"\nGuide:        {QUICK_START_GUIDE_URL}\n")
+    print(f"\nGuide:        {colorize('url', QUICK_START_GUIDE_URL)}\n")
     if terminal_is_interactive and _wizard_ask_yes_no("Run the guided setup wizard now?", default=True, input_func=input_func):
         print()
         return run_setup_wizard()

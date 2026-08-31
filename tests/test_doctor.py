@@ -7,6 +7,7 @@ import select
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -279,6 +280,51 @@ def test_the_default_error_alert_alone_does_not_enable_a_channel(monkeypatch, do
 
     assert checks[0].status == "PASS"
     assert checks[0].label == "Email notifications are disabled"
+
+
+# Applies a complete email setup so the ready path can be reached without touching a real server
+def configure_email(monkeypatch):
+    monkeypatch.setattr(monitor, "SMTP_HOST", "smtp.example.invalid")
+    monkeypatch.setattr(monitor, "SMTP_PORT", 587)
+    monkeypatch.setattr(monitor, "SMTP_SSL", True)
+    monkeypatch.setattr(monitor, "SMTP_USER", "monitor@example.invalid")
+    monkeypatch.setattr(monitor, "SMTP_PASSWORD", "app-password-placeholder")
+    monkeypatch.setattr(monitor, "SENDER_EMAIL", "monitor@example.invalid")
+    monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "owner@example.invalid")
+    monkeypatch.setattr(monitor, "STATUS_NOTIFICATION", True)
+
+
+# Verifies the ready row confirms a real sign-in and names the alerts that would fire, as the siblings do
+def test_the_email_ready_row_reports_the_sign_in_and_the_alerts(monkeypatch, doctor_globals):
+    configure_email(monkeypatch)
+    closed = []
+    monkeypatch.setattr(monitor, "smtp_connect_and_login", lambda *_args, **_kwargs: SimpleNamespace(quit=lambda: closed.append(True)))
+    report = monitor.DoctorReport()
+
+    checks = monitor.doctor_check_email_notifications(report)
+
+    assert checks[0].status == "PASS"
+    assert checks[0].label == "SMTP connection and login succeeded"
+    assert checks[0].detail == "Alerts: status. No email was sent during this passive check"
+    assert report.email_ready is True
+    assert closed == [True]
+
+
+# Verifies a rejected sign-in fails the check, which a settings-only check would have passed
+def test_a_rejected_smtp_sign_in_fails_the_check(monkeypatch, doctor_globals):
+    configure_email(monkeypatch)
+
+    def refuse(*_args, **_kwargs):
+        raise monitor.smtplib.SMTPAuthenticationError(535, b"authentication failed")
+
+    monkeypatch.setattr(monitor, "smtp_connect_and_login", refuse)
+    report = monitor.DoctorReport()
+
+    checks = monitor.doctor_check_email_notifications(report)
+
+    assert checks[0].status == "FAIL"
+    assert checks[0].advice is not None
+    assert report.email_ready is False
 
 
 # Verifies the authentication check runs once and later checks reuse its client rather than reauthenticating

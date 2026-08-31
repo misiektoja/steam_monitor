@@ -408,12 +408,16 @@ CROSS_TOOL_STRINGS = (
     "  This secret is required and cannot be empty.",
     "  Please answer 'y' or 'n'.",
     "  Enter a positive duration such as 120, 2m, 1.5h, 1h 30m or 1d.",
-    # Setup summary rows
-    "  Persist target: ",
-    "  Authentication status: ",
-    "  Config destination: ",
-    "  Dotenv destination: ",
-    "  Install method: ",
+    # Setup summary rows, which the sibling monitors render from the same aligned label list
+    '("Persist target", ',
+    '("Authentication status", ',
+    '("Email", ',
+    '("Email notifications", ',
+    '("Webhook", ',
+    '("Webhook alerts", ',
+    '("Config destination", ',
+    '("Dotenv destination", ',
+    '("Install method", ',
 )
 
 
