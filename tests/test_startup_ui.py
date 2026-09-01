@@ -629,3 +629,18 @@ def test_a_missing_target_reports_the_shared_error_block():
     assert f"To fix: Pass the profile to watch as a {monitor.STEAM_TARGET_FORMS}" in result.stdout
     assert f"Guide: {monitor.QUICK_START_GUIDE_URL}" in result.stdout
     assert "usage: steam_monitor" not in result.stdout + result.stderr
+
+
+# Verifies both delivery announcements are painted for their channel, so the two theme keys are not settings that do nothing
+@pytest.mark.parametrize("line,part", [
+    ("* Sending email notification to alerts@example.test", "email"),
+    ("* Sending webhook notification", "webhook"),
+])
+def test_a_delivery_announcement_is_painted_for_its_channel(colored, line, part):
+    assert monitor._colorize_line(line).startswith(colored[part])
+
+
+# Verifies the two channels keep the values every sibling monitor ships, so a channel reads the same in all of them
+def test_the_delivery_channels_keep_the_shared_colours():
+    assert monitor.DEFAULT_COLOR_THEME["email"] == "bright_cyan"
+    assert monitor.DEFAULT_COLOR_THEME["webhook"] == "bright_blue"

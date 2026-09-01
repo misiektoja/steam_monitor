@@ -348,6 +348,8 @@ COLORED_OUTPUT = True
 #     "warning": "yellow",
 #     "error": "red",
 #     "signal": "yellow",
+#     "email": "bright_cyan",
+#     "webhook": "bright_blue",
 #     # Dates
 #     "date": "magenta",
 #     "date_range": "magenta",
@@ -914,6 +916,8 @@ DEFAULT_COLOR_THEME = {
     "warning": "yellow",
     "error": "red",
     "signal": "yellow",
+    "email": "bright_cyan",
+    "webhook": "bright_blue",
     # Dates
     "date": "magenta",
     "date_range": "magenta",
@@ -1251,6 +1255,10 @@ def _colorize_line(line, notification_summary=False):
         return colorize("warning", line)
     if "signal" in lowered and "received" in lowered:
         return colorize("signal", line)
+    if "sending email" in lowered:
+        return colorize("email", line)
+    if "sending webhook" in lowered:
+        return colorize("webhook", line)
 
     return line
 
