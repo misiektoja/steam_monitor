@@ -485,7 +485,7 @@ def test_doctor_sees_the_secrets_setup_just_saved(tmp_path, monkeypatch, wizard_
     assert run_wizard_with_doctor(tmp_path, monkeypatch, answers, [API_KEY, "smtp-password", WEBHOOK_URL], observed) == 0
 
     assert observed["values"] == {"STEAM_API_KEY": API_KEY, "SMTP_PASSWORD": "smtp-password", "WEBHOOK_URL": WEBHOOK_URL}
-    from_file, from_environment, from_settings = observed["sources"]
+    from_file, from_environment, from_settings, _ = observed["sources"]
     assert sorted(from_file) == ["SMTP_PASSWORD", "STEAM_API_KEY", "WEBHOOK_URL"]
     assert not from_environment and not from_settings
 

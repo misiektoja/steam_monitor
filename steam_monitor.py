@@ -470,6 +470,9 @@ WEBHOOK_READY_CHECK_LABEL = "Webhook URL, headers and alert choices look valid"
 # List of secret keys to load from env/config
 SECRET_KEYS = ("STEAM_API_KEY", "SMTP_PASSWORD", "WEBHOOK_URL", "NTFY_ACCESS_TOKEN")
 
+# Secrets supplied as arguments. The dotenv and environment lookup cannot see them, so they are recorded here
+COMMAND_LINE_SECRET_KEYS = frozenset()
+
 # The one-shot commands that only write a secret, so the other early-exit flags do not swallow them
 SECRET_ACTION_FLAGS = ("--set-steam-api-key", "--set-smtp-password", "--set-webhook-url")
 
@@ -2897,22 +2900,26 @@ def doctor_secret_sources(env_path=None):
     from_file = []
     from_environment = []
     from_settings = []
+    from_command_line = []
     for key in SECRET_KEYS:
         if not doctor_value_is_set(globals().get(key)):
             continue
         source = environment_sources.get(key)
-        if source == "environment":
+        # An argument overrides whatever the dotenv file or the environment held, so it is checked first
+        if key in COMMAND_LINE_SECRET_KEYS:
+            from_command_line.append(key)
+        elif source == "environment":
             from_environment.append(key)
         elif source:
             from_file.append(key)
         else:
             from_settings.append(key)
-    return from_file, from_environment, from_settings
+    return from_file, from_environment, from_settings, from_command_line
 
 
 # Reports which secrets are in effect and where each one was read from, by name and never by value
 def doctor_secret_checks(env_path=None):
-    from_file, from_environment, from_settings = doctor_secret_sources(env_path)
+    from_file, from_environment, from_settings, from_command_line = doctor_secret_sources(env_path)
     checks = []
     if from_file:
         checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the dotenv file", ", ".join(from_file)))
@@ -2920,6 +2927,8 @@ def doctor_secret_checks(env_path=None):
         checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the environment", ", ".join(from_environment)))
     if from_settings:
         checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the configuration file or command line", ", ".join(from_settings)))
+    if from_command_line:
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the command line", ", ".join(from_command_line)))
     if not checks:
         checks.append(make_doctor_check("Configuration", "PASS", "No secrets loaded", "Nothing was read from a dotenv file, the environment or the command line"))
     return checks
@@ -4126,8 +4135,8 @@ def emit_startup_summary(rows, show_full=False, printer=None):
 
 # Builds every startup summary row, deciding per row whether it belongs in the concise view, the full view and the log
 def build_startup_summary(target=None, config_path=None, env_path=None, log_path=None):
-    dotenv_secrets, environment_secrets, config_secrets = doctor_secret_sources(env_path)
-    from_dotenv, from_environment, from_config = sorted(dotenv_secrets), sorted(environment_secrets), sorted(config_secrets)
+    dotenv_secrets, environment_secrets, config_secrets, command_line_secrets = doctor_secret_sources(env_path)
+    from_dotenv, from_environment, from_config, from_command_line = sorted(dotenv_secrets), sorted(environment_secrets), sorted(config_secrets), sorted(command_line_secrets)
     logging_enabled = bool(log_path) and not DISABLE_LOGGING
     output_state = str(log_path) if logging_enabled else "Terminal only (logging disabled)"
     rows = [
@@ -4151,6 +4160,7 @@ def build_startup_summary(target=None, config_path=None, env_path=None, log_path
         StartupSummaryRow("Secrets from dotenv", ", ".join(from_dotenv) if from_dotenv else "None"),
         StartupSummaryRow("Secrets from environment", ", ".join(from_environment) if from_environment else "None"),
         StartupSummaryRow("Secrets from config file", ", ".join(from_config) if from_config else "None"),
+        StartupSummaryRow("Secrets from command line", ", ".join(from_command_line) if from_command_line else "None"),
         StartupSummaryRow("TLS verification", "On" if VERIFY_SSL else "Off, server certificates are not checked", concise=not VERIFY_SSL),
         StartupSummaryRow("ASCII log separators", f"{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})"),
         # The resolved state, not the setting: colour also switches itself off when the output is not a terminal
@@ -5953,7 +5963,7 @@ def validate_secret_action_args(args, parser, action_dest, action_flag, permitte
 
 # Parses configuration and starts the selected Steam Monitor action
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, NAME_CHANGE_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME, NTFY_IMAGES, EXPORTED_SECRET_KEYS, TRUNCATE_CHARS, WEBHOOK_ENABLED, DEBUG_MODE
+    global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, NAME_CHANGE_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME, NTFY_IMAGES, EXPORTED_SECRET_KEYS, TRUNCATE_CHARS, WEBHOOK_ENABLED, DEBUG_MODE, COMMAND_LINE_SECRET_KEYS
 
     if "--generate-config" in sys.argv and not any(flag in sys.argv for flag in SECRET_ACTION_FLAGS):
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
@@ -6526,6 +6536,9 @@ def main():
         STEAM_API_KEY = args.steam_api_key
 
     apply_webhook_cli_overrides(args, parser)
+
+    # Assigned once from the arguments rather than accumulated, so a second run in one process starts clean
+    COMMAND_LINE_SECRET_KEYS = frozenset(name for name, supplied in (("STEAM_API_KEY", args.steam_api_key), ("WEBHOOK_URL", args.webhook_url)) if supplied)
 
     # Setup and doctor exit before the monitoring path re-initializes colour, so the configured
     # COLORED_OUTPUT, COLOR_THEME and --no-color are applied here rather than leaving both screens plain

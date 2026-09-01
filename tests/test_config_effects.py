@@ -290,9 +290,9 @@ def test_placeholder_secrets_are_not_reported_as_loaded(tmp_path, monkeypatch, r
 
     run_startup(monkeypatch, [], config)
 
-    from_file, from_environment, from_settings = monitor.doctor_secret_sources(None)
-    assert "WEBHOOK_URL" not in from_file + from_environment + from_settings
-    assert "SMTP_PASSWORD" not in from_file + from_environment + from_settings
+    from_file, from_environment, from_settings, from_command_line = monitor.doctor_secret_sources(None)
+    assert "WEBHOOK_URL" not in from_file + from_environment + from_settings + from_command_line
+    assert "SMTP_PASSWORD" not in from_file + from_environment + from_settings + from_command_line
 
 
 # Verifies the settings count is a debug trace rather than a verbose line, since it says nothing a user acts on
@@ -334,3 +334,43 @@ def test_only_debug_mode_keeps_the_screen(tmp_path, monkeypatch, restored_global
     run_startup(monkeypatch, [flag], config)
 
     assert cleared == [expected]
+
+
+@pytest.mark.parametrize("key, position", [("SMTP_PASSWORD", 2), ("STEAM_API_KEY", 3)])
+# Verifies a secret passed as an argument is reported under the command line rather than the configuration file
+def test_a_command_line_secret_lands_in_its_own_bucket(monkeypatch, key, position):
+    for name in monitor.SECRET_KEYS:
+        monkeypatch.setattr(monitor, name, "your_placeholder", raising=False)
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(monitor, "COMMAND_LINE_SECRET_KEYS", {"STEAM_API_KEY"})
+    monkeypatch.setattr(monitor, key, "a-real-secret-value")
+
+    buckets = monitor.doctor_secret_sources(None)
+
+    assert buckets[position] == [key]
+    assert [names for index, names in enumerate(buckets) if index != position] == [[], [], []]
+
+
+# Verifies a key passed as an argument is reported as coming from the command line, not from the environment
+def test_startup_records_an_argument_supplied_key_as_a_command_line_secret(monkeypatch, tmp_path, restored_globals):
+    config = write_config(tmp_path)
+
+    run_startup(monkeypatch, ["--steam-api-key", "F" * 32], config)
+
+    assert monitor.COMMAND_LINE_SECRET_KEYS == frozenset({"STEAM_API_KEY"})
+    assert monitor.doctor_secret_sources(None)[3] == ["STEAM_API_KEY"]
+    assert [row.value for row in monitor.build_startup_summary("76561197960435530") if row.label == "Secrets from command line"] == ["STEAM_API_KEY"]
+
+
+# Verifies the doctor reports that secret under the command line rather than the configuration file
+def test_the_doctor_reports_a_command_line_secret_as_such(monkeypatch):
+    for name in monitor.SECRET_KEYS:
+        monkeypatch.setattr(monitor, name, "your_placeholder", raising=False)
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(monitor, "COMMAND_LINE_SECRET_KEYS", frozenset({"STEAM_API_KEY"}))
+    monkeypatch.setattr(monitor, "STEAM_API_KEY", "a-real-api-key-value")
+
+    labels = [check.label for check in monitor.doctor_secret_checks(None)]
+
+    assert "Secrets loaded from the command line" in labels
+    assert "Secrets loaded from the configuration file or command line" not in labels
