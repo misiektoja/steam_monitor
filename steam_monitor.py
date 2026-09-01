@@ -251,9 +251,9 @@ CHECK_INTERNET_URL = 'https://api.steampowered.com/'
 # Timeout used when checking initial internet connectivity; in seconds
 CHECK_INTERNET_TIMEOUT = 5
 
-# Whether to verify TLS certificates on every outbound request
-# Only set this to False for a network that intercepts TLS with its own certificate authority,
-# and understand that it disables protection against an intercepted connection
+# Whether to verify TLS certificates on every outbound connection, email delivery included
+# Only set this to False on a network that intercepts TLS with its own certificate authority
+# Switching it off removes the protection against an intercepted connection
 VERIFY_SSL = True
 
 # CSV file to write all status & game changes
@@ -758,6 +758,15 @@ def create_timestamped_backup(destination, attempts=100):
 def apply_tls_verification_setting():
     if not VERIFY_SSL:
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+# Returns the TLS context SMTP uses, unverified while VERIFY_SSL is off so email follows the same switch as every other connection
+def smtp_ssl_context():
+    context = ssl.create_default_context()
+    if not VERIFY_SSL:
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+    return context
 
 
 # Returns a Steam Web API client whose session honors the configured TLS verification setting
@@ -1574,7 +1583,7 @@ def smtp_connect_and_login(use_ssl, smtp_timeout=15):
     smtp_object = smtplib.SMTP(SMTP_HOST, int(SMTP_PORT), timeout=smtp_timeout)
     try:
         if use_ssl:
-            smtp_object.starttls(context=ssl.create_default_context())
+            smtp_object.starttls(context=smtp_ssl_context())
         smtp_object.login(SMTP_USER, SMTP_PASSWORD)
         return smtp_object
     except Exception:

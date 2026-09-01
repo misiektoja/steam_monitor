@@ -1,5 +1,7 @@
 """Tests for VERIFY_SSL: which requests honor it, what is reported while it is off and its shipped default."""
 
+import ssl
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -7,6 +9,8 @@ import pytest
 import steam_monitor as monitor
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SOURCE = (PROJECT_ROOT / "steam_monitor.py").read_text(encoding="utf-8")
 WEBHOOK_URL = "https://discord.com/api/webhooks/123456789/aVeryLongWebhookTokenValue"
 API_KEY = "0123456789ABCDEF0123456789ABCDEF"
 
@@ -124,6 +128,22 @@ def test_a_client_without_the_expected_session_still_starts(tls_setting, monkeyp
     monkeypatch.setattr(monitor.steam.webapi, "WebAPI", SessionlessWebAPI)
 
     assert monitor.steam_web_api_client(API_KEY).key == API_KEY
+
+
+@pytest.mark.parametrize("verify", [True, False])
+# Verifies the SMTP handshake follows the setting, so email is not the one channel that keeps checking certificates
+def test_the_smtp_context_honors_the_setting(tls_setting, verify):
+    tls_setting.setattr(monitor, "VERIFY_SSL", verify)
+
+    context = monitor.smtp_ssl_context()
+
+    assert context.check_hostname is verify
+    assert (context.verify_mode == ssl.CERT_REQUIRED) is verify
+
+
+# Verifies no SMTP call site builds its own context, which would keep that one connection verifying while the setting is off
+def test_only_the_shared_helper_builds_an_smtp_context():
+    assert SOURCE.count("ssl.create_default_context()") == 1
 
 
 @pytest.mark.parametrize("verify, silenced", [(True, False), (False, True)])
