@@ -2429,6 +2429,11 @@ def webhook_provider_display_name(provider=None):
     return {"discord": "Discord", "ntfy": "ntfy"}.get(normalized, normalized or "an unset provider")
 
 
+# The four shared status markers. A fifth neutral marker is the single biggest source of drift between these
+# tools, because every state it would cover is a state the others already call PASS
+DOCTOR_STATUSES = ("PASS", "WARN", "FAIL", "SKIP")
+
+
 # One doctor result, held until the whole report is rendered
 DoctorCheck = namedtuple("DoctorCheck", ["section", "status", "label", "detail", "advice"])
 DoctorCheck.__new__.__defaults__ = ("", None)
@@ -2449,7 +2454,10 @@ class DoctorReport:
 
 # Builds one doctor check, keeping construction in one place so the shape cannot drift between sections
 def make_doctor_check(section, status, label, detail="", advice=None):
-    return DoctorCheck(section, status, label, detail, advice)
+    if status not in DOCTOR_STATUSES:
+        raise ValueError(f"Unsupported doctor status: {status}")
+    # Several advice objects carry the same text as their summary and printing it twice reads as two problems
+    return DoctorCheck(section, status, label, "" if str(detail).strip() == str(label).strip() else detail, advice)
 
 
 # Returns whether a configured value is a real value rather than an unedited placeholder
@@ -3209,14 +3217,12 @@ def render_doctor_report(report):
         lines.extend(("", colorize("section", section)))
         for check in section_checks:
             lines.append(f"{render_doctor_marker(check.status)} {check.label}")
-            # Recovery advice reuses its detail as the summary, so the detail line is dropped when it
-            # would only repeat the label back to the reader
-            if check.detail and check.detail.strip() != check.label.strip():
+            if check.detail:
                 lines.append(f"  {check.detail}")
-            if check.status in ("FAIL", "WARN") and check.advice is not None:
-                # The fix carries its own guide line, so each line is styled on its own rather than
-                # leaving one colour sequence open across the newline
-                lines.extend(colorize("info", advice_line) for advice_line in f"To fix: {check.advice.fix}".splitlines())
+            if check.status != "PASS" and check.advice is not None:
+                # The fix carries its own guide line, so each line is indented and styled on its own rather
+                # than leaving one colour sequence open across the newline
+                lines.extend(f"  {colorize('info', advice_line)}" for advice_line in f"To fix: {check.advice.fix}".splitlines())
     failures = sum(check.status == "FAIL" for check in report.checks)
     warnings = sum(check.status == "WARN" for check in report.checks)
     if failures:
@@ -3298,7 +3304,9 @@ def _doctor_offer_notification_tests(report):
             checks.append(check)
             print(f"{render_doctor_marker(check.status)} {check.label}")
         else:
-            print(f"{render_doctor_marker('SKIP')} Test email was not sent")
+            check = make_doctor_check("Notifications", "SKIP", "Test email was not sent")
+            checks.append(check)
+            print(f"{render_doctor_marker(check.status)} {check.label}")
     if report.webhook_ready:
         provider = webhook_provider_display_name()
         if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
@@ -3307,7 +3315,9 @@ def _doctor_offer_notification_tests(report):
             checks.append(check)
             print(f"{render_doctor_marker(check.status)} {check.label}")
         else:
-            print(f"{render_doctor_marker('SKIP')} Test webhook was not sent")
+            check = make_doctor_check("Notifications", "SKIP", "Test webhook was not sent")
+            checks.append(check)
+            print(f"{render_doctor_marker(check.status)} {check.label}")
     return checks
 
 
