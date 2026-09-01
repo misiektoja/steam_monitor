@@ -2028,8 +2028,8 @@ def run_set_steam_api_key(env_file=None, interactive=None, input_func=None, getp
     if result.get("backup_path"):
         print(f"* Previous private settings file backed up to: {result['backup_path']}")
     print()
-    _wizard_print_command("Check setup again:", render_command(["--doctor", "<steam_target>"], include_paths=False, env_path=destination))
-    _wizard_print_command("After Doctor passes, start monitoring:", render_command(["<steam_target>"], include_paths=False, env_path=destination))
+    _wizard_print_command("Check setup again:", render_command(["--doctor"], include_paths=False, env_path=destination))
+    _wizard_print_command("After Doctor passes, start monitoring:", render_command([], include_paths=False, env_path=destination))
     return str(destination)
 
 
@@ -2107,7 +2107,7 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
         print(f"* Previous private settings file backed up to: {result['backup_path']}")
     print()
     _wizard_print_command("Send a test webhook:", render_command(["--send-test-webhook"], include_paths=False, env_path=destination))
-    _wizard_print_command("Check setup again:", render_command(["--doctor", "<steam_target>"], include_paths=False, env_path=destination))
+    _wizard_print_command("Check setup again:", render_command(["--doctor"], include_paths=False, env_path=destination))
     return str(destination)
 
 
@@ -2175,7 +2175,7 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
         print(f"* Previous private settings file backed up to: {result['backup_path']}")
     print()
     _wizard_print_command("Send a test email:", render_command(["--send-test-email"], include_paths=False, env_path=destination))
-    _wizard_print_command("Check setup again:", render_command(["--doctor", "<steam_target>"], include_paths=False, env_path=destination))
+    _wizard_print_command("Check setup again:", render_command(["--doctor"], include_paths=False, env_path=destination))
     return str(destination)
 
 
@@ -3343,9 +3343,13 @@ def _doctor_ask_yes_no(question):
     while True:
         try:
             value = read_interactively(input, colorize("info", f"{question} [y/N]: ")).strip().casefold()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print("\nDelivery test skipped.")
             return False
+        except KeyboardInterrupt:
+            # Ctrl+C ends the run here the way it does anywhere else, rather than only declining this one test
+            signal_handler(signal.SIGINT, None)
+            raise
         if not value or value in ("n", "no"):
             return False
         if value in ("y", "yes"):
