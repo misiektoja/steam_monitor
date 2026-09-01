@@ -167,6 +167,16 @@ def test_a_degraded_cycle_closes_its_verbose_notice_with_a_timestamp(tmp_path, m
     assert set(lines[notice + 2]) == {"\u2500"}
 
 
+# Verifies a notice printed before monitoring starts stays a bare line, since the monitoring header closes that block
+def test_a_verbose_notice_stays_bare_on_the_startup_screen(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "VERBOSE_MODE", True)
+    monkeypatch.setattr(monitor, "MONITORING_ACTIVE", False)
+
+    monitor.verbose_notice("The friends list was unavailable this cycle, so friends alerts cannot fire")
+
+    assert capsys.readouterr().out == "* The friends list was unavailable this cycle, so friends alerts cannot fire\n"
+
+
 # Verifies a working tracked feature produces no degradation warning
 def test_a_healthy_cycle_reports_no_degradation(tmp_path, monkeypatch, capsys):
     run_one_cycle(tmp_path, monkeypatch)

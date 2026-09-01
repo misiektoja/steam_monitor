@@ -428,6 +428,10 @@ ASCII_LOG_SEPARATORS = "Auto"
 TRUNCATE_CHARS = 0
 VERBOSE_MODE = False
 DEBUG_MODE = False
+
+# True once monitoring has printed its header, so a verbose notice after that closes its own block
+MONITORING_ACTIVE = False
+
 HORIZONTAL_LINE = 0
 CLEAR_SCREEN = False
 STEAM_ACTIVE_CHECK_SIGNAL_VALUE = 0
@@ -694,7 +698,15 @@ def verbose_notice(*messages):
         return
     for message in messages:
         verbose_print(message)
-    print_cur_ts("Timestamp:\t\t\t")
+    # Before monitoring starts the notice belongs to the startup screen, which the monitoring header closes
+    if MONITORING_ACTIVE:
+        print_cur_ts("Timestamp:\t\t\t")
+
+
+# Marks the point where output stops being the startup screen, so later notices close their own block
+def mark_monitoring_started():
+    global MONITORING_ACTIVE
+    MONITORING_ACTIVE = True
 
 
 # Records a swallowed exception in debug output so a silently degraded feature can still be diagnosed
@@ -4983,6 +4995,8 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
 
 # Main function that monitors gaming activity of the specified Steam user
 def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
+
+    mark_monitoring_started()
 
     alive_counter = 0
     status_ts = 0
