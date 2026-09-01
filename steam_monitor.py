@@ -3087,7 +3087,7 @@ def doctor_check_connectivity():
     if check_internet(quiet=True):
         return [make_doctor_check("Connectivity", "PASS", "The connectivity endpoint is reachable", f"Endpoint: {CHECK_INTERNET_URL}")]
     advice = classify_recovery_error(LAST_CONNECTIVITY_ERROR, context="runtime", detail=f"Could not reach {CHECK_INTERNET_URL}")
-    return [make_doctor_check("Connectivity", "FAIL", advice.summary, advice.detail, advice)]
+    return [make_doctor_check("Connectivity", "FAIL", "The connectivity endpoint could not be reached", f"Endpoint: {CHECK_INTERNET_URL}", advice)]
 
 
 # Validates the Steam Web API key once and stores the client so later checks reuse it

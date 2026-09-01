@@ -1014,3 +1014,15 @@ def test_a_missing_target_reuses_the_startup_gate_advice(doctor_globals):
     assert checks[0].advice is not None
     assert checks[0].advice.code == "target.missing"
     assert checks[0].advice.fix == monitor.classify_recovery_error(context="target.missing").fix
+
+
+# Verifies the connectivity row carries the label and the endpoint detail shared with the sibling monitors
+def test_the_connectivity_row_names_the_shared_endpoint(monkeypatch):
+    monkeypatch.setattr(monitor, "CHECK_INTERNET_URL", "https://probe.example/ping")
+    monkeypatch.setattr(monitor, "check_internet", lambda **kwargs: True)
+    passing = monitor.doctor_check_connectivity()[0]
+    monkeypatch.setattr(monitor, "check_internet", lambda **kwargs: False)
+    failing = monitor.doctor_check_connectivity()[0]
+
+    assert (passing.status, passing.label, passing.detail) == ("PASS", "The connectivity endpoint is reachable", "Endpoint: https://probe.example/ping")
+    assert (failing.status, failing.label, failing.detail) == ("FAIL", "The connectivity endpoint could not be reached", "Endpoint: https://probe.example/ping")
