@@ -87,7 +87,7 @@ class SecretInputTests(unittest.TestCase):
     def test_existing_secret_replacement_can_be_cancelled(self):
         self.destination.write_text('WEBHOOK_URL="https://ntfy.sh/old-topic"\n', encoding="utf-8")
         hidden_prompt = Mock(side_effect=AssertionError("hidden prompt used"))
-        with self.assertRaisesRegex(steam_monitor.SecretConfigurationError, "cancelled"):
+        with self.assertRaisesRegex(steam_monitor.RecoveryError, "left as it is"):
             steam_monitor.run_set_webhook_url(env_file=str(self.destination), interactive=True, input_func=lambda prompt: "n", getpass_func=hidden_prompt)
 
         hidden_prompt.assert_not_called()
@@ -166,6 +166,33 @@ class SecretInputTests(unittest.TestCase):
     def test_blank_smtp_password_is_refused(self):
         with self.assertRaisesRegex(steam_monitor.SecretConfigurationError, "No SMTP password"):
             steam_monitor.smtp_sign_in("")
+
+    # Verifies an interrupted entry reports the cancel itself, with the command that resumes it
+    def test_an_interrupted_entry_reports_the_cancel_and_writes_nothing(self):
+        def interrupt(prompt=""):
+            raise KeyboardInterrupt
+
+        with self.assertRaises(steam_monitor.RecoveryError) as raised:
+            steam_monitor.run_set_smtp_password(env_file=str(self.destination), interactive=True, getpass_func=interrupt, sign_in=Mock(side_effect=AssertionError("signed in")))
+
+        advice = raised.exception.advice
+        self.assertEqual(advice.summary, "SMTP password setup was cancelled and the dotenv file was not changed")
+        self.assertIn("Run --set-smtp-password again when you have the value ready", advice.fix)
+        self.assertIn(steam_monitor.SMTP_GUIDE_URL, advice.fix)
+        self.assertFalse(self.destination.exists())
+
+    # Verifies a declined replacement reports the kept value rather than a cancelled entry
+    def test_a_declined_replacement_reports_the_kept_value(self):
+        self.destination.write_text('SMTP_PASSWORD="original"\n', encoding="utf-8")
+
+        with self.assertRaises(steam_monitor.RecoveryError) as raised:
+            steam_monitor.run_set_smtp_password(env_file=str(self.destination), interactive=True, input_func=lambda prompt: "n", getpass_func=Mock(side_effect=AssertionError("hidden prompt used")))
+
+        advice = raised.exception.advice
+        self.assertEqual(advice.summary, "The saved SMTP password was left as it is and the dotenv file was not changed")
+        self.assertIn("answer y to replace the saved value", advice.fix)
+        self.assertIn('SMTP_PASSWORD="original"', self.destination.read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()

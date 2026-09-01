@@ -1946,14 +1946,16 @@ def run_set_steam_api_key(env_file=None, interactive=None, input_func=None, getp
         try:
             confirmed = read_interactively(prompt, f"Replace the saved Steam Web API key in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
         except (EOFError, KeyboardInterrupt):
-            confirmed = False
+            print()
+            raise RecoveryError(secret_entry_cancelled_advice("Steam Web API key", "--set-steam-api-key", STEAM_API_KEY_GUIDE_URL)) from None
         if not confirmed:
-            raise SecretConfigurationError("Steam Web API key setup was cancelled. The private settings file was not changed.")
+            raise RecoveryError(secret_replacement_declined_advice("Steam Web API key", "--set-steam-api-key", STEAM_API_KEY_GUIDE_URL))
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
         api_key = read_interactively(hidden_prompt, "Paste the Steam Web API key (input hidden): ").strip()
     except (EOFError, KeyboardInterrupt):
-        raise SecretConfigurationError("Steam Web API key setup was cancelled. The private settings file was not changed.")
+        print()
+        raise RecoveryError(secret_entry_cancelled_advice("Steam Web API key", "--set-steam-api-key", STEAM_API_KEY_GUIDE_URL)) from None
     validate = validate_steam_api_key if validator is None else validator
     if not validate(api_key):
         raise SecretConfigurationError("The entered Steam Web API key is invalid or could not be verified. The private settings file was not changed.")
@@ -2023,14 +2025,16 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
         try:
             confirmed = read_interactively(prompt, f"Replace the saved webhook URL in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
         except (EOFError, KeyboardInterrupt):
-            confirmed = False
+            print()
+            raise RecoveryError(secret_entry_cancelled_advice("webhook URL", "--set-webhook-url", WEBHOOK_GUIDE_URL)) from None
         if not confirmed:
-            raise SecretConfigurationError("Webhook setup was cancelled. The private settings file was not changed.")
+            raise RecoveryError(secret_replacement_declined_advice("webhook URL", "--set-webhook-url", WEBHOOK_GUIDE_URL))
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
         webhook_url = read_interactively(hidden_prompt, "Paste the Discord or ntfy webhook URL (input hidden): ").strip()
     except (EOFError, KeyboardInterrupt):
-        raise SecretConfigurationError("Webhook setup was cancelled. The private settings file was not changed.")
+        print()
+        raise RecoveryError(secret_entry_cancelled_advice("webhook URL", "--set-webhook-url", WEBHOOK_GUIDE_URL)) from None
     if not validate_webhook_url(webhook_url):
         raise SecretConfigurationError("That does not look like a complete HTTPS webhook URL. The private settings file was not changed.")
     try:
@@ -2083,15 +2087,17 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
         try:
             confirmed = read_interactively(prompt, f"Replace the saved SMTP password in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
         except (EOFError, KeyboardInterrupt):
-            confirmed = False
+            print()
+            raise RecoveryError(secret_entry_cancelled_advice("SMTP password", "--set-smtp-password", SMTP_GUIDE_URL)) from None
         if not confirmed:
-            raise SecretConfigurationError("SMTP password setup was cancelled. The private settings file was not changed.")
+            raise RecoveryError(secret_replacement_declined_advice("SMTP password", "--set-smtp-password", SMTP_GUIDE_URL))
     print(f"* The password is checked by signing in to {SMTP_HOST} as {SMTP_USER}. Nothing is sent")
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
         smtp_password = str(read_interactively(hidden_prompt, "Enter the SMTP password (input hidden): ")).strip()
     except (EOFError, KeyboardInterrupt):
-        raise SecretConfigurationError("SMTP password setup was cancelled. The private settings file was not changed.")
+        print()
+        raise RecoveryError(secret_entry_cancelled_advice("SMTP password", "--set-smtp-password", SMTP_GUIDE_URL)) from None
     check = smtp_sign_in if sign_in is None else sign_in
     try:
         signed_in_user = check(smtp_password, timeout=5)
@@ -2205,7 +2211,7 @@ def sanitize_error_text(value):
 RECOVERY_CODES = frozenset({
     "config.missing", "config.invalid", "config.insecure",
     "dependency.missing",
-    "secret.missing",
+    "secret.missing", "secret.entry",
     "auth.api_key_invalid", "auth.rejected",
     "network.unavailable", "network.timeout",
     "steam.rate_limited", "steam.unavailable",
@@ -2242,6 +2248,17 @@ def make_recovery_advice(code, summary, fix, retryable, detail=""):
 # Adds a directly relevant documentation link on its own line
 def recovery_fix_with_guide(fix, guide_url):
     return f"{fix}\nGuide: {guide_url}"
+
+
+# Returns the advice a cancelled secret entry reports, worded the same way by every one-shot secret command
+def secret_entry_cancelled_advice(subject, flag, guide_url):
+    return make_recovery_advice("secret.entry", f"{subject[:1].upper()}{subject[1:]} setup was cancelled and the dotenv file was not changed", recovery_fix_with_guide(f"Run {flag} again when you have the value ready", guide_url), False)
+
+
+# Returns the advice a declined secret replacement reports, worded the same way by every one-shot secret command
+def secret_replacement_declined_advice(subject, flag, guide_url, plural=False):
+    kept = "were left as they are" if plural else "was left as it is"
+    return make_recovery_advice("secret.entry", f"The saved {subject} {kept} and the dotenv file was not changed", recovery_fix_with_guide(f"Run {flag} again and answer y to replace the saved value", guide_url), False)
 
 
 # Returns the HTTP status carried by an error, when it has one
@@ -6524,7 +6541,7 @@ def main():
         validate_secret_action_args(args, parser, "set_steam_api_key", "--set-steam-api-key")
         try:
             run_set_steam_api_key(env_file=args.env_file)
-        except SecretConfigurationError as exc:
+        except (SecretConfigurationError, RecoveryError) as exc:
             print_recovery_error(exc, context="set_steam_api_key")
             sys.exit(1)
         sys.exit(0)
@@ -6533,7 +6550,7 @@ def main():
         validate_secret_action_args(args, parser, "set_webhook_url", "--set-webhook-url")
         try:
             run_set_webhook_url(env_file=args.env_file)
-        except SecretConfigurationError as exc:
+        except (SecretConfigurationError, RecoveryError) as exc:
             print_recovery_error(exc, context="set_webhook_url")
             sys.exit(1)
         sys.exit(0)
@@ -6638,7 +6655,7 @@ def main():
         validate_secret_action_args(args, parser, "set_smtp_password", "--set-smtp-password", permitted_extra=("config_file",))
         try:
             run_set_smtp_password(env_file=args.env_file or env_path)
-        except SecretConfigurationError as exc:
+        except (SecretConfigurationError, RecoveryError) as exc:
             print_recovery_error(exc, context="set_smtp_password")
             sys.exit(1)
         sys.exit(0)
