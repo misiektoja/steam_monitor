@@ -244,7 +244,10 @@ def test_editing_the_target_section_asks_again(tmp_path, monkeypatch, wizard_glo
 
     run_wizard(tmp_path, monkeypatch, answers)
 
-    assert f"Steam64 ID {other_id}" in capsys.readouterr().out
+    summary = capsys.readouterr().out.rsplit("Setup summary", 1)[1]
+    assert other_id in summary
+    assert str(STEAM64) not in summary
+    assert monitor.parse_config_content((tmp_path / "steam_monitor.conf").read_text(encoding="utf-8"))["TARGET_STEAM_ID"] == other_id
 
 
 # Verifies declining email turns every email alert off, so the summary cannot promise alerts that never fire
@@ -1028,3 +1031,10 @@ def test_a_hidden_wizard_answer_is_read_with_debug_output_off(monkeypatch):
     assert answer == "secret"
     assert seen == [False]
     assert monitor.DEBUG_MODE is True
+
+
+# Verifies a target that already is a Steam64 ID is not echoed back, since only a value the wizard changed is news
+def test_the_canonical_target_is_not_echoed_back(tmp_path, monkeypatch, wizard_globals, capsys):
+    assert run_wizard(tmp_path, monkeypatch, minimal_answers()) == 0
+
+    assert "Using Steam64 ID" not in capsys.readouterr().out

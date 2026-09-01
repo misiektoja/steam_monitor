@@ -3619,7 +3619,6 @@ def _wizard_collect_target_section(state, initial_target=None, input_func=None):
             continue
         if steam64 is not None:
             state.target = str(steam64)
-            print(f"  Using Steam64 ID {steam64}.")
             break
         resolved = None
         if doctor_value_is_set(state.secret_updates.get("STEAM_API_KEY") or state.config_values.get("STEAM_API_KEY")):
