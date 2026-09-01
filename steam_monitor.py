@@ -4275,11 +4275,19 @@ def _wizard_normalize_csv_path(answer):
     return text + ".csv"
 
 
+# Adds the .json extension when the answer carries none, so a bare name still names the JSON status file
+def _wizard_normalize_status_path(answer):
+    text = str(answer).strip()
+    if not text or Path(text).suffix:
+        return text
+    return text + ".json"
+
+
 # Collects the log and CSV output destinations monitoring would write
 def _wizard_collect_output_section(state, input_func=None):
     state.config_values["DISABLE_LOGGING"] = not _wizard_ask_yes_no("Write the normal per-target log file?", default=not bool(state.config_values.get("DISABLE_LOGGING")), input_func=input_func)
     state.config_values["CSV_FILE"] = _wizard_normalize_csv_path(_wizard_ask_text("Optional CSV output path (blank disables it)", default=str(state.config_values.get("CSV_FILE") or ""), input_func=input_func))
-    state.config_values["STEAM_STATUS_FILE"] = _wizard_ask_text("Optional status file path (blank uses the default name in the working directory)", default=str(state.config_values.get("STEAM_STATUS_FILE") or ""), input_func=input_func)
+    state.config_values["STEAM_STATUS_FILE"] = _wizard_normalize_status_path(_wizard_ask_text("Optional status file path (blank uses the default name in the working directory)", default=str(state.config_values.get("STEAM_STATUS_FILE") or ""), input_func=input_func))
 
 
 # Shows everything that is about to be written, by name and never by secret value

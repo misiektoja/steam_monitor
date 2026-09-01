@@ -827,6 +827,18 @@ def test_the_csv_answer_gains_a_csv_extension_when_it_has_none(tmp_path, wizard_
     assert state.config_values["CSV_FILE"] == str(tmp_path / "activity.txt")
 
 
+# Verifies a status file answer without an extension is saved as a .json file while an explicit extension is left alone
+def test_the_status_file_answer_gains_a_json_extension_when_it_has_none(tmp_path, wizard_globals):
+    baseline = {name: value for name, value in vars(monitor).items() if name in monitor._config_allowed_names()}
+    state = monitor.WizardSetupState(tmp_path / "steam_monitor.conf", tmp_path / ".env", baseline)
+
+    monitor._wizard_collect_output_section(state, input_func=scripted_input(["y", "", str(tmp_path / "profile")]))
+    assert state.config_values["STEAM_STATUS_FILE"] == str(tmp_path / "profile.json")
+
+    monitor._wizard_collect_output_section(state, input_func=scripted_input(["y", "", str(tmp_path / "profile.txt")]))
+    assert state.config_values["STEAM_STATUS_FILE"] == str(tmp_path / "profile.txt")
+
+
 # Verifies a declined email section clears the mail server, so the written config cannot contradict the summary
 def test_a_declined_email_section_clears_the_mail_server(tmp_path, wizard_globals):
     baseline = {name: value for name, value in vars(monitor).items() if name in monitor._config_allowed_names()}
