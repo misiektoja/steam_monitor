@@ -466,6 +466,9 @@ DOCTOR_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#doctor-preflight"
 SMTP_READY_CHECK_LABEL = "SMTP connection and login succeeded"
 WEBHOOK_READY_CHECK_LABEL = "Webhook URL, headers and alert choices look valid"
 
+# The label every sibling monitor uses when email alerts are on but the settings they would use cannot deliver
+EMAIL_UNUSABLE_CHECK_LABEL = "Email alerts are enabled but unusable"
+
 # List of secret keys to load from env/config
 SECRET_KEYS = ("STEAM_API_KEY", "SMTP_PASSWORD", "WEBHOOK_URL", "NTFY_ACCESS_TOKEN")
 
@@ -3101,6 +3104,17 @@ def doctor_check_target(report, target_value=None):
     return checks
 
 
+# Joins setting names the way every doctor detail and action in this family lists them
+def join_setting_names(names, conjunction):
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} {conjunction} {names[-1]}"
+
+
+# Returns the doctor row for email alerts whose settings cannot deliver, worded the same way by every sibling monitor
+def doctor_email_unusable_check(detail, fix):
+    advice = make_recovery_advice("smtp.invalid", EMAIL_UNUSABLE_CHECK_LABEL, recovery_fix_with_guide(fix, SMTP_GUIDE_URL), False, detail)
+    return make_doctor_check("Notifications", "WARN", EMAIL_UNUSABLE_CHECK_LABEL, detail, advice)
+
+
 # Checks email alert settings then confirms the SMTP sign-in without sending anything
 def doctor_check_email_notifications(report):
     enabled_categories = _startup_email_notification_categories()
@@ -3110,14 +3124,13 @@ def doctor_check_email_notifications(report):
     if not deliberate_categories and not configured:
         return [make_doctor_check("Notifications", "PASS", "Email notifications are disabled", "No SMTP connection was attempted and no email was sent")]
     if not configured:
-        advice = classify_recovery_error(context="email", detail="SMTP settings are incomplete")
-        return [make_doctor_check("Notifications", "WARN", "Email alerts are selected but SMTP is not configured", "Set SMTP_HOST, SENDER_EMAIL and RECEIVER_EMAIL, or turn the alerts off", advice)]
+        unset = [name for name, value in (("SMTP_HOST", SMTP_HOST), ("SENDER_EMAIL", SENDER_EMAIL), ("RECEIVER_EMAIL", RECEIVER_EMAIL)) if not doctor_value_is_set(value)]
+        return [doctor_email_unusable_check(f"{join_setting_names(unset, 'or')} is empty or still set to its placeholder", f"Set {join_setting_names(unset, 'and')} or turn the email alerts off")]
     if not enabled_categories:
         advice = make_recovery_advice("smtp.invalid", "Email is configured but no alert types are selected", recovery_fix_with_guide("Turn on at least one email alert in the configuration file", SMTP_GUIDE_URL), False)
         return [make_doctor_check("Notifications", "WARN", advice.summary, "Nothing would ever be emailed", advice)]
     if not doctor_value_is_set(SMTP_USER) or not doctor_value_is_set(SMTP_PASSWORD):
-        advice = classify_recovery_error(context="email", detail="SMTP_USER or SMTP_PASSWORD is missing")
-        return [make_doctor_check("Notifications", "WARN", "Email alerts are selected but the SMTP sign-in is incomplete", "Set SMTP_USER and SMTP_PASSWORD, using an app password if the provider requires one", advice)]
+        return [doctor_email_unusable_check("SMTP_USER or SMTP_PASSWORD is empty or still set to its placeholder", "Set SMTP_USER and SMTP_PASSWORD or turn the email alerts off")]
     smtp_object = None
     try:
         smtp_object = smtp_connect_and_login(SMTP_SSL, smtp_timeout=5)

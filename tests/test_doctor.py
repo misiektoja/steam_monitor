@@ -332,6 +332,46 @@ def test_the_email_ready_row_reports_the_sign_in_and_the_alerts(monkeypatch, doc
     assert closed == [True]
 
 
+# Verifies email alerts that cannot deliver are one WARN whose detail and action name the same settings
+def test_unusable_email_settings_warn_and_name_the_same_settings(monkeypatch, doctor_globals):
+    configure_email(monkeypatch)
+    monkeypatch.setattr(monitor, "SMTP_PASSWORD", "your_smtp_password")
+
+    def refuse(*_args, **_kwargs):
+        raise AssertionError("SMTP was contacted")
+
+    monkeypatch.setattr(monitor, "smtp_connect_and_login", refuse)
+    report = monitor.DoctorReport()
+
+    check = monitor.doctor_check_email_notifications(report)[0]
+
+    assert check.status == "WARN"
+    assert check.label == monitor.EMAIL_UNUSABLE_CHECK_LABEL
+    assert check.detail == "SMTP_USER or SMTP_PASSWORD is empty or still set to its placeholder"
+    assert check.advice is not None
+    assert "Set SMTP_USER and SMTP_PASSWORD or turn the email alerts off" in check.advice.fix
+    assert monitor.SMTP_GUIDE_URL in check.advice.fix
+    assert report.email_ready is False
+
+
+# Verifies the row names only the settings that are actually unset, not every setting it checked
+def test_the_unusable_email_row_names_only_the_unset_settings(monkeypatch, doctor_globals):
+    configure_email(monkeypatch)
+    monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "your_receiver_email")
+
+    def refuse(*_args, **_kwargs):
+        raise AssertionError("SMTP was contacted")
+
+    monkeypatch.setattr(monitor, "smtp_connect_and_login", refuse)
+
+    check = monitor.doctor_check_email_notifications(monitor.DoctorReport())[0]
+
+    assert check.status == "WARN"
+    assert check.detail == "RECEIVER_EMAIL is empty or still set to its placeholder"
+    assert check.advice is not None
+    assert "Set RECEIVER_EMAIL or turn the email alerts off" in check.advice.fix
+
+
 # Verifies a rejected sign-in fails the check, which a settings-only check would have passed
 def test_a_rejected_smtp_sign_in_fails_the_check(monkeypatch, doctor_globals):
     configure_email(monkeypatch)
