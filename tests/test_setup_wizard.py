@@ -767,7 +767,7 @@ def test_the_wizard_transcript_holds_the_output_contract(tmp_path):
         "Steam profile URL or ID to monitor",
         "Write the normal per-target log file?",
         "Optional CSV output path (blank disables it)",
-        "Optional status file path (blank uses the default next to the tool)",
+        "Optional status file path (blank uses the default name in the working directory)",
         "Setup summary",
         "Saved files",
         "Next steps",
