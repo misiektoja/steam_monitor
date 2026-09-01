@@ -3193,6 +3193,9 @@ def doctor_check_webhook_notifications(report):
 # The fixed section order the report renders in, chosen so each section depends only on the ones above it
 DOCTOR_SECTIONS = ("Environment", "Configuration", "Authentication", "Connectivity", "Target", "Notifications")
 
+# Delivery results are printed as they happen rather than inside a section, but they still count in the summary
+DOCTOR_DELIVERY_SECTION = "Optional delivery tests"
+
 # The theme entry each doctor result marker is drawn in, so a failure reads as one at a glance
 DOCTOR_MARK_STYLES = {"PASS": "boolean_true", "WARN": "warning", "FAIL": "error", "SKIP": "info"}
 
@@ -3205,8 +3208,8 @@ def render_doctor_marker(status):
     return colorize(DOCTOR_MARK_STYLES.get(status, "info"), f"[{status}]")
 
 
-# Renders one sectioned ASCII doctor report with a fix line on every non-passing row
-def render_doctor_report(report):
+# Renders the heading and every non-empty section, with a fix line on the rows that are not a pass
+def render_doctor_sections(report):
     # The install method is context rather than a check: it cannot fail, so it is stated once here
     # instead of occupying a result row that no marker describes
     lines = [colorize("header", "Doctor"), f"Detected install method: {colorize('username', install_method())}"]
@@ -3223,16 +3226,20 @@ def render_doctor_report(report):
                 # The fix carries its own guide line, so each line is indented and styled on its own rather
                 # than leaving one colour sequence open across the newline
                 lines.extend(f"  {colorize('info', advice_line)}" for advice_line in f"To fix: {check.advice.fix}".splitlines())
-    failures = sum(check.status == "FAIL" for check in report.checks)
-    warnings = sum(check.status == "WARN" for check in report.checks)
+    return sanitize_error_text("\n".join(lines))
+
+
+# Renders the one sentence that says whether the setup is usable and where to read more
+def render_doctor_summary(checks):
+    failures = sum(check.status == "FAIL" for check in checks)
+    warnings = sum(check.status == "WARN" for check in checks)
     if failures:
         summary_line = colorize("error", f"  {failures} check(s) failed, {warnings} warning(s). Fix the failures above before relying on the tool.")
     elif warnings:
         summary_line = colorize("warning", f"  All critical checks passed with {warnings} warning(s). Review the warnings above.")
     else:
         summary_line = colorize("boolean_true", "  All checks passed. You are good to go!")
-    lines.extend(("", colorize("header", "Summary"), summary_line, "", colorize("info", f"Guide: {DOCTOR_GUIDE_URL}")))
-    return sanitize_error_text("\n".join(lines))
+    return "\n".join(("", colorize("header", "Summary"), summary_line, "", colorize("info", f"Guide: {DOCTOR_GUIDE_URL}")))
 
 
 # Returns the real terminal underneath the logger wrapper, so progress can move the cursor safely
@@ -3300,24 +3307,23 @@ def _doctor_offer_notification_tests(report):
     if report.email_ready:
         if _doctor_ask_yes_no("Send one test email now? This will deliver a real message"):
             delivered = send_email("steam_monitor: doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "", SMTP_SSL, smtp_timeout=5) == 0
-            check = make_doctor_check("Notifications", "PASS" if delivered else "FAIL", "Doctor test email delivered" if delivered else "Doctor test email delivery failed", "One real test email was sent after confirmation" if delivered else "The approved test email could not be delivered")
-            checks.append(check)
-            print(f"{render_doctor_marker(check.status)} {check.label}")
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS" if delivered else "FAIL", "Doctor test email delivered" if delivered else "Doctor test email delivery failed", "One real test email was sent after confirmation" if delivered else "The approved test email could not be delivered")
         else:
-            check = make_doctor_check("Notifications", "SKIP", "Test email was not sent")
-            checks.append(check)
-            print(f"{render_doctor_marker(check.status)} {check.label}")
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test email was not sent")
+        checks.append(check)
+        # Recorded on the report so the summary sentence and the exit code cannot disagree about the same run
+        report.checks.append(check)
+        print(f"{render_doctor_marker(check.status)} {check.label}")
     if report.webhook_ready:
         provider = webhook_provider_display_name()
         if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
             delivered = send_webhook("Steam Monitor doctor test", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", "status", force=True) == 0
-            check = make_doctor_check("Notifications", "PASS" if delivered else "FAIL", "Doctor test webhook delivered" if delivered else "Doctor test webhook delivery failed", "One real test webhook was sent after confirmation" if delivered else "The approved test webhook could not be delivered")
-            checks.append(check)
-            print(f"{render_doctor_marker(check.status)} {check.label}")
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS" if delivered else "FAIL", "Doctor test webhook delivered" if delivered else "Doctor test webhook delivery failed", "One real test webhook was sent after confirmation" if delivered else "The approved test webhook could not be delivered")
         else:
-            check = make_doctor_check("Notifications", "SKIP", "Test webhook was not sent")
-            checks.append(check)
-            print(f"{render_doctor_marker(check.status)} {check.label}")
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test webhook was not sent")
+        checks.append(check)
+        report.checks.append(check)
+        print(f"{render_doctor_marker(check.status)} {check.label}")
     return checks
 
 
@@ -3340,9 +3346,10 @@ def run_doctor(target_value=None, config_path=None, env_path=None):
             report.checks.extend(collect())
     finally:
         _doctor_progress_clear()
-    print(render_doctor_report(report))
-    delivery_checks = _doctor_offer_notification_tests(report)
-    failed = any(check.status == "FAIL" for check in (list(report.checks) + list(delivery_checks)))
+    print(render_doctor_sections(report))
+    _doctor_offer_notification_tests(report)
+    print(render_doctor_summary(report.checks))
+    failed = any(check.status == "FAIL" for check in report.checks)
     if not failed:
         print("")
         print(f"Start monitoring with: {render_command([str(target_value)] if target_value else [])}")

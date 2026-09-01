@@ -15,6 +15,11 @@ import steam_monitor as monitor
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+# Composes the two renderers the way run_doctor does, so a test can assert on the whole transcript
+def render_doctor_report(report):
+    return monitor.render_doctor_sections(report) + "\n" + monitor.render_doctor_summary(report.checks)
 SECRET_API_KEY = "0123456789ABCDEF0123456789ABCDEF"
 SECRET_WEBHOOK_URL = "https://discord.com/api/webhooks/123456789/verysecrettokenvalue"
 # Colour changes only, so the screen-clearing escape a startup always writes is not read as colour
@@ -87,7 +92,7 @@ def build_report(monkeypatch, target_value=None, client=None, connected=True, co
 def test_only_four_status_markers_are_used(monkeypatch, doctor_globals):
     report = build_report(monkeypatch, target_value=76561197960435530, client=FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 3}]))
 
-    rendered = monitor.render_doctor_report(report)
+    rendered = render_doctor_report(report)
 
     markers = set(re.findall(r"^\[([A-Z -]+)\]", rendered, flags=re.MULTILINE))
     assert markers <= {"PASS", "WARN", "FAIL", "SKIP"}, markers
@@ -98,7 +103,7 @@ def test_only_four_status_markers_are_used(monkeypatch, doctor_globals):
 def test_sections_render_in_the_declared_order(monkeypatch, doctor_globals):
     report = build_report(monkeypatch, target_value=76561197960435530, client=FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 3}]))
 
-    rendered = monitor.render_doctor_report(report)
+    rendered = render_doctor_report(report)
 
     positions = [rendered.index(section) for section in monitor.DOCTOR_SECTIONS if section in rendered]
     assert positions == sorted(positions)
@@ -108,7 +113,7 @@ def test_sections_render_in_the_declared_order(monkeypatch, doctor_globals):
 def test_the_report_starts_with_the_bare_heading(monkeypatch, doctor_globals):
     report = build_report(monkeypatch)
 
-    rendered = monitor.render_doctor_report(report)
+    rendered = render_doctor_report(report)
 
     assert rendered.startswith("Doctor")
     assert "steam_monitor" not in rendered.splitlines()[0]
@@ -134,7 +139,7 @@ def test_the_install_method_is_reported_without_a_status_marker(monkeypatch, doc
 
     assert not any("Install method" in check.label for check in monitor.doctor_check_environment())
 
-    rendered = monitor.render_doctor_report(report)
+    rendered = render_doctor_report(report)
 
     assert rendered.splitlines()[1] == "Detected install method: manual"
     assert "[PASS] Install method" not in rendered
@@ -214,7 +219,7 @@ def test_no_secret_value_reaches_the_report(monkeypatch, doctor_globals):
     monkeypatch.setattr(monitor, "WEBHOOK_STATUS_NOTIFICATION", True)
 
     report = build_report(monkeypatch, target_value=76561197960435530, client=FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 3}]))
-    rendered = monitor.render_doctor_report(report)
+    rendered = render_doctor_report(report)
 
     assert SECRET_API_KEY not in rendered
     assert SECRET_WEBHOOK_URL not in rendered
@@ -450,15 +455,15 @@ def test_the_target_is_skipped_without_authentication(doctor_globals, monkeypatc
 def test_the_summary_states_a_conclusion():
     passing = monitor.DoctorReport()
     passing.checks.append(monitor.make_doctor_check("Environment", "PASS", "fine"))
-    assert "All checks passed. You are good to go!" in monitor.render_doctor_report(passing)
+    assert "All checks passed. You are good to go!" in render_doctor_report(passing)
 
     warned = monitor.DoctorReport()
     warned.checks.append(monitor.make_doctor_check("Environment", "WARN", "iffy"))
-    assert "All critical checks passed with 1 warning(s). Review the warnings above." in monitor.render_doctor_report(warned)
+    assert "All critical checks passed with 1 warning(s). Review the warnings above." in render_doctor_report(warned)
 
     failed = monitor.DoctorReport()
     failed.checks.append(monitor.make_doctor_check("Environment", "FAIL", "broken"))
-    assert "1 check(s) failed, 0 warning(s). Fix the failures above before relying on the tool." in monitor.render_doctor_report(failed)
+    assert "1 check(s) failed, 0 warning(s). Fix the failures above before relying on the tool." in render_doctor_report(failed)
 
 
 # Verifies the log row names the file monitoring will actually open once a target is known
@@ -524,7 +529,7 @@ def test_a_detail_repeating_the_label_is_not_printed_twice(monkeypatch, doctor_g
     report = monitor.DoctorReport()
     report.checks.extend(monitor.doctor_check_webhook_notifications(report))
 
-    rendered = monitor.render_doctor_report(report)
+    rendered = render_doctor_report(report)
 
     assert "[FAIL] WEBHOOK_URL must contain a complete HTTPS link" in rendered
     assert rendered.count("WEBHOOK_URL must contain a complete HTTPS link") == 1
@@ -536,7 +541,7 @@ def test_every_marker_is_coloured_in_the_rendered_report(monkeypatch, doctor_glo
     monkeypatch.setattr(monitor, "_COLOR_STYLES", {name: monitor._build_ansi_sequence(value) for name, value in monitor.DEFAULT_COLOR_THEME.items() if monitor._build_ansi_sequence(value)})
     report = build_report(monkeypatch, target_value=76561197960435530, client=FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 3}]))
 
-    rendered = monitor.render_doctor_report(report)
+    rendered = render_doctor_report(report)
 
     assert "[PASS]" in monitor.ANSI_ESCAPE_RE.sub("", rendered)
     assert not re.search(r"^\[(PASS|WARN|FAIL|SKIP)\]", rendered, flags=re.MULTILINE)
@@ -550,7 +555,7 @@ def test_every_marker_is_coloured_in_the_rendered_report(monkeypatch, doctor_glo
 def test_there_is_only_one_summary(monkeypatch, doctor_globals):
     report = build_report(monkeypatch)
 
-    rendered = monitor.render_doctor_report(report)
+    rendered = render_doctor_report(report)
 
     assert rendered.count("Summary") == 1
     assert "Delivery test summary" not in rendered
@@ -558,7 +563,7 @@ def test_there_is_only_one_summary(monkeypatch, doctor_globals):
 
 # Verifies the report ends with the doctor guide link
 def test_the_report_ends_with_its_guide_link(monkeypatch, doctor_globals):
-    rendered = monitor.render_doctor_report(build_report(monkeypatch))
+    rendered = render_doctor_report(build_report(monkeypatch))
 
     assert rendered.rstrip().endswith(f"Guide: {monitor.DOCTOR_GUIDE_URL}")
 
@@ -874,15 +879,15 @@ def test_the_shared_output_contract_is_produced_verbatim(monkeypatch, doctor_glo
 def test_the_summary_sentences_render_verbatim():
     passing = monitor.DoctorReport()
     passing.checks.append(monitor.make_doctor_check("Environment", "PASS", "fine"))
-    assert SHARED_CONTRACT["all_passed"] in monitor.render_doctor_report(passing)
+    assert SHARED_CONTRACT["all_passed"] in render_doctor_report(passing)
 
     warned = monitor.DoctorReport()
     warned.checks.extend([monitor.make_doctor_check("Environment", "WARN", "a"), monitor.make_doctor_check("Environment", "WARN", "b")])
-    assert SHARED_CONTRACT["with_warnings"].format(count=2) in monitor.render_doctor_report(warned)
+    assert SHARED_CONTRACT["with_warnings"].format(count=2) in render_doctor_report(warned)
 
     failed = monitor.DoctorReport()
     failed.checks.extend([monitor.make_doctor_check("Environment", "FAIL", "a"), monitor.make_doctor_check("Environment", "WARN", "b")])
-    assert SHARED_CONTRACT["with_failures"].format(failures=1, warnings=1) in monitor.render_doctor_report(failed)
+    assert SHARED_CONTRACT["with_failures"].format(failures=1, warnings=1) in render_doctor_report(failed)
 
 
 # Verifies the wizard prompt shared with the sibling tools is used verbatim
@@ -959,7 +964,41 @@ def test_the_action_lines_sit_indented_under_their_marker(monkeypatch):
         monitor.make_doctor_check("Configuration", "PASS", "a passing row", "", advice),
     ]
 
-    lines = monitor.render_doctor_report(report).splitlines()
+    lines = render_doctor_report(report).splitlines()
     rows = lines[lines.index("[WARN] a warning row"):]
 
     assert rows[:5] == ["[WARN] a warning row", "  a detail worth keeping", "  To fix: do the thing", f"  Guide: {monitor.DOCTOR_GUIDE_URL}", "[PASS] a passing row"]
+
+
+# Verifies an approved delivery test that failed reaches the summary, so a failing run cannot report a clean one
+def test_a_failed_delivery_test_reaches_the_summary(monkeypatch, doctor_globals):
+    report = monitor.DoctorReport()
+    report.email_ready = True
+    monkeypatch.setattr(monitor.sys.stdin, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(monitor.sys.stdout, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr("builtins.input", lambda _prompt: "y")
+    monkeypatch.setattr(monitor, "send_email", lambda *_a, **_k: 1)
+
+    monitor._doctor_offer_notification_tests(report)
+
+    assert [(check.section, check.status, check.label) for check in report.checks] == [(monitor.DOCTOR_DELIVERY_SECTION, "FAIL", "Doctor test email delivery failed")]
+    assert "1 check(s) failed, 0 warning(s)." in monitor.render_doctor_summary(report.checks)
+
+
+# Verifies every doctor entry point renders its summary after the delivery tests, so the sentence and the exit code describe one run
+def test_the_summary_is_rendered_after_the_delivery_tests():
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(monitor))
+    checked = 0
+    for function in [node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]:
+        calls = [(call.lineno, ast.unparse(call.func)) for call in ast.walk(function) if isinstance(call, ast.Call)]
+        offers = [lineno for lineno, name in calls if name.endswith("_doctor_offer_notification_tests")]
+        summaries = [lineno for lineno, name in calls if name.endswith("render_doctor_summary")]
+        if not offers or not summaries:
+            continue
+        checked += 1
+        assert max(offers) < min(summaries), f"{function.name} renders the summary before the delivery tests"
+
+    assert checked, "no doctor entry point runs the delivery tests and then the summary"
