@@ -493,7 +493,7 @@ CROSS_TOOL_STRINGS = (
     "No dotenv file selected",
     "Using environment variables and other configured sources",
     "No secrets loaded",
-    "Nothing was read from a dotenv file, the environment or the command line",
+    "Nothing was read from a dotenv file, the environment, the configuration file or the command line",
     "The requested dotenv file was not found",
     "Email notifications are disabled",
     "Webhook alerts are disabled",

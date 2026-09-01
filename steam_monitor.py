@@ -3094,7 +3094,7 @@ def doctor_check_environment(version_info=None, spec_finder=None):
         checks.append(make_doctor_check("Environment", "PASS", "Optional dependency python-dotenv is installed", "Used only for reading secrets from a dotenv file"))
     else:
         advice = make_recovery_advice("dependency.missing", "Optional dependency python-dotenv is not installed", recovery_fix_with_guide("Install it with: pip3 install python-dotenv. Or export the secrets as environment variables", INSTALL_GUIDE_URL), False)
-        checks.append(make_doctor_check("Environment", "WARN", advice.summary, "Secrets can only come from environment variables or the configuration file. Everything else works", advice))
+        checks.append(make_doctor_check("Environment", "WARN", advice.summary, "Secrets can only come from environment variables or the configuration file. Every other feature is unaffected", advice))
 
     # The guarded import flag is checked rather than the module, because it reflects whether artwork actually works
     if NTFY_IMAGES_AVAILABLE:
@@ -3145,11 +3145,11 @@ def doctor_secret_checks(env_path=None):
     if from_environment:
         checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the environment", ", ".join(from_environment)))
     if from_settings:
-        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the configuration file or command line", ", ".join(from_settings)))
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the configuration file", ", ".join(from_settings)))
     if from_command_line:
         checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the command line", ", ".join(from_command_line)))
     if not checks:
-        checks.append(make_doctor_check("Configuration", "PASS", "No secrets loaded", "Nothing was read from a dotenv file, the environment or the command line"))
+        checks.append(make_doctor_check("Configuration", "PASS", "No secrets loaded", "Nothing was read from a dotenv file, the environment, the configuration file or the command line"))
     return checks
 
 
