@@ -2039,6 +2039,7 @@ def run_set_steam_api_key(env_file=None, interactive=None, input_func=None, getp
         print()
         raise RecoveryError(secret_entry_cancelled_advice("Steam Web API key", "--set-steam-api-key", STEAM_API_KEY_GUIDE_URL)) from None
     validate = validate_steam_api_key if validator is None else validator
+    print("* Checking the entered Steam Web API key before changing the private settings file ...")
     if not validate(api_key):
         raise SecretConfigurationError("The entered Steam Web API key is invalid or could not be verified. The private settings file was not changed.")
     try:
@@ -3846,6 +3847,8 @@ def _wizard_collect_auth_section(state, input_func=None, getpass_func=None, vali
             if not _wizard_offer_retry("Steam Web API key", "Nothing can be monitored until one is set", input_func=input_func):
                 return
             continue
+        # Steam is contacted here, which takes long enough to look like a hang without a notice
+        print("  Checking the key with Steam ...")
         if validate(api_key):
             state.secret_updates["STEAM_API_KEY"] = api_key
             print("  Steam accepted the key.")

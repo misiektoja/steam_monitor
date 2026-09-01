@@ -1096,3 +1096,14 @@ def test_the_dotenv_backup_row_is_named_apart_from_the_config_backup(tmp_path, m
 
     assert [label for label, _ in rows] == ["Backup", "Dotenv backup"], block
     assert rows[0][1] != rows[1][1]
+
+
+# Verifies the wizard says it is contacting Steam, since the key check blocks the prompt with no output
+def test_the_wizard_announces_the_key_check(tmp_path, capsys, wizard_globals):
+    baseline = {name: value for name, value in vars(monitor).items() if name in monitor._config_allowed_names()}
+    state = monitor.WizardSetupState(tmp_path / "steam_monitor.conf", tmp_path / ".env", baseline)
+
+    monitor._wizard_collect_auth_section(state, getpass_func=lambda _prompt: API_KEY, validator=lambda _key: True)
+
+    lines = capsys.readouterr().out.splitlines()
+    assert lines.index("  Checking the key with Steam ...") < lines.index("  Steam accepted the key.")

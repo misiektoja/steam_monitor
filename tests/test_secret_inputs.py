@@ -125,6 +125,19 @@ class SecretInputTests(unittest.TestCase):
         rendered = "\n".join(" ".join(str(item) for item in call.args) for call in output.call_args_list)
         self.assertNotIn(api_key, rendered)
 
+    # Verifies the one-shot command announces the Steam call before it blocks, the way the sibling commands do
+    def test_the_key_command_announces_the_check_before_validating(self):
+        seen = {}
+
+        def validator(_key):
+            seen["printed"] = [" ".join(str(item) for item in call.args) for call in output.call_args_list]
+            return True
+
+        with patch("builtins.print") as output:
+            steam_monitor.run_set_steam_api_key(env_file=str(self.destination), interactive=True, getpass_func=lambda prompt: "A" * 32, validator=validator)
+
+        self.assertTrue(any("Checking the entered Steam Web API key" in line for line in seen["printed"]), seen["printed"])
+
     # Verifies failed Steam API key validation leaves private settings unchanged
     def test_invalid_steam_api_key_is_not_saved(self):
         self.destination.write_text("KEEP=value\n", encoding="utf-8")
