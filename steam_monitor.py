@@ -462,6 +462,9 @@ WEBHOOK_READY_CHECK_LABEL = "Webhook URL, headers and alert choices look valid"
 # List of secret keys to load from env/config
 SECRET_KEYS = ("STEAM_API_KEY", "SMTP_PASSWORD", "WEBHOOK_URL", "NTFY_ACCESS_TOKEN")
 
+# The one-shot commands that only write a secret, so the other early-exit flags do not swallow them
+SECRET_ACTION_FLAGS = ("--set-steam-api-key", "--set-smtp-password", "--set-webhook-url")
+
 LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / STEAM_CHECK_INTERVAL
 
 # The last connectivity failure, so a quiet caller can classify it instead of the check printing it
@@ -1914,6 +1917,72 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
     return str(destination)
 
 
+# Signs in to the configured mail server with one entered password, so nothing is saved that cannot deliver
+def smtp_sign_in(password, timeout=15):
+    global SMTP_PASSWORD
+
+    candidate = str(password or "")
+    if not candidate or candidate == "your_smtp_password":
+        raise SecretConfigurationError("No SMTP password was entered. The private settings file was not changed.")
+    if not all(doctor_value_is_set(value) for value in (SMTP_HOST, SMTP_USER, SENDER_EMAIL, RECEIVER_EMAIL)):
+        raise SecretConfigurationError("The mail server settings are incomplete. Set SMTP_HOST, SMTP_USER, SENDER_EMAIL and RECEIVER_EMAIL first, or run --setup.")
+    previous_password = SMTP_PASSWORD
+    SMTP_PASSWORD = candidate
+    smtp_object = None
+    try:
+        smtp_object = smtp_connect_and_login(SMTP_SSL, smtp_timeout=timeout)
+    finally:
+        if smtp_object is not None:
+            try:
+                smtp_object.quit()
+            except Exception:
+                pass
+        SMTP_PASSWORD = previous_password
+    return str(SMTP_USER)
+
+
+# Privately checks one SMTP password against the mail server and atomically stores it
+@suppresses_debug_output
+def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getpass_func=None, sign_in=None):
+    destination = resolve_secret_env_path(env_file)
+    terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
+    if not terminal_is_interactive:
+        raise SecretConfigurationError("--set-smtp-password requires an interactive terminal. Run it in a terminal window so the password stays hidden while you type it.")
+    prompt = input if input_func is None else input_func
+    if _dotenv_contains_key(destination, "SMTP_PASSWORD"):
+        try:
+            confirmed = prompt(f"Replace the saved SMTP password in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
+        except (EOFError, KeyboardInterrupt):
+            confirmed = False
+        if not confirmed:
+            raise SecretConfigurationError("SMTP password setup was cancelled. The private settings file was not changed.")
+    print(f"* The password is checked by signing in to {SMTP_HOST} as {SMTP_USER}. Nothing is sent")
+    hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
+    try:
+        smtp_password = str(hidden_prompt("Enter the SMTP password (input hidden): ")).strip()
+    except (EOFError, KeyboardInterrupt):
+        raise SecretConfigurationError("SMTP password setup was cancelled. The private settings file was not changed.")
+    check = smtp_sign_in if sign_in is None else sign_in
+    try:
+        signed_in_user = check(smtp_password, timeout=5)
+    except SecretConfigurationError:
+        raise
+    except Exception as exc:
+        raise SecretConfigurationError(f"The mail server did not accept the password: {type(exc).__name__}: {sanitize_error_text(exc)}. The private settings file was not changed.") from None
+    try:
+        result = update_dotenv_file(destination, {"SMTP_PASSWORD": smtp_password})
+    except Exception:
+        raise SecretConfigurationError(f"Could not save the SMTP password in '{destination}'. Check file permissions or choose another path with --env-file.")
+    print(f"* The mail server accepted the password for {signed_in_user}")
+    print(f"* Updated private settings file: {destination}")
+    if result.get("backup_path"):
+        print(f"* Previous private settings file backed up to: {result['backup_path']}")
+    print()
+    _wizard_print_command("Send a test email:", render_command(["--send-test-email"], include_paths=False, env_path=destination))
+    _wizard_print_command("Check setup again:", render_command(["--doctor", "<steam_target>"], include_paths=False, env_path=destination))
+    return str(destination)
+
+
 # Returns the normalized configured webhook provider or an empty string when unsupported
 def normalized_webhook_provider(provider=None):
     selected_provider = WEBHOOK_PROVIDER if provider is None else provider
@@ -2068,9 +2137,9 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
             return advice("config.missing", safe_detail or "The configuration file was not found", f"Create one with '{render_command(['--generate-config', 'steam_monitor.conf'], include_paths=False)}' or correct the --config-file path", False, CONFIG_FILE_GUIDE_URL)
         return advice("config.invalid", safe_detail or "The configuration file could not be read", f"Correct the reported line, or start from a fresh template with '{render_command(['--generate-config', 'steam_monitor.conf'], include_paths=False)}'", False, CONFIG_FILE_GUIDE_URL)
 
-    if context in ("set_steam_api_key", "set_webhook_url"):
-        flag = "--set-steam-api-key" if context == "set_steam_api_key" else "--set-webhook-url"
-        guide = STEAM_API_KEY_GUIDE_URL if context == "set_steam_api_key" else WEBHOOK_GUIDE_URL
+    if context in ("set_steam_api_key", "set_smtp_password", "set_webhook_url"):
+        flag = {"set_steam_api_key": "--set-steam-api-key", "set_smtp_password": "--set-smtp-password"}.get(context, "--set-webhook-url")
+        guide = {"set_steam_api_key": STEAM_API_KEY_GUIDE_URL, "set_smtp_password": SMTP_GUIDE_URL}.get(context, WEBHOOK_GUIDE_URL)
         if "interactive terminal" in message:
             return advice("unknown", f"{flag} requires an interactive terminal", f"Run {flag} in a terminal window so the value stays hidden while you paste it", False, guide)
         if "cancelled" in message:
@@ -2079,6 +2148,10 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
             return advice("file.unwritable", safe_detail or "The private settings file could not be updated", "Check file permissions or choose another path with --env-file PATH", False, SECRETS_GUIDE_URL)
         if context == "set_steam_api_key":
             return advice("auth.api_key_invalid", safe_detail or "Steam rejected the entered Web API key", f"Copy a fresh key from {STEAM_API_KEY_REGISTRATION_URL} then run {flag} again", False, guide)
+        if context == "set_smtp_password":
+            if "settings are incomplete" in message:
+                return advice("smtp.invalid", safe_detail or "The mail server settings are incomplete", f"Set SMTP_HOST, SMTP_USER, SENDER_EMAIL and RECEIVER_EMAIL, or run {render_command(['--setup'], include_paths=False)}", False, guide)
+            return advice("smtp.authentication", safe_detail or "The mail server did not accept the password", f"Use an app password when the provider requires one then run {flag} again", False, guide)
         return advice("webhook.invalid", safe_detail or "The webhook URL was not changed", f"Copy a complete Discord or ntfy webhook URL then run {flag} again", False, guide)
 
     if context == "target":
@@ -5716,8 +5789,8 @@ def apply_webhook_cli_overrides(args, parser):
 
 
 # Rejects unrelated options when a hidden secret-entry action is selected
-def validate_secret_action_args(args, parser, action_dest, action_flag):
-    permitted = {action_dest, "env_file", "no_color"}
+def validate_secret_action_args(args, parser, action_dest, action_flag, permitted_extra=()):
+    permitted = {action_dest, "env_file", "no_color", *permitted_extra}
     conflicts = []
     for name, value in vars(args).items():
         if name in permitted or value is None or value is False:
@@ -5731,7 +5804,7 @@ def validate_secret_action_args(args, parser, action_dest, action_flag):
 def main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, NAME_CHANGE_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME, NTFY_IMAGES, EXPORTED_SECRET_KEYS, TRUNCATE_CHARS
 
-    if "--generate-config" in sys.argv and "--set-steam-api-key" not in sys.argv and "--set-webhook-url" not in sys.argv:
+    if "--generate-config" in sys.argv and not any(flag in sys.argv for flag in SECRET_ACTION_FLAGS):
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
         # Check if a filename was provided after --generate-config
         try:
@@ -5757,7 +5830,7 @@ def main():
         sys.stdout.buffer.flush()
         sys.exit(0)
 
-    if "--version" in sys.argv and "--set-steam-api-key" not in sys.argv and "--set-webhook-url" not in sys.argv:
+    if "--version" in sys.argv and not any(flag in sys.argv for flag in SECRET_ACTION_FLAGS):
         print(f"{os.path.basename(sys.argv[0])} v{VERSION}")
         sys.exit(0)
 
@@ -5810,6 +5883,12 @@ def main():
         dest="set_steam_api_key",
         action="store_true",
         help="Privately validate and save STEAM_API_KEY through a hidden prompt",
+    )
+    conf.add_argument(
+        "--set-smtp-password",
+        dest="set_smtp_password",
+        action="store_true",
+        help="Enter the SMTP password privately, check it against the mail server and save it to the dotenv file",
     )
     conf.add_argument(
         "--set-webhook-url",
@@ -6184,8 +6263,9 @@ def main():
     # Applied here so config-load failures and startup checks can already print diagnostics
     apply_diagnostic_cli_flags(args)
 
-    if args.set_steam_api_key and args.set_webhook_url:
-        parser.error("--set-steam-api-key cannot be combined with --set-webhook-url")
+    selected_secret_actions = [flag for flag, selected in zip(SECRET_ACTION_FLAGS, (args.set_steam_api_key, args.set_smtp_password, args.set_webhook_url), strict=True) if selected]
+    if len(selected_secret_actions) > 1:
+        parser.error(f"{selected_secret_actions[0]} cannot be combined with {selected_secret_actions[1]}")
 
     if args.set_steam_api_key:
         validate_secret_action_args(args, parser, "set_steam_api_key", "--set-steam-api-key")
@@ -6239,10 +6319,10 @@ def main():
         utility_flags = {
             "--no-color", "-h", "--help",
             "--version", "--generate-config",
-            "--send-test-email", "--send-test-webhook", "--doctor", "--setup",
+            "--send-test-email", "--send-test-webhook", "--doctor", "--setup", "--set-smtp-password",
             "--webhook", "--no-webhook", "--webhook-errors", "--no-webhook-error-notify"
         }
-        utility_action = args.send_test_email or args.send_test_webhook or args.doctor or args.setup
+        utility_action = args.send_test_email or args.send_test_webhook or args.doctor or args.setup or args.set_smtp_password
         complex_args = [] if utility_action else [a for a in sys.argv[1:] if a not in utility_flags]
 
         if complex_args or not utility_action:
@@ -6296,6 +6376,16 @@ def main():
     if args.no_color is True:
         COLORED_OUTPUT = False
     init_color_output(stdout_bck)
+
+    if args.set_smtp_password:
+        # Runs after the config file so the mail server it signs in to is the one monitoring would use
+        validate_secret_action_args(args, parser, "set_smtp_password", "--set-smtp-password", permitted_extra=("config_file",))
+        try:
+            run_set_smtp_password(env_file=args.env_file or env_path)
+        except SecretConfigurationError as exc:
+            print_recovery_error(exc, context="set_smtp_password")
+            sys.exit(1)
+        sys.exit(0)
 
     if args.setup:
         # Runs here rather than earlier so the values already in effect become the defaults it offers
