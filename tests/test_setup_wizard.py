@@ -413,7 +413,8 @@ def test_a_rejected_duration_is_asked_again(tmp_path, monkeypatch, wizard_global
 
 # Verifies a rejected target is asked again with the guidance the reader needs
 def test_a_rejected_target_is_asked_again(tmp_path, monkeypatch, wizard_globals, capsys):
-    answers = ["https://example.com/nope", str(STEAM64), "y", "5m", "45s", "n", "n", "y", "", "", "1", "n", "n"]
+    # the rejected link is followed by the retry offer, which the blank answer accepts
+    answers = ["https://example.com/nope", "", str(STEAM64), "y", "5m", "45s", "n", "n", "y", "", "", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers) == 0
     assert "Enter a Steam64 ID" in capsys.readouterr().out
@@ -1173,3 +1174,57 @@ def test_declining_the_retry_offer_keeps_the_saved_number(capsys):
     answers = iter(["", "n"])
 
     assert monitor._wizard_ask_positive_int("SMTP port", 587, maximum=65535, input_func=lambda _prompt: next(answers)) == 587
+
+
+# Verifies a rerun that keeps the loaded secrets leaves every one of them out of the rebuilt configuration file
+def test_a_rerun_keeps_loaded_secrets_out_of_the_configuration(tmp_path, monkeypatch, wizard_globals):
+    loaded = {"STEAM_API_KEY": "B" * 32, "SMTP_PASSWORD": "mail-secret-value", "WEBHOOK_URL": WEBHOOK_URL, "NTFY_ACCESS_TOKEN": "ntfy-secret-value"}
+    for name, value in loaded.items():
+        monkeypatch.setattr(monitor, name, value)
+    (tmp_path / "steam_monitor.conf").write_text("# earlier config\n", encoding="utf-8")
+    # rebuild, target, persist, polling, keep the loaded key, no email, no webhook, output files, save, decline doctor and monitoring
+    answers = ["y", str(STEAM64), "y", "5m", "45s", "n", "n", "n", "y", "", "", "1", "n", "n"]
+
+    assert run_wizard(tmp_path, monkeypatch, answers, secrets=[]) == 0
+
+    written = (tmp_path / "steam_monitor.conf").read_text(encoding="utf-8")
+    for value in loaded.values():
+        assert value not in written
+    assert "your_steam_web_api_key" in written
+
+
+# Verifies the configuration renderer keeps the template placeholder for every secret whatever the values hold
+def test_the_configuration_renderer_never_writes_a_secret():
+    values = {name: f"real-{name.lower()}" for name in monitor.SECRET_KEYS}
+    values["STEAM_CHECK_INTERVAL"] = 4321
+
+    rendered = monitor.generate_config_with_current_values(values)
+
+    assert "STEAM_CHECK_INTERVAL = 4321" in rendered
+    assert not any(value in rendered for value in values.values() if isinstance(value, str))
+
+
+# Verifies a blank target answer whose retry is declined ends the section instead of asking the same question forever
+def test_declining_the_target_retry_ends_the_section_without_a_target(tmp_path, capsys):
+    state = monitor.WizardSetupState(tmp_path / "steam_monitor.conf", tmp_path / ".env", {})
+    transcript = []
+
+    monitor._wizard_collect_target_section(state, input_func=scripted_input(["", "n"], transcript))
+
+    assert state.target == ""
+    assert state.config_values["TARGET_STEAM_ID"] == ""
+    assert not any(prompt.startswith("Persist this target") for prompt in transcript)
+    assert "No target selected. Nothing can be monitored until one is set." in capsys.readouterr().out
+
+
+# Verifies a rejected target answer offers another attempt and declining it keeps the target already given
+def test_a_rejected_target_answer_offers_a_retry_and_keeps_the_previous_target(tmp_path):
+    state = monitor.WizardSetupState(tmp_path / "steam_monitor.conf", tmp_path / ".env", {})
+    state.target = str(STEAM64)
+    transcript = []
+
+    monitor._wizard_collect_target_section(state, input_func=scripted_input(["someone@example.com", "n", "y"], transcript))
+
+    assert state.target == str(STEAM64)
+    assert any(prompt.startswith("Try entering the Steam profile URL or ID to monitor again?") for prompt in transcript)
+    assert any(prompt.startswith("Persist this target") for prompt in transcript)

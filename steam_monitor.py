@@ -3702,7 +3702,8 @@ def generate_config_with_current_values(config_values):
         if not isinstance(statement, ast.Assign) or len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
             continue
         name = statement.targets[0].id
-        if name not in config_values:
+        # A secret belongs in the dotenv file, so its template placeholder stays even when the running values hold the real one
+        if name not in config_values or name in SECRET_KEYS:
             continue
         replacements[name] = (statement.lineno, getattr(statement, "end_lineno", statement.lineno), repr(config_values[name]))
     lines = CONFIG_BLOCK.strip("\n").split("\n")
@@ -3834,12 +3835,18 @@ def _wizard_clear_section(state, config_keys, secret_keys=()):
 # Asks for the monitored profile, accepting every form people paste and storing one canonical Steam64 ID
 def _wizard_collect_target_section(state, initial_target=None, input_func=None):
     state.pending_vanity = ""
+    question = "Steam profile URL or ID to monitor"
     while True:
-        answer = _wizard_ask_text("Steam profile URL or ID to monitor", default=str(initial_target or state.target or ""), required=True, input_func=input_func)
+        answer = _wizard_ask_text(question, default=str(initial_target or state.target or ""), required=True, input_func=input_func)
+        if not answer:
+            # The question already offered another attempt and it was declined, so the section ends instead of asking again
+            break
         try:
             steam64, vanity = normalize_steam_target(answer)
         except ValueError as exc:
             print(f"  {exc}")
+            if not _wizard_offer_retry(question, input_func=input_func):
+                break
             continue
         if steam64 is not None:
             state.target = str(steam64)
@@ -3858,6 +3865,10 @@ def _wizard_collect_target_section(state, initial_target=None, input_func=None):
         state.pending_vanity = vanity
         print(f"  '{vanity}' will be resolved after the Steam Web API key is set up.")
         break
+    if not state.target and not state.pending_vanity:
+        print("  No target selected. Nothing can be monitored until one is set. Run --setup again or pass the target on the command line.")
+        _wizard_apply_target(state)
+        return
     state.persist_target = _wizard_ask_yes_no("Persist this target in the generated config?", default=state.persist_target, input_func=input_func)
     _wizard_apply_target(state)
 
