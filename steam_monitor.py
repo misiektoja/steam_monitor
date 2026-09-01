@@ -2479,6 +2479,54 @@ class RecoveryHintTracker:
         self.last_code = None
 
 
+# Decides how a lasting failure is reported: in full when it is new, then on the liveness cadence while it lasts
+class OutageReporter:
+    # Starts with no failure recorded, so the first failure of any category is reported in full
+    def __init__(self):
+        self.code = None
+        self.since = 0
+        self.checks = 0
+
+    # Records one failed check and returns "full" for a new failure, "degraded" on the liveness cadence,
+    # "repeat" while the liveness banner is switched off or "" while the same failure is merely continuing
+    def failed(self, advice, liveness_counter):
+        if advice.code != self.code:
+            self.code = advice.code
+            self.since = int(time.time())
+            self.checks = 0
+            return "full"
+        self.checks += 1
+        # With the liveness banner off there is nothing to carry the reminder, so the summary keeps its old cadence
+        if not liveness_counter:
+            return "repeat"
+        if self.checks >= liveness_counter:
+            self.checks = 0
+            return "degraded"
+        return ""
+
+    # Clears the failure after a successful check and returns how long it lasted, or None when none was active
+    def recovered(self):
+        if not self.code:
+            return None
+        lasted = int(time.time()) - self.since
+        self.code = None
+        self.since = 0
+        self.checks = 0
+        return lasted
+
+
+# Reports a lasting failure on the liveness cadence, so a broken run still says it is alive without repeating itself
+def print_outage_liveness(target, advice, since):
+    print(f"* Monitoring degraded for {target}. {advice.summary} since {get_date_from_ts(since)}")
+    print_cur_ts("Liveness check, timestamp:\t")
+
+
+# Reports that a failure cleared, since a throttled failure no longer stops printing when it is over
+def print_outage_recovery(target, lasted):
+    print(f"* Monitoring recovered for {target} after {display_time(max(1, lasted))}")
+    print_cur_ts("Timestamp:\t\t\t")
+
+
 # Tracks which features are currently unavailable, so a lasting outage is reported once instead of every cycle
 class FeatureOutageTracker:
     # Starts with every feature available, so the first outage of any of them is reported
@@ -5575,6 +5623,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
     recovery_hint_tracker = RecoveryHintTracker()
     feature_outages = FeatureOutageTracker()
+    outage = OutageReporter()
     transient_retry_used = False
 
     debug_print("First check", due_in=display_time(sleep_interval))
@@ -5661,24 +5710,39 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 error_email_sent = False
                 error_webhook_sent = False
                 error_delivery_code = advice.code
+            # A failure that has not changed is left to the liveness cadence rather than repeated every check
+            outage_outcome = outage.failed(advice, LIVENESS_CHECK_COUNTER)
             if advice.code == "steam.rate_limited":
                 # Rate limits carry their own wait, so they skip the retry path rather than burning an attempt
                 retry_after = steam_retry_after_seconds(response, sleep_interval) if response is not None else sleep_interval
-                print_monitor_recovery(e, "runtime", recovery_hint_tracker, "* ")
-                verbose_print(f"Waiting {display_time(retry_after)} before retrying")
-                print_cur_ts("Timestamp:\t\t\t")
+                if outage_outcome == "full":
+                    print_monitor_recovery(e, "runtime", recovery_hint_tracker, "* ")
+                    verbose_print(f"Waiting {display_time(retry_after)} before retrying")
+                    print_cur_ts("Timestamp:\t\t\t")
+                elif outage_outcome == "degraded":
+                    print_outage_liveness(steamid, advice, outage.since)
+                elif outage_outcome == "repeat":
+                    print(f"* {advice.summary}")
+                    print_cur_ts("Timestamp:\t\t\t")
                 time.sleep(retry_after)
                 continue
             else:
-                print_monitor_recovery(e, "runtime", recovery_hint_tracker, "* ")
+                if outage_outcome == "full":
+                    print_monitor_recovery(e, "runtime", recovery_hint_tracker, "* ")
+                elif outage_outcome == "degraded":
+                    print_outage_liveness(steamid, advice, outage.since)
+                elif outage_outcome == "repeat":
+                    print(f"* {advice.summary}")
                 if advice.retryable and not transient_retry_used:
                     # One short retry absorbs a blip without waiting a whole polling interval
                     transient_retry_used = True
                     verbose_print(f"Retrying once in {display_time(TRANSIENT_RETRY_SECONDS)}")
-                    print_cur_ts("Timestamp:\t\t\t")
+                    if outage_outcome in ("full", "repeat"):
+                        print_cur_ts("Timestamp:\t\t\t")
                     time.sleep(TRANSIENT_RETRY_SECONDS)
                     continue
-                print(f"* Retrying in {display_time(sleep_interval)}")
+                if outage_outcome in ("full", "repeat"):
+                    print(f"* Retrying in {display_time(sleep_interval)}")
                 if advice.code == "auth.api_key_invalid":
                     m_subject = f"steam_monitor: API key error! (user: {username})"
                     m_body = f"{advice.summary}{nl_ch}{nl_ch}To fix: {advice.fix}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
@@ -5690,13 +5754,17 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     error_email_sent = error_email_sent or email_delivered
                     error_webhook_sent = error_webhook_sent or webhook_delivered
 
-            print_cur_ts("Timestamp:\t\t\t")
+            if outage_outcome in ("full", "repeat"):
+                print_cur_ts("Timestamp:\t\t\t")
 
             time.sleep(sleep_interval)
 
             continue
 
         recovery_hint_tracker.reset()
+        outage_lasted = outage.recovered()
+        if outage_lasted is not None:
+            print_outage_recovery(steamid, outage_lasted)
         transient_retry_used = False
         error_email_sent = False
         error_webhook_sent = False

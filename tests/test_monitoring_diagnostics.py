@@ -38,12 +38,14 @@ class StoppedAfterOneCycle(Exception):
 
 class FakeSteamWebAPI:
     # Answers the Steam endpoints the monitoring cycle calls, failing the ones named in failing_endpoints
-    def __init__(self, failing_endpoints=(), poll_error=None, healthy_polls=1, persona_state=0, **_kwargs):
+    def __init__(self, failing_endpoints=(), poll_error=None, healthy_polls=1, persona_state=0, healthy_after=None, **_kwargs):
         self.failing_endpoints = set(failing_endpoints)
         self.persona_state = persona_state
         # A poll error is raised only after the startup snapshot has succeeded, so the loop is actually reached
         self.poll_error = poll_error
         self.healthy_polls = healthy_polls
+        # The poll succeeds again after this many polls, so a recovery can be exercised
+        self.healthy_after = healthy_after
         self.polls = 0
         self.called = []
 
@@ -51,7 +53,7 @@ class FakeSteamWebAPI:
         self.called.append(endpoint)
         if endpoint == "ISteamUser.GetPlayerSummaries" and self.poll_error is not None:
             self.polls += 1
-            if self.polls > self.healthy_polls:
+            if self.polls > self.healthy_polls and (self.healthy_after is None or self.polls <= self.healthy_after):
                 raise self.poll_error
         if endpoint in self.failing_endpoints:
             raise RuntimeError(f"{endpoint} is unavailable")
@@ -75,7 +77,7 @@ class FakeSteamWebAPI:
 
 
 # Runs one monitoring cycle with every tracked feature on and the named endpoints failing
-def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True, poll_error=None, stop_after_sleeps=2, error_notifications=False, liveness_counter=0, debug=None, persona_state=0):
+def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True, poll_error=None, stop_after_sleeps=2, error_notifications=False, liveness_counter=0, debug=None, persona_state=0, healthy_after=None):
     monkeypatch.setattr(monitor, "DEBUG_MODE", diagnostics if debug is None else debug)
     monkeypatch.setattr(monitor, "VERBOSE_MODE", diagnostics)
     monkeypatch.setattr(monitor, "STEAM_LEVEL_XP_CHECK", True)
@@ -95,7 +97,7 @@ def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True,
     # Keep every generated file inside the temporary directory
     monkeypatch.chdir(tmp_path)
 
-    api = FakeSteamWebAPI(failing_endpoints, poll_error=poll_error, persona_state=persona_state)
+    api = FakeSteamWebAPI(failing_endpoints, poll_error=poll_error, persona_state=persona_state, healthy_after=healthy_after)
     monkeypatch.setattr(monitor, "steam_web_api_client", lambda *args, **kwargs: api)
 
     sleeps = []
@@ -289,13 +291,46 @@ def test_a_rejected_api_key_does_not_get_a_quick_retry(tmp_path, monkeypatch, ca
     assert "Steam rejected the configured Web API key" in capsys.readouterr().out
 
 
-# Verifies a continuing outage explains itself once rather than on every cycle
+# Verifies a continuing outage explains itself once rather than on every cycle, with the liveness banner switched off
 def test_a_continuing_outage_prints_one_hint(tmp_path, monkeypatch, capsys):
     _api, _sleeps = run_one_cycle(tmp_path, monkeypatch, poll_error=http_error(503), stop_after_sleeps=6)
 
     output = capsys.readouterr().out
     assert output.count("The Steam Web API is temporarily unavailable") >= 3
     assert output.count("To fix: ") == 1
+
+
+# Verifies a continuing outage rides the liveness cadence instead of repeating its summary on every cycle
+def test_a_continuing_outage_rides_the_liveness_cadence(tmp_path, monkeypatch, capsys):
+    _api, _sleeps = run_one_cycle(tmp_path, monkeypatch, poll_error=http_error(503), stop_after_sleeps=6, liveness_counter=3)
+
+    output = capsys.readouterr().out
+    assert output.count("To fix: ") == 1
+    assert output.count("The Steam Web API is temporarily unavailable") == 2
+    assert "* Monitoring degraded for 76561197960435530. The Steam Web API is temporarily unavailable since " in output
+    assert output.count("Liveness check, timestamp:") == 1
+
+
+# Verifies a failure that clears says so, since a throttled failure no longer stops printing when it is over
+def test_a_cleared_outage_reports_its_recovery(tmp_path, monkeypatch, capsys):
+    _api, _sleeps = run_one_cycle(tmp_path, monkeypatch, poll_error=http_error(503), stop_after_sleeps=3, healthy_after=2)
+
+    output = capsys.readouterr().out
+    assert "* Monitoring recovered for 76561197960435530 after " in output
+
+
+# Verifies the reporter reports a new failure in full, stays quiet while it lasts and reports the cadence reminder
+def test_the_outage_reporter_reports_once_then_on_the_cadence():
+    reporter = monitor.OutageReporter()
+    advice = monitor.classify_recovery_error(RuntimeError("boom"), context="runtime")
+
+    assert reporter.failed(advice, 3) == "full"
+    assert reporter.failed(advice, 3) == ""
+    assert reporter.failed(advice, 3) == ""
+    assert reporter.failed(advice, 3) == "degraded"
+    assert reporter.failed(advice, 0) == "repeat"
+    assert reporter.recovered() is not None
+    assert reporter.recovered() is None
 
 
 # Verifies a delivered error channel stays suppressed while a failed channel retries during the same outage
