@@ -458,6 +458,7 @@ INSTALL_GUIDE_URL = f"{DOCS_BASE_URL}/installation/"
 QUICK_START_GUIDE_URL = f"{DOCS_BASE_URL}/setup-and-first-run/"
 CONFIG_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/"
 CONFIG_FILE_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#configuration-file"
+INTERVALS_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#check-intervals"
 STEAM_API_KEY_GUIDE_URL = f"{DOCS_BASE_URL}/setup-and-first-run/#steam-web-api-key"
 PRIVACY_GUIDE_URL = f"{DOCS_BASE_URL}/setup-and-first-run/#user-privacy-settings"
 SMTP_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#smtp-settings"
@@ -2583,6 +2584,9 @@ def webhook_provider_display_name(provider=None):
 # tools, because every state it would cover is a state the others already call PASS
 DOCTOR_STATUSES = ("PASS", "WARN", "FAIL", "SKIP")
 
+# An active check interval below this invites the Steam rate limiter, which stops the tool seeing anything
+DOCTOR_MIN_SAFE_ACTIVE_INTERVAL = 30
+
 
 # One doctor result, held until the whole report is rendered
 DoctorCheck = namedtuple("DoctorCheck", ["section", "status", "label", "detail", "advice"])
@@ -3229,6 +3233,11 @@ def doctor_check_configuration(config_path=None, env_path=None, target_value=Non
     else:
         checks.append(make_doctor_check("Configuration", "PASS", "No dotenv file selected", "Using environment variables and other configured sources"))
     checks.extend(doctor_secret_checks(env_path))
+
+    intervals = f"{display_time(STEAM_CHECK_INTERVAL)} while offline, {display_time(STEAM_ACTIVE_CHECK_INTERVAL)} while online"
+    if STEAM_ACTIVE_CHECK_INTERVAL < DOCTOR_MIN_SAFE_ACTIVE_INTERVAL:
+        advice = make_recovery_advice("steam.rate_limited", "Check intervals are short enough to be rate limited", recovery_fix_with_guide(f"Raise STEAM_ACTIVE_CHECK_INTERVAL to at least {DOCTOR_MIN_SAFE_ACTIVE_INTERVAL} seconds", INTERVALS_GUIDE_URL), True)
+        checks.append(make_doctor_check("Configuration", "WARN", "Check intervals are short", intervals, advice))
 
     if VERIFY_SSL:
         checks.append(make_doctor_check("Configuration", "PASS", "TLS certificate verification is on", "Every outbound request checks the server certificate"))

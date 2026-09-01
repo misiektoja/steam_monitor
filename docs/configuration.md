@@ -166,3 +166,5 @@ steam_monitor <steam_target> -k 30 -c 120
 
 * `STEAM_ACTIVE_CHECK_INTERVAL`, `-k`: check interval when the user is online, away or snooze (seconds)
 * `STEAM_CHECK_INTERVAL`, `-c`: check interval when the user is offline (seconds)
+
+An active interval below 30 seconds invites the Steam rate limiter, which stops the tool seeing anything. `--doctor` warns when the configured interval is that short.

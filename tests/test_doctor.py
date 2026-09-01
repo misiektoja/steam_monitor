@@ -1145,3 +1145,27 @@ def test_a_default_status_file_is_reported_as_pending(monkeypatch, doctor_global
 
     assert "Status file will be finalized after the first check" in labels
 
+
+# An interval below the safe floor gets the key rate limited, which looks like the tool being broken
+def test_a_rate_limiting_interval_is_warned_about(monkeypatch, doctor_globals):
+    monkeypatch.setattr(monitor, "STEAM_ACTIVE_CHECK_INTERVAL", 5)
+
+    rows = [item for item in monitor.doctor_check_configuration() if item.label == "Check intervals are short"]
+
+    assert [item.status for item in rows] == ["WARN"]
+    assert str(monitor.DOCTOR_MIN_SAFE_ACTIVE_INTERVAL) in rows[0].advice.fix
+
+
+# The default intervals are safe, so the row must stay away rather than warning about every run
+def test_a_safe_interval_is_not_warned_about(monkeypatch, doctor_globals):
+    monkeypatch.setattr(monitor, "STEAM_ACTIVE_CHECK_INTERVAL", monitor.DOCTOR_MIN_SAFE_ACTIVE_INTERVAL)
+
+    assert not [item for item in monitor.doctor_check_configuration() if item.label == "Check intervals are short"]
+
+
+# A run with no target warns with the sentence every monitor in this family uses, so the report reads the same
+def test_a_missing_target_warns_with_the_shared_detail(doctor_globals):
+    checks = monitor.doctor_check_target(monitor.DoctorReport(), None)
+
+    assert [check.status for check in checks] == ["WARN"]
+    assert checks[0].detail == "Nothing will be monitored until one is given"
