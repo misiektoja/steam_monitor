@@ -114,7 +114,7 @@ The tool automatically saves its output to `steam_monitor_<user_steam_id/file_su
 
 Set `ASCII_LOG_SEPARATORS` to `"Auto"` (default) to use ASCII separator-only lines on Windows, `"On"` to use them on every operating system or `"Off"` to preserve Unicode separators in logs everywhere. Terminal separators stay Unicode. Log files and all other logged text remain UTF-8.
 
-The tool also saves the timestamp and last status (after every change) to the `steam_<user_display_name>_last_status.json` file, so the last status is available after the restart of the tool. When games library tracking is enabled, a snapshot of the library (game count and app IDs) is stored in `steam_<user_display_name>_games.json` and only changes are reported.
+The tool also saves the timestamp and last status (after every change) to the `steam_<user_display_name>_last_status.json` file, so the last status is available after the restart of the tool. See [Status File](#status-file) to keep it somewhere else. When games library tracking is enabled, a snapshot of the library (game count and app IDs) is stored in `steam_<user_display_name>_games.json` and only changes are reported.
 
 To track when the user's **Steam level and total XP** changes:
 - set `STEAM_LEVEL_XP_CHECK` to `True`
@@ -262,6 +262,16 @@ steam_monitor <steam_target> --profile-csv-file steam_user_id_profile.csv
 ```
 
 Each row contains a timestamp, event type and associated values (for example: old/new Steam level or XP, friends count delta or one friend per row for added/removed friends, when available).
+
+## Status File
+
+The tool saves the timestamp and last status after every change, so the last status is available after a restart. By default it uses `steam_<user_display_name>_last_status.json` in the current directory. Set `STEAM_STATUS_FILE` or use the `--status-file` flag to keep it somewhere else:
+
+```sh
+steam_monitor <steam_target> --status-file ~/steam/last_status.json
+```
+
+The status file is written through a temporary file in the same directory, so an interrupted run cannot leave a half-written file behind.
 
 ## Signal Controls (macOS/Linux/Unix)
 

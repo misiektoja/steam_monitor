@@ -264,6 +264,11 @@ CSV_FILE = ""
 # Can also be set using the --profile-csv-file flag
 PROFILE_CSV_FILE = ""
 
+# File the tool saves the last seen status to, so a restart resumes from the previous session
+# Leave empty to use steam_<user_display_name>_last_status.json in the current directory
+# Can also be set using the --status-file flag
+STEAM_STATUS_FILE = ""
+
 # Location of the optional dotenv file which can keep secrets
 # If not specified it will try to auto-search for .env files
 # To disable auto-search, set this to the literal string "none"
@@ -421,6 +426,7 @@ CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
 VERIFY_SSL = True
 CSV_FILE = ""
+STEAM_STATUS_FILE = ""
 DOTENV_FILE = ""
 FILE_SUFFIX = ""
 ST_LOGFILE = ""
@@ -773,6 +779,13 @@ def sanitize_untrusted_text(value, max_length=256):
     if max_length and len(text) > max_length:
         text = text[:max_length] + "..."
     return text
+
+
+# Returns the file the tool saves the last seen status to, so a restart resumes from it
+def resolve_status_file(username):
+    if STEAM_STATUS_FILE:
+        return os.path.expanduser(STEAM_STATUS_FILE)
+    return f"steam_{username}_last_status.json"
 
 
 # Writes JSON to a file atomically, so a crash cannot leave a half-written state file behind
@@ -3177,6 +3190,11 @@ def doctor_output_destination_checks(target_value=None):
         checks.append(doctor_destination_check("Profile CSV destination", PROFILE_CSV_FILE))
     else:
         checks.append(make_doctor_check("Configuration", "PASS", "Profile CSV logging is disabled"))
+    # The default name carries the persona name, which is only known after the first check
+    if STEAM_STATUS_FILE:
+        checks.append(doctor_destination_check("Status destination", STEAM_STATUS_FILE))
+    else:
+        checks.append(make_doctor_check("Configuration", "PASS", "Status file will be finalized after the first check", "Base name: steam_<user_display_name>_last_status.json in the working directory"))
     return checks
 
 
@@ -3759,7 +3777,7 @@ WIZARD_SECTIONS = (
     ("Authentication", "Authentication", "Enter the Steam Web API key again.", (), ("STEAM_API_KEY",)),
     ("Email", "Email notifications", "Change SMTP details and email events.", WIZARD_SMTP_CONFIG_KEYS + WIZARD_EMAIL_NOTIFICATION_KEYS, ("SMTP_PASSWORD",)),
     ("Webhook", "Webhook alerts", "Change Discord or ntfy details and events.", ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "NTFY_IMAGES") + WIZARD_WEBHOOK_NOTIFICATION_KEYS, ("WEBHOOK_URL", "NTFY_ACCESS_TOKEN")),
-    ("Output", "Output files", "Change log and CSV output settings.", ("DISABLE_LOGGING", "CSV_FILE"), ()),
+    ("Output", "Output files", "Change the log, CSV and status file destinations.", ("DISABLE_LOGGING", "CSV_FILE", "STEAM_STATUS_FILE"), ()),
     ("Destinations", "File destinations", "Change the configuration or dotenv output path.", (), ()),
 )
 
@@ -4223,6 +4241,7 @@ def _wizard_normalize_csv_path(answer):
 def _wizard_collect_output_section(state, input_func=None):
     state.config_values["DISABLE_LOGGING"] = not _wizard_ask_yes_no("Write the normal per-target log file?", default=not bool(state.config_values.get("DISABLE_LOGGING")), input_func=input_func)
     state.config_values["CSV_FILE"] = _wizard_normalize_csv_path(_wizard_ask_text("Optional CSV output path (blank disables it)", default=str(state.config_values.get("CSV_FILE") or ""), input_func=input_func))
+    state.config_values["STEAM_STATUS_FILE"] = _wizard_ask_text("Optional status file path (blank uses the default next to the tool)", default=str(state.config_values.get("STEAM_STATUS_FILE") or ""), input_func=input_func)
 
 
 # Shows everything that is about to be written, by name and never by secret value
@@ -4245,6 +4264,7 @@ def _wizard_print_setup_summary(state):
         ("Webhook alerts", ", ".join(enabled_webhooks) if enabled_webhooks else "none"),
         ("Output log", "disabled" if state.config_values.get("DISABLE_LOGGING") else "enabled"),
         ("CSV output", state.config_values.get("CSV_FILE") or "disabled"),
+        ("Status file", state.config_values.get("STEAM_STATUS_FILE") or "default"),
         ("Config destination", state.config_path),
         ("Dotenv destination", state.env_path),
         ("Install method", install_method_display_name()),
@@ -4554,6 +4574,7 @@ def build_startup_summary(target=None, config_path=None, env_path=None, log_path
         StartupSummaryRow("Liveness output", display_time(LIVENESS_CHECK_INTERVAL) if LIVENESS_CHECK_INTERVAL else "Disabled", concise=bool(LIVENESS_CHECK_INTERVAL)),
         StartupSummaryRow("CSV output", CSV_FILE or "Disabled", concise=bool(CSV_FILE)),
         StartupSummaryRow("Profile CSV output", PROFILE_CSV_FILE or "Disabled", concise=bool(PROFILE_CSV_FILE)),
+        StartupSummaryRow("Status file", STEAM_STATUS_FILE or "steam_<user_display_name>_last_status.json"),
         StartupSummaryRow("Terminal truncation", f"{TRUNCATE_CHARS} chars" if TRUNCATE_CHARS else "Disabled", concise=bool(TRUNCATE_CHARS)),
         StartupSummaryRow("Install method", install_method_display_name()),
         StartupSummaryRow("Secrets from dotenv", ", ".join(from_dotenv) if from_dotenv else "None"),
@@ -5279,7 +5300,7 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
     last_status_ts = 0
 
     if status == 0:
-        steam_last_status_file = f"steam_{username}_last_status.json"
+        steam_last_status_file = resolve_status_file(username)
 
         if os.path.isfile(steam_last_status_file):
             try:
@@ -5505,7 +5526,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         status_online_start_ts = status_ts_old
         status_online_start_ts_old = status_online_start_ts
 
-    steam_last_status_file = f"steam_{username}_last_status.json"
+    steam_last_status_file = resolve_status_file(username)
     steam_games_file = f"steam_{username}_games.json"
     last_status_read = []
     last_status_ts = 0
@@ -6400,7 +6421,7 @@ def validate_secret_action_args(args, parser, action_dest, action_flag, permitte
 
 # Parses configuration and starts the selected Steam Monitor action
 def main():
-    global CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LIVENESS_REMINDER_SECONDS, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, NAME_CHANGE_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME, NTFY_IMAGES, EXPORTED_SECRET_KEYS, TRUNCATE_CHARS, WEBHOOK_ENABLED, DEBUG_MODE, COMMAND_LINE_SECRET_KEYS
+    global CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LIVENESS_REMINDER_SECONDS, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, STEAM_STATUS_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, NAME_CHANGE_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME, NTFY_IMAGES, EXPORTED_SECRET_KEYS, TRUNCATE_CHARS, WEBHOOK_ENABLED, DEBUG_MODE, COMMAND_LINE_SECRET_KEYS
 
     if "--generate-config" in sys.argv and not any(flag in sys.argv for flag in SECRET_ACTION_FLAGS):
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
@@ -6819,6 +6840,13 @@ def main():
         help="Write profile changes (Steam level/XP and friends) to a separate CSV"
     )
     opts.add_argument(
+        "--status-file",
+        dest="status_file",
+        metavar="PATH",
+        type=str,
+        help="File to save the last seen status to (default: steam_<user_display_name>_last_status.json)"
+    )
+    opts.add_argument(
         "-y", "--file-suffix",
         dest="file_suffix",
         metavar="SUFFIX",
@@ -7077,6 +7105,11 @@ def main():
         except Exception as e:
             print_recovery_error(e, context="file", detail=f"Profile CSV file '{PROFILE_CSV_FILE}' cannot be opened for writing")
             sys.exit(1)
+
+    if args.status_file:
+        STEAM_STATUS_FILE = os.path.expanduser(args.status_file)
+    elif STEAM_STATUS_FILE:
+        STEAM_STATUS_FILE = os.path.expanduser(STEAM_STATUS_FILE)
 
     # A configured FILE_SUFFIX is documented as replacing the Steam ID, so only an unset value falls back to it
     if args.file_suffix:

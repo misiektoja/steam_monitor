@@ -402,3 +402,32 @@ def test_the_doctor_reports_a_command_line_secret_as_such(monkeypatch):
 
     assert "Secrets loaded from the command line" in labels
     assert "Secrets loaded from the configuration file or command line" not in labels
+
+
+# Verifies the status file destination from the command line reaches the file the monitor saves to
+def test_the_status_file_from_the_command_line_reaches_the_monitor(monkeypatch, tmp_path, restored_globals):
+    config = write_config(tmp_path)
+    destination = tmp_path / "history" / "last_status.json"
+
+    run_startup(monkeypatch, ["--status-file", str(destination)], config)
+
+    assert monitor.resolve_status_file("misiektoja") == str(destination)
+
+
+# Verifies the status file destination from the config file reaches the same place
+def test_the_status_file_from_the_config_file_reaches_the_monitor(monkeypatch, tmp_path, restored_globals):
+    config = write_config(tmp_path, 'STEAM_STATUS_FILE = "saved_status.json"\n')
+
+    run_startup(monkeypatch, [], config)
+
+    assert monitor.resolve_status_file("misiektoja").endswith("saved_status.json")
+
+
+# Verifies the default status file name is still the per-display-name one, so an upgrade keeps its history
+def test_the_default_status_file_keeps_the_existing_name(monkeypatch, tmp_path, restored_globals):
+    config = write_config(tmp_path)
+
+    run_startup(monkeypatch, [], config)
+
+    assert monitor.resolve_status_file("misiektoja") == "steam_misiektoja_last_status.json"
+

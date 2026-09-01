@@ -34,6 +34,7 @@ def doctor_globals(monkeypatch):
     monkeypatch.setattr(monitor, "DISABLE_LOGGING", True)
     monkeypatch.setattr(monitor, "CSV_FILE", "")
     monkeypatch.setattr(monitor, "PROFILE_CSV_FILE", "")
+    monkeypatch.setattr(monitor, "STEAM_STATUS_FILE", "")
     monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", False)
     monkeypatch.setattr(monitor, "SMTP_HOST", "your_smtp_server_ssl")
     monkeypatch.setattr(monitor, "SENDER_EMAIL", "your_sender_email")
@@ -506,7 +507,7 @@ def test_the_log_destination_is_deferred_without_a_target(tmp_path, monkeypatch,
 
 
 # Verifies an unwritable output path fails preflight rather than passing and crashing at startup
-@pytest.mark.parametrize("setting,label", [("ST_LOGFILE", "Log destination"), ("CSV_FILE", "CSV destination"), ("PROFILE_CSV_FILE", "Profile CSV destination")])
+@pytest.mark.parametrize("setting,label", [("ST_LOGFILE", "Log destination"), ("CSV_FILE", "CSV destination"), ("PROFILE_CSV_FILE", "Profile CSV destination"), ("STEAM_STATUS_FILE", "Status destination")])
 def test_an_unwritable_output_path_fails(monkeypatch, doctor_globals, setting, label):
     monkeypatch.setattr(monitor, "DISABLE_LOGGING", False)
     monkeypatch.setattr(monitor, "ST_LOGFILE", "")
@@ -1123,3 +1124,24 @@ def test_invalid_numeric_settings_are_reported_in_one_row(monkeypatch):
 
     assert [item.status for item in rows] == ["FAIL"]
     assert all(name in rows[0].detail for name in ("STEAM_CHECK_INTERVAL", "LIVENESS_CHECK_INTERVAL", "SMTP_PORT"))
+
+
+# Verifies the report names the status file it would write, so a bad destination is found before monitoring
+def test_the_report_names_the_status_file(monkeypatch, doctor_globals, tmp_path):
+    destination = tmp_path / "last_status.json"
+    monkeypatch.setattr(monitor, "STEAM_STATUS_FILE", str(destination))
+
+    checks = [check for check in monitor.doctor_output_destination_checks(76561197960435530) if check.label.startswith("Status destination")]
+
+    assert [check.status for check in checks] == ["PASS"]
+    assert str(destination) in checks[0].detail
+
+
+# Verifies an unset status file is reported as pending rather than as a destination that was checked
+def test_a_default_status_file_is_reported_as_pending(monkeypatch, doctor_globals):
+    monkeypatch.setattr(monitor, "STEAM_STATUS_FILE", "")
+
+    labels = [check.label for check in monitor.doctor_output_destination_checks(76561197960435530)]
+
+    assert "Status file will be finalized after the first check" in labels
+

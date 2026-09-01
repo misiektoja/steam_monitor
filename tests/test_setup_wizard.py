@@ -82,7 +82,7 @@ def run_wizard(tmp_path, monkeypatch, answers, secrets=None, transcript=None, in
 
 # The shortest answer script that reaches Save: target, two intervals, no email, no webhook, save, no doctor
 def minimal_answers(target=str(STEAM64)):
-    return [target, "y", "5m", "45s", "n", "n", "y", "", "1", "n", "n"]
+    return [target, "y", "5m", "45s", "n", "n", "y", "", "", "1", "n", "n"]
 
 
 # Verifies explicit setup keeps the shared startup screen-clearing behavior
@@ -159,7 +159,7 @@ def test_an_unusable_target_is_refused(value):
 # Verifies the wizard writes nothing at all until Save is chosen
 def test_nothing_is_written_before_save(tmp_path, monkeypatch, wizard_globals):
     # Discard, confirm the discard
-    answers = [str(STEAM64), "y", "5m", "45s", "n", "n", "y", "", "3", "y"]
+    answers = [str(STEAM64), "y", "5m", "45s", "n", "n", "y", "", "", "3", "y"]
 
     code = run_wizard(tmp_path, monkeypatch, answers)
 
@@ -171,7 +171,7 @@ def test_nothing_is_written_before_save(tmp_path, monkeypatch, wizard_globals):
 # Verifies declining the discard keeps every answer rather than restarting
 def test_declining_the_discard_keeps_the_answers(tmp_path, monkeypatch, wizard_globals, capsys):
     # Discard, decline the discard, then save, then decline doctor
-    answers = [str(STEAM64), "y", "5m", "45s", "n", "n", "y", "", "3", "n", "1", "n", "n"]
+    answers = [str(STEAM64), "y", "5m", "45s", "n", "n", "y", "", "", "3", "n", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers) == 0
 
@@ -220,7 +220,7 @@ def test_the_secret_never_reaches_the_configuration(tmp_path, monkeypatch, wizar
 # Verifies editing one section reverts only that section and leaves the other answers standing
 def test_editing_one_section_keeps_the_others(tmp_path, monkeypatch, wizard_globals):
     answers = [
-        str(STEAM64), "y", "5m", "45s", "n", "n", "y", "",   # target, persist, polling, no email, no webhook, output files
+        str(STEAM64), "y", "5m", "45s", "n", "n", "y", "", "",   # target, persist, polling, no email, no webhook, output files
         "2", "2", "9m", "70s",                      # review, choose Polling, new intervals
         "1", "n", "n",                              # save, decline doctor, decline monitoring
     ]
@@ -238,7 +238,7 @@ def test_editing_one_section_keeps_the_others(tmp_path, monkeypatch, wizard_glob
 def test_editing_the_target_section_asks_again(tmp_path, monkeypatch, wizard_globals, capsys):
     other_id = "76561197960287930"
     answers = [
-        str(STEAM64), "y", "5m", "45s", "n", "n", "y", "",
+        str(STEAM64), "y", "5m", "45s", "n", "n", "y", "", "",
         "2", "1", other_id, "y",   # review, choose Target, give a different profile, persist it
         "1", "n", "n",
     ]
@@ -264,7 +264,7 @@ def test_declining_email_turns_every_email_alert_off(tmp_path, monkeypatch, wiza
 def test_an_empty_api_key_answer_is_asked_again(tmp_path, monkeypatch, wizard_globals):
     transcript = []
     # The extra "n" declines "Continue without the Steam Web API key?", which asks for the key a second time
-    answers = [str(STEAM64), "y", "5m", "45s", "n", "n", "n", "y", "", "1", "n", "n"]
+    answers = [str(STEAM64), "y", "5m", "45s", "n", "n", "n", "y", "", "", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers, secrets=["", API_KEY], transcript=transcript) == 0
 
@@ -277,7 +277,7 @@ def test_a_rejected_api_key_is_asked_again(tmp_path, monkeypatch, wizard_globals
     accepted = [False, True]
     transcript = []
     # The extra "y" accepts the offer to enter the refused key again
-    answers = [str(STEAM64), "y", "5m", "45s", "y", "n", "n", "y", "", "1", "n", "n"]
+    answers = [str(STEAM64), "y", "5m", "45s", "y", "n", "n", "y", "", "", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers, secrets=["bad-key", API_KEY], transcript=transcript, validator=lambda _key, timeout=10: accepted.pop(0)) == 0
 
@@ -288,7 +288,7 @@ def test_a_rejected_api_key_is_asked_again(tmp_path, monkeypatch, wizard_globals
 # Verifies a key Steam keeps refusing can be given up on, since it cannot be corrected from inside the loop
 def test_a_rejected_api_key_can_be_abandoned(tmp_path, monkeypatch, wizard_globals):
     # The extra "n" declines entering the refused key again
-    answers = [str(STEAM64), "y", "5m", "45s", "n", "n", "n", "y", "", "1", "n", "n"]
+    answers = [str(STEAM64), "y", "5m", "45s", "n", "n", "n", "y", "", "", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers, secrets=["bad-key"], validator=lambda _key, timeout=10: False) == 0
 
@@ -313,7 +313,7 @@ def test_an_abandoned_mail_server_answer_turns_email_off(tmp_path, monkeypatch, 
     for name in EMAIL_ANSWERS_BEFORE:
         monkeypatch.setattr(monitor, name, "")
     # One blank mail server answer, then declining to enter it again, then declining webhooks
-    answers = [str(STEAM64), "y", "5m", "45s", "y"] + EMAIL_ANSWERS_BEFORE[abandoned] + ["", "n", "n", "y", "", "1", "n", "n"]
+    answers = [str(STEAM64), "y", "5m", "45s", "y"] + EMAIL_ANSWERS_BEFORE[abandoned] + ["", "n", "n", "y", "", "", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers) == 0
 
@@ -327,7 +327,7 @@ def test_an_abandoned_mail_server_answer_turns_email_off(tmp_path, monkeypatch, 
 def test_a_blank_webhook_url_is_worded_as_a_blank_one(tmp_path, monkeypatch, wizard_globals, capsys):
     transcript = []
     # The "y" accepts continuing without a URL, which is what the blank wording offers
-    answers = [str(STEAM64), "y", "5m", "45s", "n", "y", "1", "y", "y", "", "1", "n", "n"]
+    answers = [str(STEAM64), "y", "5m", "45s", "n", "y", "1", "y", "y", "", "", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers, secrets=[API_KEY, ""], transcript=transcript) == 0
 
@@ -342,7 +342,7 @@ def test_a_blank_webhook_url_is_worded_as_a_blank_one(tmp_path, monkeypatch, wiz
 # Verifies a URL the wizard cannot use can be given up on, which leaves the channel and its alerts off
 def test_a_malformed_webhook_url_can_be_abandoned(tmp_path, monkeypatch, wizard_globals, capsys):
     # The "n" declines entering the malformed URL again
-    answers = [str(STEAM64), "y", "5m", "45s", "n", "y", "1", "n", "y", "", "1", "n", "n"]
+    answers = [str(STEAM64), "y", "5m", "45s", "n", "y", "1", "n", "y", "", "", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers, secrets=[API_KEY, "not-a-url"]) == 0
 
@@ -357,7 +357,7 @@ def test_a_malformed_webhook_url_can_be_abandoned(tmp_path, monkeypatch, wizard_
 def test_a_pasted_ntfy_authorization_scheme_can_be_abandoned(tmp_path, monkeypatch, wizard_globals):
     transcript = []
     # The "n" declines entering the token again, leaving the topic URL that was already accepted
-    answers = [str(STEAM64), "y", "5m", "45s", "n", "y", "2", "y", "n", "n", "1", "y", "", "1", "n", "n"]
+    answers = [str(STEAM64), "y", "5m", "45s", "n", "y", "2", "y", "n", "n", "1", "y", "", "", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers, secrets=[API_KEY, "private-topic", "Bearer tk_a_real_looking_token"], transcript=transcript) == 0
 
@@ -369,7 +369,7 @@ def test_a_pasted_ntfy_authorization_scheme_can_be_abandoned(tmp_path, monkeypat
 
 # Verifies a blank token is read as no token, so an optional answer cannot trap the wizard or save an empty secret
 def test_a_blank_ntfy_access_token_means_no_token(tmp_path, monkeypatch, wizard_globals):
-    answers = [str(STEAM64), "y", "5m", "45s", "n", "y", "2", "y", "n", "1", "y", "", "1", "n", "n"]
+    answers = [str(STEAM64), "y", "5m", "45s", "n", "y", "2", "y", "n", "1", "y", "", "", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers, secrets=[API_KEY, "private-topic", ""]) == 0
 
@@ -380,7 +380,7 @@ def test_a_blank_ntfy_access_token_means_no_token(tmp_path, monkeypatch, wizard_
 
 # Verifies the webhook service is chosen before the URL is pasted, the shared order across these tools
 def test_the_webhook_service_is_chosen_before_the_url(tmp_path, monkeypatch, wizard_globals, capsys):
-    answers = [str(STEAM64), "y", "5m", "45s", "n", "y", "1", "1", "y", "", "1", "n", "n"]
+    answers = [str(STEAM64), "y", "5m", "45s", "n", "y", "1", "1", "y", "", "", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers, secrets=[API_KEY, WEBHOOK_URL]) == 0
 
@@ -394,7 +394,7 @@ def test_the_webhook_service_is_chosen_before_the_url(tmp_path, monkeypatch, wiz
 
 # Verifies a bare ntfy topic name is expanded to a full ntfy.sh URL, as the shared prompt promises
 def test_a_bare_ntfy_topic_becomes_a_full_url(tmp_path, monkeypatch, wizard_globals):
-    answers = [str(STEAM64), "y", "5m", "45s", "n", "y", "2", "n", "n", "1", "y", "", "1", "n", "n"]
+    answers = [str(STEAM64), "y", "5m", "45s", "n", "y", "2", "n", "n", "1", "y", "", "", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers, secrets=[API_KEY, "my-topic"]) == 0
 
@@ -403,7 +403,7 @@ def test_a_bare_ntfy_topic_becomes_a_full_url(tmp_path, monkeypatch, wizard_glob
 
 # Verifies a rejected duration is asked again instead of being stored as something else
 def test_a_rejected_duration_is_asked_again(tmp_path, monkeypatch, wizard_globals, capsys):
-    answers = [str(STEAM64), "y", "banana", "5m", "45s", "n", "n", "y", "", "1", "n", "n"]
+    answers = [str(STEAM64), "y", "banana", "5m", "45s", "n", "n", "y", "", "", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers) == 0
 
@@ -413,7 +413,7 @@ def test_a_rejected_duration_is_asked_again(tmp_path, monkeypatch, wizard_global
 
 # Verifies a rejected target is asked again with the guidance the reader needs
 def test_a_rejected_target_is_asked_again(tmp_path, monkeypatch, wizard_globals, capsys):
-    answers = ["https://example.com/nope", str(STEAM64), "y", "5m", "45s", "n", "n", "y", "", "1", "n", "n"]
+    answers = ["https://example.com/nope", str(STEAM64), "y", "5m", "45s", "n", "n", "y", "", "", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers) == 0
     assert "Enter a Steam64 ID" in capsys.readouterr().out
@@ -483,7 +483,7 @@ def test_doctor_sees_the_secrets_setup_just_saved(tmp_path, monkeypatch, wizard_
         str(STEAM64), "y", "5m", "45s",
         "y", "smtp.example.test", "587", "y", "user@example.test", "user@example.test", "rcpt@example.test", "1",
         "y", "1", "1",
-        "y", "",
+        "y", "", "",
         "1", "y", "n",
     ]
     assert run_wizard_with_doctor(tmp_path, monkeypatch, answers, [API_KEY, "smtp-password", WEBHOOK_URL], observed) == 0
@@ -500,7 +500,7 @@ def test_an_exported_secret_still_wins_after_setup(tmp_path, monkeypatch, wizard
     monkeypatch.setattr(monitor, "EXPORTED_SECRET_KEYS", frozenset({"STEAM_API_KEY"}))
     monkeypatch.setenv("STEAM_API_KEY", "E" * 32)
 
-    answers = [str(STEAM64), "y", "5m", "45s", "n", "n", "y", "", "1", "y", "n"]
+    answers = [str(STEAM64), "y", "5m", "45s", "n", "n", "y", "", "", "1", "y", "n"]
     assert run_wizard_with_doctor(tmp_path, monkeypatch, answers, [API_KEY], observed) == 0
 
     assert observed["values"]["STEAM_API_KEY"] == "E" * 32
@@ -533,7 +533,7 @@ def test_a_persisted_target_reaches_the_config_file(tmp_path, monkeypatch, wizar
 
 # Verifies declining the persist question leaves the target out of the written config
 def test_a_declined_persist_leaves_the_target_out_of_the_config(tmp_path, monkeypatch, wizard_globals, capsys):
-    answers = [str(STEAM64), "n", "5m", "45s", "n", "n", "y", "", "1", "n", "n"]
+    answers = [str(STEAM64), "n", "5m", "45s", "n", "n", "y", "", "", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers) == 0
 
@@ -745,7 +745,7 @@ def capture_wizard_pty(tmp_path, script):
 def test_the_wizard_transcript_holds_the_output_contract(tmp_path):
     # Target, persist it, both intervals, keep the existing key, no email, no webhook,
     # save, decline doctor, decline monitoring
-    raw = capture_wizard_pty(tmp_path, b"76561197960435530\ny\n5m\n45s\nn\nn\nn\ny\n\n1\nn\nn\n")
+    raw = capture_wizard_pty(tmp_path, b"76561197960435530\ny\n5m\n45s\nn\nn\nn\ny\n\nlast_status.json\n1\nn\nn\n")
     text = re.sub(r"\x1B\[[0-9;]*[A-Za-z]", "", raw)
     lines = [line[:-1] if line.endswith("\r") else line for line in text.split("\n")]
 
@@ -766,6 +766,7 @@ def test_the_wizard_transcript_holds_the_output_contract(tmp_path):
         "Steam profile URL or ID to monitor",
         "Write the normal per-target log file?",
         "Optional CSV output path (blank disables it)",
+        "Optional status file path (blank uses the default next to the tool)",
         "Setup summary",
         "Saved files",
         "Next steps",
@@ -784,10 +785,21 @@ def test_the_output_section_records_the_log_and_csv_choices(tmp_path, wizard_glo
     baseline = {name: value for name, value in vars(monitor).items() if name in monitor._config_allowed_names()}
     state = monitor.WizardSetupState(tmp_path / "steam_monitor.conf", tmp_path / ".env", baseline)
 
-    monitor._wizard_collect_output_section(state, input_func=scripted_input(["n", str(tmp_path / "activity.csv")]))
+    monitor._wizard_collect_output_section(state, input_func=scripted_input(["n", str(tmp_path / "activity.csv"), ""]))
 
     assert state.config_values["DISABLE_LOGGING"] is True
     assert state.config_values["CSV_FILE"] == str(tmp_path / "activity.csv")
+    assert state.config_values["STEAM_STATUS_FILE"] == ""
+
+
+# Verifies the status file answer is kept, so a restart resumes from the file the user chose
+def test_the_output_section_records_the_status_file_choice(tmp_path, wizard_globals):
+    baseline = {name: value for name, value in vars(monitor).items() if name in monitor._config_allowed_names()}
+    state = monitor.WizardSetupState(tmp_path / "steam_monitor.conf", tmp_path / ".env", baseline)
+
+    monitor._wizard_collect_output_section(state, input_func=scripted_input(["y", "", str(tmp_path / "last_status.json")]))
+
+    assert state.config_values["STEAM_STATUS_FILE"] == str(tmp_path / "last_status.json")
 
 
 # Verifies a blank CSV answer disables CSV output rather than storing an empty path as a file name
@@ -795,7 +807,7 @@ def test_a_blank_csv_answer_disables_csv_output(tmp_path, wizard_globals):
     baseline = {name: value for name, value in vars(monitor).items() if name in monitor._config_allowed_names()}
     state = monitor.WizardSetupState(tmp_path / "steam_monitor.conf", tmp_path / ".env", baseline)
 
-    monitor._wizard_collect_output_section(state, input_func=scripted_input(["y", ""]))
+    monitor._wizard_collect_output_section(state, input_func=scripted_input(["y", "", ""]))
 
     assert state.config_values["DISABLE_LOGGING"] is False
     assert state.config_values["CSV_FILE"] == ""
@@ -806,10 +818,10 @@ def test_the_csv_answer_gains_a_csv_extension_when_it_has_none(tmp_path, wizard_
     baseline = {name: value for name, value in vars(monitor).items() if name in monitor._config_allowed_names()}
     state = monitor.WizardSetupState(tmp_path / "steam_monitor.conf", tmp_path / ".env", baseline)
 
-    monitor._wizard_collect_output_section(state, input_func=scripted_input(["y", str(tmp_path / "activity")]))
+    monitor._wizard_collect_output_section(state, input_func=scripted_input(["y", str(tmp_path / "activity"), ""]))
     assert state.config_values["CSV_FILE"] == str(tmp_path / "activity.csv")
 
-    monitor._wizard_collect_output_section(state, input_func=scripted_input(["y", str(tmp_path / "activity.txt")]))
+    monitor._wizard_collect_output_section(state, input_func=scripted_input(["y", str(tmp_path / "activity.txt"), ""]))
     assert state.config_values["CSV_FILE"] == str(tmp_path / "activity.txt")
 
 
@@ -835,7 +847,7 @@ EMAIL_ANSWERS = ["smtp.example.com", "587", "y", "monitor", "sender@example.com"
 def test_the_wizard_signs_in_with_the_collected_mail_server(tmp_path, monkeypatch, wizard_globals, capsys):
     attempts = []
     monkeypatch.setattr(monitor, "_wizard_verify_smtp", lambda values, password: attempts.append((values, password)) or None)
-    answers = [str(STEAM64), "y", "5m", "45s", "y"] + EMAIL_ANSWERS + ["1", "n", "y", "", "1", "n", "n"]
+    answers = [str(STEAM64), "y", "5m", "45s", "y"] + EMAIL_ANSWERS + ["1", "n", "y", "", "", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers, secrets=[API_KEY, "smtp-password"]) == 0
 
@@ -852,7 +864,7 @@ def test_a_refused_mail_server_sign_in_offers_another_attempt(tmp_path, monkeypa
     results = [advice, None]
     monkeypatch.setattr(monitor, "_wizard_verify_smtp", lambda values, password: results.pop(0))
     transcript = []
-    answers = [str(STEAM64), "y", "5m", "45s", "y"] + EMAIL_ANSWERS + ["y"] + EMAIL_ANSWERS + ["1", "n", "y", "", "1", "n", "n"]
+    answers = [str(STEAM64), "y", "5m", "45s", "y"] + EMAIL_ANSWERS + ["y"] + EMAIL_ANSWERS + ["1", "n", "y", "", "", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers, secrets=[API_KEY, "wrong", "right"], transcript=transcript) == 0
 
@@ -867,7 +879,7 @@ def test_a_refused_mail_server_sign_in_offers_another_attempt(tmp_path, monkeypa
 def test_declining_the_sign_in_retry_keeps_the_mail_server_settings(tmp_path, monkeypatch, wizard_globals, capsys):
     advice = monitor.make_recovery_advice("smtp.connection", "The SMTP server could not be reached", "Check SMTP_HOST", True)
     monkeypatch.setattr(monitor, "_wizard_verify_smtp", lambda values, password: advice)
-    answers = [str(STEAM64), "y", "5m", "45s", "y"] + EMAIL_ANSWERS + ["n", "1", "n", "y", "", "1", "n", "n"]
+    answers = [str(STEAM64), "y", "5m", "45s", "y"] + EMAIL_ANSWERS + ["n", "1", "n", "y", "", "", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers, secrets=[API_KEY, "smtp-password"]) == 0
 
@@ -881,7 +893,7 @@ def test_declining_the_sign_in_retry_keeps_the_mail_server_settings(tmp_path, mo
 def test_abandoning_a_refused_sign_in_switches_email_off(tmp_path, monkeypatch, wizard_globals, capsys):
     advice = monitor.make_recovery_advice("smtp.authentication", "The mail server rejected the sign-in", "Use an app password", False, "535 authentication failed")
     monkeypatch.setattr(monitor, "_wizard_verify_smtp", lambda values, password: advice)
-    answers = [str(STEAM64), "y", "5m", "45s", "y"] + EMAIL_ANSWERS + ["n", "n", "y", "", "1", "n", "n"]
+    answers = [str(STEAM64), "y", "5m", "45s", "y"] + EMAIL_ANSWERS + ["n", "n", "y", "", "", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers, secrets=[API_KEY, "wrong"]) == 0
 
@@ -1022,7 +1034,7 @@ def test_declining_an_existing_config_without_an_alternative_writes_nothing(tmp_
 
 # Returns the answers for one email run with the extra answer the dotenv replace prompt needs
 def email_answers_with_smtp_replace(replace):
-    return [str(STEAM64), "y", "5m", "45s", "y", *EMAIL_ANSWERS, replace, "1", "n", "y", "", "1", "n", "n"]
+    return [str(STEAM64), "y", "5m", "45s", "y", *EMAIL_ANSWERS, replace, "1", "n", "y", "", "", "1", "n", "n"]
 
 
 # Verifies a secret already in the dotenv file is kept when the replacement is declined
