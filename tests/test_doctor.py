@@ -1026,3 +1026,25 @@ def test_the_connectivity_row_names_the_shared_endpoint(monkeypatch):
 
     assert (passing.status, passing.label, passing.detail) == ("PASS", "The connectivity endpoint is reachable", "Endpoint: https://probe.example/ping")
     assert (failing.status, failing.label, failing.detail) == ("FAIL", "The connectivity endpoint could not be reached", "Endpoint: https://probe.example/ping")
+
+
+# Verifies a failed connectivity check gives network advice rather than the generic debug fallback
+def test_the_connectivity_failure_names_the_network_and_the_setting(monkeypatch):
+    monkeypatch.setattr(monitor, "CHECK_INTERNET_URL", "https://probe.example/ping")
+    monkeypatch.setattr(monitor, "LAST_CONNECTIVITY_ERROR", None)
+
+    # The check records the error the way the real one does, since doctor clears it before every run
+    def fail_with(error):
+        def failing_check(**kwargs):
+            monitor.LAST_CONNECTIVITY_ERROR = error
+            return False
+
+        monkeypatch.setattr(monitor, "check_internet", failing_check)
+        return monitor.doctor_check_connectivity()[0].advice
+
+    refused = fail_with(monitor.req.ConnectionError("Failed to establish a new connection"))
+    timed_out = fail_with(monitor.req.ConnectTimeout("Connection to probe.example timed out"))
+
+    assert refused is not None and timed_out is not None
+    assert (refused.code, timed_out.code) == ("network.unavailable", "network.timeout")
+    assert refused.fix == timed_out.fix == "Check network, DNS, proxy and CHECK_INTERNET_URL settings"

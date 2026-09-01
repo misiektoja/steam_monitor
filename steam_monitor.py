@@ -2335,6 +2335,13 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
             return advice("target.invalid", safe_detail or "That is not a recognized Steam profile", f"Pass a {STEAM_TARGET_FORMS}", False, USAGE_GUIDE_URL)
         return advice("target.not_found", safe_detail or "No Steam user matches that profile", "Check the Steam64 ID or profile URL and try again", False, USAGE_GUIDE_URL)
 
+    if context == "connectivity":
+        # Classified from the error, because the detail names the endpoint rather than the failure
+        cause = str(error or "").lower()
+        if "timed out" in cause or "timeout" in cause:
+            return advice("network.timeout", "The connectivity endpoint did not answer in time", "Check network, DNS, proxy and CHECK_INTERNET_URL settings", True)
+        return advice("network.unavailable", "The connectivity endpoint could not be reached", "Check network, DNS, proxy and CHECK_INTERNET_URL settings", True)
+
     if context == "email":
         if any(term in message for term in ("authentication", "auth", "username and password", "535")):
             return advice("smtp.authentication", "The SMTP server rejected the sign-in", "Check SMTP_USER and SMTP_PASSWORD, and use an app password if the provider requires one", False, SMTP_GUIDE_URL)
@@ -3086,7 +3093,7 @@ def doctor_check_connectivity():
     LAST_CONNECTIVITY_ERROR = None
     if check_internet(quiet=True):
         return [make_doctor_check("Connectivity", "PASS", "The connectivity endpoint is reachable", f"Endpoint: {CHECK_INTERNET_URL}")]
-    advice = classify_recovery_error(LAST_CONNECTIVITY_ERROR, context="runtime", detail=f"Could not reach {CHECK_INTERNET_URL}")
+    advice = classify_recovery_error(LAST_CONNECTIVITY_ERROR, context="connectivity", detail=f"Could not reach {CHECK_INTERNET_URL}")
     return [make_doctor_check("Connectivity", "FAIL", "The connectivity endpoint could not be reached", f"Endpoint: {CHECK_INTERNET_URL}", advice)]
 
 
