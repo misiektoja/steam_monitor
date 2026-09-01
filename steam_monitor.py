@@ -495,6 +495,9 @@ steam_visibilitystates = ["private", "private", "private", "public"]
 
 CLI_CONFIG_PATH = None
 
+# Set when --config-file none switches discovery off, so no later lookup can find a file the run rejected
+CONFIG_DISCOVERY_DISABLED = False
+
 # Secret names already present in the process environment before dotenv loading
 EXPORTED_SECRET_KEYS = frozenset()
 
@@ -665,14 +668,22 @@ def command_writes_dotenv(arguments=()):
     return any(str(argument) == "--setup" or str(argument).startswith("--set-") for argument in arguments)
 
 
+# True when a command writes the config file itself, so it refuses a --config-file that switches discovery off
+def command_writes_config(arguments=()):
+    return any(str(argument) == "--setup" for argument in arguments)
+
+
 # Returns a copy-pasteable command line for the detected install method, carrying non-default config and dotenv paths
 def render_command(arguments=None, include_paths=True, config_path=None, env_path=None):
     parts = list(install_command_prefix())
     parts.extend(str(argument) for argument in (arguments or []))
     # An explicitly passed path is always rendered, while include_paths only governs falling back to the active ones
-    selected_config = config_path if config_path is not None else (CLI_CONFIG_PATH if include_paths else None)
+    active_config = CLI_CONFIG_PATH or ("none" if CONFIG_DISCOVERY_DISABLED else None)
+    selected_config = config_path if config_path is not None else (active_config if include_paths else None)
     selected_env = env_path if env_path is not None else (DOTENV_FILE if include_paths else None)
-    if selected_config:
+    # The "none" sentinel is carried so the printed command checks the setup this run checked, except into a
+    # command that writes the config file, since those refuse the sentinel at their own argument gate
+    if selected_config and not (str(selected_config).casefold() == "none" and command_writes_config(arguments or ())):
         parts.extend(["--config-file", str(selected_config)])
     # The "none" sentinel is carried so the printed command checks the setup this run checked, except into a
     # command that writes the dotenv file, since those refuse the sentinel at their own argument gate
@@ -6179,7 +6190,7 @@ def validate_secret_action_args(args, parser, action_dest, action_flag, permitte
 
 # Parses configuration and starts the selected Steam Monitor action
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, NAME_CHANGE_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME, NTFY_IMAGES, EXPORTED_SECRET_KEYS, TRUNCATE_CHARS, WEBHOOK_ENABLED, DEBUG_MODE, COMMAND_LINE_SECRET_KEYS
+    global CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LIVENESS_CHECK_COUNTER, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, NAME_CHANGE_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME, NTFY_IMAGES, EXPORTED_SECRET_KEYS, TRUNCATE_CHARS, WEBHOOK_ENABLED, DEBUG_MODE, COMMAND_LINE_SECRET_KEYS
 
     if "--generate-config" in sys.argv and not any(flag in sys.argv for flag in SECRET_ACTION_FLAGS):
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
@@ -6671,11 +6682,13 @@ def main():
         parser.error("--send-test-email cannot be combined with --send-test-webhook")
 
     # "none" is the documented sentinel that switches discovery off, so it is a selection rather than a missing file
-    config_discovery_disabled = args.config_file is not None and str(args.config_file).casefold() == "none"
-    if args.config_file and not config_discovery_disabled:
+    CONFIG_DISCOVERY_DISABLED = args.config_file is not None and str(args.config_file).casefold() == "none"
+    if CONFIG_DISCOVERY_DISABLED:
+        CLI_CONFIG_PATH = None
+    elif args.config_file:
         CLI_CONFIG_PATH = os.path.expanduser(args.config_file)
 
-    cfg_path = None if config_discovery_disabled else find_config_file(CLI_CONFIG_PATH)
+    cfg_path = None if CONFIG_DISCOVERY_DISABLED else find_config_file(CLI_CONFIG_PATH)
 
     if not cfg_path and CLI_CONFIG_PATH and not args.setup:
         # Setup is allowed to name a file that does not exist yet, since creating it is the point

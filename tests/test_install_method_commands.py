@@ -89,6 +89,18 @@ def test_a_disabled_dotenv_search_is_carried_only_where_it_is_accepted(monkeypat
     assert monitor.render_command(["--setup"]) == "steam_monitor --setup"
 
 
+# Verifies the disabled config search reaches the commands that accept it and stays out of the ones that refuse it
+def test_a_disabled_config_search_is_carried_only_where_it_is_accepted(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["/usr/local/bin/steam_monitor"])
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", None)
+    monkeypatch.setattr(monitor, "CONFIG_DISCOVERY_DISABLED", True)
+
+    assert monitor.render_command(["--doctor"]) == "steam_monitor --doctor --config-file none"
+    assert monitor.render_command(["--set-steam-api-key"]) == "steam_monitor --set-steam-api-key --config-file none"
+    assert monitor.render_command(["--setup"]) == "steam_monitor --setup"
+    assert monitor.render_command(["--doctor"], include_paths=False) == "steam_monitor --doctor"
+
+
 # Verifies arguments containing spaces are quoted for the shell the user pastes into
 def test_windows_quoting_uses_double_quotes(monkeypatch):
     monkeypatch.setattr("sys.argv", ["C:\\\\tools\\\\steam_monitor.exe"])
