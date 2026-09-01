@@ -4050,7 +4050,7 @@ def _wizard_disable_webhook(state):
 
 # Asks whether to send webhook alerts and collects the provider, the hidden URL and the alert choices
 def _wizard_collect_webhook_section(state, input_func=None, getpass_func=None):
-    if not _wizard_ask_yes_no("Set up webhook alerts (Discord, ntfy etc.)?", default=False, input_func=input_func):
+    if not _wizard_ask_yes_no("Set up webhook alerts (Discord, ntfy etc.)?", default=bool(state.config_values.get("WEBHOOK_ENABLED")), input_func=input_func):
         _wizard_disable_webhook(state)
         return
     provider_choice = _wizard_ask_choice("Which webhook service should receive alerts?", [
@@ -4433,7 +4433,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     if config_result["backup_path"]:
         print(f"  Backup:        {config_result['backup_path']}")
     if secret_result:
-        print(f"  {'Secrets:' if state.secret_updates else 'Dotenv:':<15}{secret_result['path']}")
+        print(f"  {'Secrets:':<15}{secret_result['path']}")
 
     doctor_offered = bool(state.target)
     doctor_exit = None
@@ -4457,9 +4457,9 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     _wizard_print_command(start_label, render_command(target_arguments, config_path=str(state.config_path), env_path=env_argument))
     print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}\n")
 
-    api_key_ready = "STEAM_API_KEY" in state.secret_updates or doctor_value_is_set(state.config_values.get("STEAM_API_KEY"))
     try:
-        start_monitoring = bool(state.target and api_key_ready and _wizard_ask_yes_no("Start monitoring now? Monitoring will continue until Ctrl+C.", default=True, input_func=input_func))
+        # Only a doctor run that passed proves the saved setup can monitor, so the launch offer waits for it
+        start_monitoring = bool(state.target and doctor_exit == 0 and _wizard_ask_yes_no("Start monitoring now? Monitoring will continue until Ctrl+C.", default=True, input_func=input_func))
     except (EOFError, KeyboardInterrupt):
         # The files are already written, so an interrupt here only skips the optional launch
         print(colorize("warning", "Setup is saved. Start monitoring with the command above when ready."))

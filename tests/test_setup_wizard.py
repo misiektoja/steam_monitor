@@ -745,10 +745,11 @@ def capture_wizard_pty(tmp_path, script):
 # Verifies the wizard layout holds on the path a user walks, which is the seam unit tests cannot see
 def test_the_wizard_transcript_holds_the_output_contract(tmp_path):
     # Target, persist it, both intervals, keep the existing key, no email, no webhook,
-    # save, decline doctor, decline monitoring
-    raw = capture_wizard_pty(tmp_path, b"76561197960435530\ny\n5m\n45s\nn\nn\nn\ny\n\nlast_status.json\n1\nn\nn\n")
+    # save, decline doctor, which also removes the launch offer
+    raw = capture_wizard_pty(tmp_path, b"76561197960435530\ny\n5m\n45s\nn\nn\nn\ny\n\nlast_status.json\n1\nn\n")
     text = re.sub(r"\x1B\[[0-9;]*[A-Za-z]", "", raw)
-    lines = [line[:-1] if line.endswith("\r") else line for line in text.split("\n")]
+    # The transcript ends with the blank line that closes the Next steps block, so only the body is checked
+    lines = [line[:-1] if line.endswith("\r") else line for line in text.rstrip("\r\n").split("\n")]
 
     heading_index = next(index for index, line in enumerate(lines) if line.strip() == "Setup Wizard")
 
@@ -949,7 +950,7 @@ def test_interrupting_the_doctor_offer_keeps_the_saved_setup(tmp_path, monkeypat
 
 # Verifies an interrupt at the launch offer reports the saved setup and points at the printed command
 def test_interrupting_the_launch_offer_keeps_the_saved_setup(tmp_path, monkeypatch, wizard_globals, capsys):
-    code = run_wizard(tmp_path, monkeypatch, [], input_func=answers_then_interrupt(minimal_answers()[:-1]))
+    code = run_wizard(tmp_path, monkeypatch, [], input_func=answers_then_interrupt(minimal_answers()[:-2] + ["y"]))
 
     output = capsys.readouterr().out
     assert code == 0
@@ -1243,3 +1244,58 @@ def test_declining_email_keeps_the_alerts_the_wizard_never_offers(tmp_path, wiza
         assert state.config_values[key] is True
     for key in monitor.WIZARD_EMAIL_NOTIFICATION_KEYS:
         assert state.config_values[key] is False
+
+
+# Verifies the launch offer only follows a doctor run that passed, so a declined doctor ends at the printed commands
+def test_declining_the_doctor_removes_the_launch_offer(tmp_path, monkeypatch, wizard_globals):
+    transcript = []
+    launched = []
+    monkeypatch.setattr(monitor, "_wizard_launch_monitor", lambda arguments: launched.append(arguments) or 0)
+
+    code = run_wizard(tmp_path, monkeypatch, minimal_answers()[:-2] + ["n", "y"], transcript=transcript)
+
+    assert code == 0
+    assert launched == []
+    assert not any("Start monitoring now?" in prompt for prompt in transcript)
+
+
+# Verifies a doctor run that passed is what unlocks the launch offer
+def test_a_passed_doctor_run_unlocks_the_launch_offer(tmp_path, monkeypatch, wizard_globals):
+    transcript = []
+    launched = []
+    monkeypatch.setattr(monitor, "_wizard_launch_monitor", lambda arguments: launched.append(arguments) or 0)
+
+    code = run_wizard(tmp_path, monkeypatch, minimal_answers()[:-2] + ["y", "y"], transcript=transcript)
+
+    assert code == 0
+    assert len(launched) == 1
+    assert any("Start monitoring now?" in prompt for prompt in transcript)
+
+
+# Verifies a doctor run that failed keeps the launch offer away and labels the command to run after the fix
+def test_a_failed_doctor_run_removes_the_launch_offer(tmp_path, monkeypatch, wizard_globals, capsys):
+    transcript = []
+    launched = []
+    monkeypatch.setattr(monitor, "validate_steam_api_key", lambda _key, timeout=10: True)
+    monkeypatch.setattr(monitor, "run_doctor", lambda **_kwargs: 1)
+    monkeypatch.setattr(monitor, "_wizard_launch_monitor", lambda arguments: launched.append(arguments) or 0)
+
+    code = monitor.run_setup_wizard(config_file=str(tmp_path / "steam_monitor.conf"), env_file=str(tmp_path / ".env"), input_func=scripted_input(minimal_answers()[:-2] + ["y", "y"], transcript), getpass_func=lambda prompt: API_KEY, interactive=True)
+
+    assert code == 0
+    assert launched == []
+    assert not any("Start monitoring now?" in prompt for prompt in transcript)
+    assert "After Doctor passes, start monitoring:" in capsys.readouterr().out
+
+
+# Verifies the webhook question defaults to the saved switch, so a rerun over a configured webhook proposes keeping it
+def test_the_webhook_question_defaults_to_the_saved_switch(tmp_path, monkeypatch, wizard_globals):
+    baseline = {name: value for name, value in vars(monitor).items() if name in monitor._config_allowed_names()}
+    state = monitor.WizardSetupState(tmp_path / "steam_monitor.conf", tmp_path / ".env", baseline)
+    state.config_values["WEBHOOK_ENABLED"] = True
+    seen = []
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=False, **kwargs: seen.append((question, default)) or False)
+
+    monitor._wizard_collect_webhook_section(state)
+
+    assert seen == [("Set up webhook alerts (Discord, ntfy etc.)?", True)]
