@@ -20,6 +20,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # Composes the two renderers the way run_doctor does, so a test can assert on the whole transcript
 def render_doctor_report(report):
     return monitor.render_doctor_sections(report) + "\n" + monitor.render_doctor_summary(report.checks)
+
+
+# Builds the minimal advice a WARN or FAIL row is required to carry
+def actionable_advice():
+    return monitor.make_recovery_advice("unknown", "a summary", "do the thing", False)
 SECRET_API_KEY = "0123456789ABCDEF0123456789ABCDEF"
 SECRET_WEBHOOK_URL = "https://discord.com/api/webhooks/123456789/verysecrettokenvalue"
 # Colour changes only, so the screen-clearing escape a startup always writes is not read as colour
@@ -156,7 +161,7 @@ def test_required_and_optional_dependencies_are_separated(monkeypatch):
     optional = [check for check in checks if check.label.startswith("Optional dependency")]
     assert required and all(check.status == "FAIL" for check in required)
     assert optional and all(check.status == "WARN" for check in optional)
-    assert all("install it with" in check.detail.casefold() for check in optional)
+    assert all("install it with" in check.advice.fix.casefold() for check in optional)
 
 
 # Verifies a warning about a library that cannot affect this machine is not shown at all
@@ -178,7 +183,7 @@ def test_missing_colorama_is_reported_on_windows(monkeypatch):
     missing = next(check for check in checks if "colorama" in check.label)
     assert missing.status == "WARN"
     assert "older Windows Command Prompt" in missing.detail
-    assert "pip3 install colorama" in missing.detail
+    assert "pip3 install colorama" in missing.advice.fix
 
 
 # Verifies each secret is attributed to the file or the environment, which is the question a user is actually asking
@@ -459,11 +464,11 @@ def test_the_summary_states_a_conclusion():
     assert "All checks passed. You are good to go!" in render_doctor_report(passing)
 
     warned = monitor.DoctorReport()
-    warned.checks.append(monitor.make_doctor_check("Environment", "WARN", "iffy"))
+    warned.checks.append(monitor.make_doctor_check("Environment", "WARN", "iffy", "", actionable_advice()))
     assert "All critical checks passed with 1 warning(s). Review the warnings above." in render_doctor_report(warned)
 
     failed = monitor.DoctorReport()
-    failed.checks.append(monitor.make_doctor_check("Environment", "FAIL", "broken"))
+    failed.checks.append(monitor.make_doctor_check("Environment", "FAIL", "broken", "", actionable_advice()))
     assert "1 check(s) failed, 0 warning(s). Fix the failures above before relying on the tool." in render_doctor_report(failed)
 
 
@@ -885,11 +890,11 @@ def test_the_summary_sentences_render_verbatim():
     assert SHARED_CONTRACT["all_passed"] in render_doctor_report(passing)
 
     warned = monitor.DoctorReport()
-    warned.checks.extend([monitor.make_doctor_check("Environment", "WARN", "a"), monitor.make_doctor_check("Environment", "WARN", "b")])
+    warned.checks.extend([monitor.make_doctor_check("Environment", "WARN", "a", "", actionable_advice()), monitor.make_doctor_check("Environment", "WARN", "b", "", actionable_advice())])
     assert SHARED_CONTRACT["with_warnings"].format(count=2) in render_doctor_report(warned)
 
     failed = monitor.DoctorReport()
-    failed.checks.extend([monitor.make_doctor_check("Environment", "FAIL", "a"), monitor.make_doctor_check("Environment", "WARN", "b")])
+    failed.checks.extend([monitor.make_doctor_check("Environment", "FAIL", "a", "", actionable_advice()), monitor.make_doctor_check("Environment", "WARN", "b", "", actionable_advice())])
     assert SHARED_CONTRACT["with_failures"].format(failures=1, warnings=1) in render_doctor_report(failed)
 
 
@@ -948,10 +953,19 @@ def test_a_detail_that_repeats_its_label_is_dropped():
     assert check.detail == ""
 
 
+# Verifies a row the user has to act on cannot reach the report without an action
+def test_an_actionable_row_is_rejected_without_a_fix():
+    for status in ("WARN", "FAIL"):
+        with pytest.raises(ValueError):
+            monitor.make_doctor_check("Configuration", status, "a label", "some detail")
+
+    assert monitor.make_doctor_check("Configuration", "SKIP", "a label").status == "SKIP"
+
+
 # Verifies only the four shared markers can reach a report
 def test_only_the_four_shared_markers_are_accepted():
     assert monitor.DOCTOR_STATUSES == ("PASS", "WARN", "FAIL", "SKIP")
-    assert [monitor.make_doctor_check("Configuration", status, "a label").status for status in monitor.DOCTOR_STATUSES] == list(monitor.DOCTOR_STATUSES)
+    assert [monitor.make_doctor_check("Configuration", status, "a label", "", actionable_advice()).status for status in monitor.DOCTOR_STATUSES] == list(monitor.DOCTOR_STATUSES)
 
     with pytest.raises(ValueError):
         monitor.make_doctor_check("Configuration", "INFO", "a label")

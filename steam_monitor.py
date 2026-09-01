@@ -2610,6 +2610,9 @@ class DoctorReport:
 def make_doctor_check(section, status, label, detail="", advice=None):
     if status not in DOCTOR_STATUSES:
         raise ValueError(f"Unsupported doctor status: {status}")
+    # A row the user has to act on is useless without an action, so the row is rejected rather than printed bare
+    if status in ("WARN", "FAIL") and (advice is None or not advice.fix):
+        raise ValueError(f"Doctor {status} rows require a fix")
     # Several advice objects carry the same text as their summary and printing it twice reads as two problems
     return DoctorCheck(section, status, label, "" if str(detail).strip() == str(label).strip() else detail, advice)
 
@@ -3090,20 +3093,23 @@ def doctor_check_environment(version_info=None, spec_finder=None):
     if module_present("dotenv"):
         checks.append(make_doctor_check("Environment", "PASS", "Optional dependency python-dotenv is installed", "Used only for reading secrets from a dotenv file"))
     else:
-        checks.append(make_doctor_check("Environment", "WARN", "Optional dependency python-dotenv is not installed", "Secrets can only come from environment variables or the configuration file. Everything else works. Install it with: pip3 install python-dotenv"))
+        advice = make_recovery_advice("dependency.missing", "Optional dependency python-dotenv is not installed", recovery_fix_with_guide("Install it with: pip3 install python-dotenv. Or export the secrets as environment variables", INSTALL_GUIDE_URL), False)
+        checks.append(make_doctor_check("Environment", "WARN", advice.summary, "Secrets can only come from environment variables or the configuration file. Everything else works", advice))
 
     # The guarded import flag is checked rather than the module, because it reflects whether artwork actually works
     if NTFY_IMAGES_AVAILABLE:
         checks.append(make_doctor_check("Environment", "PASS", "Optional dependency Pillow is installed", "Used only for artwork attachments in ntfy alerts"))
     else:
-        checks.append(make_doctor_check("Environment", "WARN", "Optional dependency Pillow is not installed", f"ntfy alerts are delivered as text without artwork. Every other feature is unaffected. Install it with: {ntfy_images_install_command()}"))
+        advice = make_recovery_advice("dependency.missing", "Optional dependency Pillow is not installed", recovery_fix_with_guide(f"Install it with: {ntfy_images_install_command()}", INSTALL_GUIDE_URL), False)
+        checks.append(make_doctor_check("Environment", "WARN", advice.summary, "ntfy alerts are delivered as text without artwork. Every other feature is unaffected", advice))
 
     # A warning about a library that cannot affect this machine is noise, so the row is skipped off Windows
     if platform.system() == "Windows":
         if module_present("colorama"):
             checks.append(make_doctor_check("Environment", "PASS", "Optional dependency colorama is installed", "Used only for coloured output in the older Windows Command Prompt"))
         else:
-            checks.append(make_doctor_check("Environment", "WARN", "Optional dependency colorama is not installed", "Coloured output may not render in the older Windows Command Prompt. Windows Terminal needs nothing extra. Install it with: pip3 install colorama"))
+            advice = make_recovery_advice("dependency.missing", "Optional dependency colorama is not installed", recovery_fix_with_guide("Install it with: pip3 install colorama. Or use Windows Terminal, which needs nothing extra", INSTALL_GUIDE_URL), False)
+            checks.append(make_doctor_check("Environment", "WARN", advice.summary, "Coloured output may not render in the older Windows Command Prompt", advice))
     return checks
 
 
@@ -3504,7 +3510,11 @@ def _doctor_offer_notification_tests(report):
     if report.email_ready:
         if _doctor_ask_yes_no("Send one test email now? This will deliver a real message"):
             delivered = send_email("steam_monitor: doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "", SMTP_SSL, smtp_timeout=5) == 0
-            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS" if delivered else "FAIL", "Doctor test email delivered" if delivered else "Doctor test email delivery failed", "One real test email was sent after confirmation" if delivered else "The approved test email could not be delivered. Review the SMTP error above")
+            if delivered:
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", "Doctor test email delivered", "One real test email was sent after confirmation")
+            else:
+                advice = make_recovery_advice("smtp.connection", "Doctor test email delivery failed", recovery_fix_with_guide("Review the SMTP error above and correct the email settings", SMTP_GUIDE_URL), True)
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", advice.summary, "The approved test email could not be delivered", advice)
         else:
             check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test email was not sent", "You declined the real delivery test. Run doctor again and approve the email test when ready")
         checks.append(check)
@@ -3515,7 +3525,11 @@ def _doctor_offer_notification_tests(report):
         provider = webhook_provider_display_name()
         if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
             delivered = send_webhook("steam_monitor: doctor test webhook", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", "status", force=True) == 0
-            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS" if delivered else "FAIL", f"Doctor test webhook through {provider} delivered" if delivered else f"Doctor test webhook through {provider} delivery failed", "One real test webhook was sent after confirmation" if delivered else "The approved test webhook could not be delivered. Review the webhook error above")
+            if delivered:
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", f"Doctor test webhook through {provider} delivered", "One real test webhook was sent after confirmation")
+            else:
+                advice = make_recovery_advice("webhook.connection", f"Doctor test webhook through {provider} delivery failed", recovery_fix_with_guide("Review the webhook error above and correct the destination settings", WEBHOOK_GUIDE_URL), True)
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", advice.summary, "The approved test webhook could not be delivered", advice)
         else:
             check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", f"Test webhook through {provider} was not sent", "You declined the real delivery test. Run doctor again and approve the webhook test when ready")
         checks.append(check)
@@ -3627,16 +3641,19 @@ def _wizard_ask_choice(question, options, default_index=0, input_func=None):
 
 
 # Asks until the user provides a positive whole number or accepts the default
-def _wizard_ask_positive_int(question, default, input_func=None):
+def _wizard_ask_positive_int(question, default, maximum=None, input_func=None):
     while True:
         answer = _wizard_ask_text(question, default=str(default), required=True, input_func=input_func)
+        # An empty answer means the retry offer was declined, so the default stands instead of asking again
+        if not answer:
+            return int(default)
         try:
             parsed = int(answer)
         except ValueError:
             parsed = 0
-        if parsed > 0:
+        if parsed > 0 and (maximum is None or parsed <= maximum):
             return parsed
-        print("  Enter a positive whole number.")
+        print(f"  Enter a whole number from 1 through {maximum}." if maximum is not None else "  Enter a positive whole number.")
 
 
 # Renders a wizard duration as raw seconds plus a readable form, so the stored config value stays visible
@@ -3969,7 +3986,7 @@ def _wizard_collect_email_section(state, input_func=None, getpass_func=None):
         state.config_values["SMTP_HOST"] = _wizard_ask_text("SMTP host", default=_wizard_default(state.config_values.get("SMTP_HOST")), required=True, input_func=input_func)
         if _wizard_email_answer_missing(state, "SMTP_HOST"):
             return
-        state.config_values["SMTP_PORT"] = _wizard_ask_positive_int("SMTP port", int(state.config_values.get("SMTP_PORT") or 587), input_func=input_func)
+        state.config_values["SMTP_PORT"] = _wizard_ask_positive_int("SMTP port", int(state.config_values.get("SMTP_PORT") or 587), maximum=65535, input_func=input_func)
         state.config_values["SMTP_SSL"] = _wizard_ask_yes_no("Enable TLS/SSL for SMTP?", default=bool(state.config_values.get("SMTP_SSL", True)), input_func=input_func)
         state.config_values["SMTP_USER"] = _wizard_ask_text("SMTP username", default=_wizard_default(state.config_values.get("SMTP_USER")), required=True, input_func=input_func)
         if _wizard_email_answer_missing(state, "SMTP_USER"):

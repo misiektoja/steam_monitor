@@ -1156,3 +1156,20 @@ def test_the_dotenv_destination_cannot_be_the_configuration_file(tmp_path, capsy
 
     assert state.env_path == tmp_path / ".env"
     assert "has to be a different file" in capsys.readouterr().out
+
+
+# Verifies the port question rejects a number no TCP port can be, instead of saving it for the doctor to reject
+def test_the_smtp_port_question_rejects_a_number_above_the_port_range(capsys):
+    answers = iter(["70000", "2525"])
+
+    chosen = monitor._wizard_ask_positive_int("SMTP port", 587, maximum=65535, input_func=lambda _prompt: next(answers))
+
+    assert chosen == 2525
+    assert "  Enter a whole number from 1 through 65535." in capsys.readouterr().out
+
+
+# Verifies declining the retry offer keeps the saved value rather than asking the same question forever
+def test_declining_the_retry_offer_keeps_the_saved_number(capsys):
+    answers = iter(["", "n"])
+
+    assert monitor._wizard_ask_positive_int("SMTP port", 587, maximum=65535, input_func=lambda _prompt: next(answers)) == 587
