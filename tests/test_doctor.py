@@ -153,6 +153,28 @@ def test_required_and_optional_dependencies_are_separated(monkeypatch):
     assert all("install it with" in check.detail.casefold() for check in optional)
 
 
+# Verifies a warning about a library that cannot affect this machine is not shown at all
+@pytest.mark.parametrize("system, reported", [("Windows", True), ("Linux", False), ("Darwin", False)])
+def test_a_platform_specific_dependency_is_only_reported_where_it_applies(monkeypatch, system, reported):
+    monkeypatch.setattr(monitor.platform, "system", lambda: system)
+
+    checks = monitor.doctor_check_environment(spec_finder=lambda _name: None)
+
+    assert any("colorama" in check.label for check in checks) is reported
+
+
+# Verifies the Windows colour library is reported there, so broken colours on that platform have a diagnostic
+def test_missing_colorama_is_reported_on_windows(monkeypatch):
+    monkeypatch.setattr(monitor.platform, "system", lambda: "Windows")
+
+    checks = monitor.doctor_check_environment(spec_finder=lambda name: None if name == "colorama" else object())
+
+    missing = next(check for check in checks if "colorama" in check.label)
+    assert missing.status == "WARN"
+    assert "older Windows Command Prompt" in missing.detail
+    assert "pip3 install colorama" in missing.detail
+
+
 # Verifies each secret is attributed to the file or the environment, which is the question a user is actually asking
 def test_secrets_are_attributed_to_their_source(tmp_path, monkeypatch, doctor_globals):
     env_file = tmp_path / ".env"

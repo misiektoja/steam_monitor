@@ -339,7 +339,6 @@ COLORED_OUTPUT = True
 #     "status_snooze": "magenta",
 #     "status_other": "white",
 #     # Activity / game info
-#     "status_change": "yellow",
 #     "game": "bright_yellow",
 #     "duration": "green",
 #     # Misc
@@ -903,7 +902,6 @@ DEFAULT_COLOR_THEME = {
     "status_snooze": "magenta",
     "status_other": "white",
     # Activity / game info
-    "status_change": "yellow",
     "game": "bright_yellow",
     "duration": "green",
     # Misc
@@ -984,8 +982,24 @@ _OFFLINE_WORD_RE = re.compile(r"(?i)( offline| away| snooze|\bNo\b)")
 _BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b")
 _BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b")
 _NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \((?:email|webhook)\):\s+)(On|Off)(.*)$")
-# Game names in quotes, but exclude file paths (containing underscores followed by more text, dots, or slashes)
-_GAME_NAME_QUOTED_RE = re.compile(r"(['\"])((?![^'\"]*[._/])[^'\"]+)\1")
+# Quoted names such as game titles. At least one word character is required so a run of punctuation between two
+# quotes is not read as a name. The closing quote has to be followed by whitespace, punctuation or the end of the
+# line, so a title's own apostrophe does not end the name early: "Assassin's Creed Valhalla"
+_QUOTED_CONTENT_RE = re.compile(r"(['\"])([^\n]*?\w[^\n]*?)\1(?=[\s.,;:!?)\]]|$)")
+
+# Quoted values shaped like a file name or a filesystem path stay plain, since a log or state destination is
+# not content. Game titles routinely contain slashes and dots, so only these two shapes are excluded
+_QUOTED_FILE_LIKE_RE = re.compile(r"^[~.]?[\\/]|^[A-Za-z]:[\\/]|\.[A-Za-z0-9]{1,8}$")
+
+# A quoted '<name>' inside a printed command is the placeholder the reader has to replace, not a game title
+_QUOTED_PLACEHOLDER_RE = re.compile(r"^<[^<>]*>$")
+
+# A quoted command-line option is an instruction to retype, not a name
+_QUOTED_OPTION_RE = re.compile(r"^-")
+
+# A quoted piece of a URL, such as the '?code=' or '&state=' a prompt points at. Only a leading '?' or '&' counts,
+# so a title may end in a question mark and a title such as 'Ratchet & Clank' is still a name
+_QUOTED_URL_PART_RE = re.compile(r"^[?&]|://")
 _URL_RE = re.compile(r"(https?://[^\s\]]+)")
 
 # Output labels whose value is coloured with one theme style, longest label first so a prefix cannot win
@@ -1106,6 +1120,14 @@ def _split_output_label(value, labels):
     return None
 
 
+# Colours one quoted name unless the quoted value is a path, a placeholder, an option or a piece of a URL
+def _colorize_quoted_name(match):
+    name = match.group(2)
+    if _QUOTED_FILE_LIKE_RE.search(name) or _QUOTED_PLACEHOLDER_RE.match(name) or _QUOTED_OPTION_RE.match(name) or _QUOTED_URL_PART_RE.search(name):
+        return match.group(0)
+    return f"{match.group(1)}{colorize('game', name)}{match.group(1)}"
+
+
 # Applies colour rules to a single output line
 def _colorize_line(line, notification_summary=False):
     original = line
@@ -1196,10 +1218,7 @@ def _colorize_line(line, notification_summary=False):
     line = _DATE_RANGE_RE.sub(lambda mo: colorize("date_range", mo.group(0)), line)
 
     # Highlight game names in quotes
-    def _game_name_repl(mo):
-        quote_char, game_name = mo.groups()
-        return f"{quote_char}{colorize('game', game_name)}{quote_char}"
-    line = _GAME_NAME_QUOTED_RE.sub(_game_name_repl, line)
+    line = _QUOTED_CONTENT_RE.sub(_colorize_quoted_name, line)
 
     # Highlight boolean values first
     line = _BOOLEAN_TRUE_RE.sub(lambda mo: colorize("boolean_true", mo.group(0)), line)
@@ -2887,10 +2906,12 @@ def doctor_check_environment(version_info=None, spec_finder=None):
     else:
         checks.append(make_doctor_check("Environment", "WARN", "Optional dependency Pillow is not installed", f"ntfy alerts are delivered as text without artwork. Every other feature is unaffected. Install it with: {ntfy_images_install_command()}"))
 
-    if module_present("colorama"):
-        checks.append(make_doctor_check("Environment", "PASS", "Optional dependency colorama is installed", "Used only for coloured output on Windows terminals"))
-    else:
-        checks.append(make_doctor_check("Environment", "WARN", "Optional dependency colorama is not installed", "Coloured output may not render on older Windows terminals. Every other platform is unaffected. Install it with: pip3 install colorama"))
+    # A warning about a library that cannot affect this machine is noise, so the row is skipped off Windows
+    if platform.system() == "Windows":
+        if module_present("colorama"):
+            checks.append(make_doctor_check("Environment", "PASS", "Optional dependency colorama is installed", "Used only for coloured output in the older Windows Command Prompt"))
+        else:
+            checks.append(make_doctor_check("Environment", "WARN", "Optional dependency colorama is not installed", "Coloured output may not render in the older Windows Command Prompt. Windows Terminal needs nothing extra. Install it with: pip3 install colorama"))
     return checks
 
 
@@ -3434,6 +3455,55 @@ def generate_config_with_current_values(config_values):
     return "\n".join(output) + "\n"
 
 
+# Checks one setup destination without creating or modifying it, so an unwritable path is caught before any question
+def _wizard_validate_destination(path, label):
+    destination = Path(path).expanduser().resolve()
+    if destination.exists() and destination.is_dir():
+        raise ValueError(f"{label} must be a file path, not a directory")
+    parent = nearest_existing_parent(destination)
+    if not parent.is_dir():
+        raise ValueError(f"{label} does not have a usable parent directory")
+    if not os.access(str(parent), os.W_OK):
+        raise ValueError(f"{label} is not writable through parent '{parent}'")
+    return destination
+
+
+# Resolves both setup destinations, refusing the disabled settings that leave nowhere to write
+def _wizard_destinations(config_file=None, env_file=None):
+    if config_file is not None and str(config_file).casefold() == "none":
+        raise ValueError("--setup requires a config destination. Replace '--config-file none' with a writable path")
+    if env_file is not None and str(env_file).casefold() == "none":
+        raise ValueError("--setup requires a dotenv destination. Replace '--env-file none' with a writable path")
+    config_path = Path(config_file).expanduser() if config_file is not None else Path.cwd() / DEFAULT_CONFIG_FILENAME
+    env_path = Path(env_file).expanduser() if env_file is not None else Path.cwd() / ".env"
+    return _wizard_validate_destination(config_path, "Configuration destination"), _wizard_validate_destination(env_path, "Dotenv destination")
+
+
+# Confirms replacing an existing config before any question is asked, so a long run cannot end in a surprise
+def _wizard_choose_config_destination(config_path, input_func=None):
+    selected = Path(config_path)
+    while selected.exists() and not _wizard_ask_yes_no(f"Configuration file '{selected}' exists. Replace it with a fresh configuration built from defaults and create a timestamped backup?", default=False, input_func=input_func):
+        alternative = _wizard_ask_text("Another config destination or leave empty to cancel", input_func=input_func)
+        if not alternative:
+            return None
+        try:
+            selected = _wizard_validate_destination(alternative, "Configuration destination")
+        except ValueError as exc:
+            print(f"  {exc}.")
+    return selected
+
+
+# Queues one secret for the save step, asking first when the dotenv file already assigns it
+def _wizard_queue_secret(state, key, value, input_func=None):
+    if not value:
+        return False
+    if _dotenv_contains_key(state.env_path, key) and not _wizard_ask_yes_no(f"The dotenv file already contains {key}. Replace that value?", default=False, input_func=input_func):
+        print(f"  Existing {key} will be retained without being displayed or rewritten.")
+        return False
+    state.secret_updates[key] = value
+    return True
+
+
 # Holds every wizard answer until the user explicitly saves, so nothing is written during questioning
 class WizardSetupState:
     # Starts from the values already in effect, which become both the defaults and the revert target
@@ -3645,7 +3715,7 @@ def _wizard_collect_email_section(state, input_func=None, getpass_func=None):
             return
         password = _wizard_ask_secret("SMTP password", getpass_func=getpass_func)
         if password:
-            state.secret_updates["SMTP_PASSWORD"] = password
+            _wizard_queue_secret(state, "SMTP_PASSWORD", password, input_func=input_func)
         outcome = _wizard_smtp_sign_in_accepted({name: state.config_values[name] for name in WIZARD_SMTP_CONFIG_KEYS}, password, input_func=input_func)
         if outcome is None:
             _wizard_disable_email(state)
@@ -3945,12 +4015,11 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
         print(f"Guide: {QUICK_START_GUIDE_URL}")
         return 1
 
-    if env_file and str(env_file).casefold() == "none":
-        print("--setup requires a dotenv destination. Replace '--env-file none' with a writable path.")
+    try:
+        config_path, env_path = _wizard_destinations(config_file, env_file)
+    except ValueError as exc:
+        print_recovery_error(exc, context="file.unwritable", detail=str(exc))
         return 1
-
-    config_path = Path(config_file).expanduser() if config_file else Path.cwd() / DEFAULT_CONFIG_FILENAME
-    env_path = Path(env_file).expanduser() if env_file else Path.cwd() / ".env"
 
     print(colorize("header", "Setup Wizard\n"))
     print("This asks a few questions and writes a ready-to-run configuration.")
@@ -3964,6 +4033,16 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     state.config_values["DOTENV_FILE"] = str(env_path)
 
     try:
+        # Asked before anything else, so a config that has to be replaced is agreed to rather than discovered at Save
+        config_existed = Path(config_path).exists()
+        chosen_config = _wizard_choose_config_destination(config_path, input_func=input_func)
+        if chosen_config is None:
+            print("\n" + colorize("warning", "Setup cancelled. Destination files were not changed."))
+            return 1
+        state.config_path = chosen_config
+        # A destination nothing was asked about printed nothing, so the separator would leave a blank gap
+        if config_existed:
+            print()
         _wizard_collect_target_section(state, initial_target, input_func=input_func)
         print()
         _wizard_collect_polling_section(state, input_func=input_func)
@@ -4515,6 +4594,12 @@ def apply_early_output_config():
         CLEAR_SCREEN = values["CLEAR_SCREEN"]
     if isinstance(values.get("COLORED_OUTPUT"), bool):
         COLORED_OUTPUT = values["COLORED_OUTPUT"]
+
+
+# Keeps argparse from colouring its own help, so the help screen is coloured by this tool alone and --no-color is
+# not left with a second palette to silence. From Python 3.14 argparse colours the help by default on a terminal
+def argparse_color_kwargs() -> dict[str, Any]:
+    return {"color": False} if sys.version_info >= (3, 14) else {}
 
 
 # Finds an optional config file
@@ -6023,7 +6108,7 @@ def main():
         prog="steam_monitor",
         description=(f"Monitor a Steam user's playing status and send customizable email or webhook alerts [ {PROJECT_URL} ]"),
         epilog=help_examples(),
-        formatter_class=argparse.RawTextHelpFormatter
+        formatter_class=argparse.RawTextHelpFormatter, **argparse_color_kwargs()
     )
 
     # Positional

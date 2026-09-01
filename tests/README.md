@@ -44,12 +44,14 @@ and again before anything is published to PyPI.
 | `test_startup_ui.py` | Startup summary rows, per-row routing, width-aware truncation and the grouped help |
 | `test_setup_wizard.py` | The setup wizard, per-section editing, input normalizers, the welcome screen and their terminal output contract |
 | `test_doctor.py` | The doctor report, its checks, delivery-test consent, exit code and its terminal output contract |
+| `test_help_screen.py` | The `--help` screen: the option groups, the worked examples and the version banner |
 | `test_recovery_errors.py` | The recovery code taxonomy, classifier, rendered fix lines, hint deduplication and secret redaction |
 | `test_file_safety.py` | Atomic state writes, timestamped backups, untrusted text sanitizing and the declared Python minimum |
 | `test_install_method_commands.py` | Install method detection, printed commands, masked secrets and guide links |
 | `test_monitoring_diagnostics.py` | One monitoring cycle: Steam calls named, degraded features reported, quiet by default |
 | `test_repository_contracts.py` | Governance documents, issue templates, action pinning, release gating and the CI contract |
 | `test_repository_metadata.py` | Governance files, citation, funding, line endings, the declared editor style, the pinned linter and release integrity |
+| `test_tls_verification.py` | Every connection honouring `VERIFY_SSL` and the single shared TLS context builder |
 | `test_secret_inputs.py` | Atomic dotenv updates, hidden webhook and ntfy entry, refusal to save invalid input |
 | `test_steam_monitor.py` | Profile URL resolution for numeric, Steam3, invite and vanity forms |
 | `test_webhook_notifications.py` | Startup rollups, notification summary coloring, webhook settings and URL validation |

@@ -8,6 +8,7 @@ Install from PyPI for the usual case, or download the single script if you would
 * Libraries: [steam](https://github.com/ValvePython/steam), `requests`, `python-dateutil`, `python-dotenv`
 * Optional: [Pillow](https://pypi.org/project/Pillow/), needed only to attach Steam avatar or game artwork to ntfy alerts
 * Optional: [wcwidth](https://pypi.org/project/wcwidth/), needed only to measure display width for `TRUNCATE_CHARS`
+* Optional: [colorama](https://pypi.org/project/colorama/), needed only for coloured output in the older Windows Command Prompt. Windows Terminal needs nothing extra. `--doctor` reports it only on Windows
 
 Tested on:
 

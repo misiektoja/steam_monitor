@@ -134,6 +134,70 @@ def test_identity_values_are_coloured_by_their_kind(colored):
     assert monitor._colorize_line("Profile URL:\t\t\thttps://steamcommunity.com/id/misiektoja") == f"Profile URL:\t\t\t{colored['link']}https://steamcommunity.com/id/misiektoja{monitor.ANSI_RESET}"
 
 
+# Verifies a game title is coloured whatever punctuation it contains, so a feed does not colour only some rows
+@pytest.mark.parametrize("name", ["Counter-Strike 2", "Assassin's Creed Valhalla", "Tom Clancy's Rainbow Six Siege", "S.T.A.L.K.E.R. 2", "Ratchet & Clank: Rift Apart"])
+def test_game_titles_with_punctuation_are_coloured_whole(colored, name):
+    assert f"{colored['game']}{name}{monitor.ANSI_RESET}" in monitor._colorize_line(f"Steam user misiektoja started playing '{name}'")
+
+
+# Verifies two quoted titles on one line stay two names, since the closing quote rule could have joined them
+def test_two_quoted_titles_on_one_line_stay_separate(colored):
+    result = monitor._colorize_line("Steam user misiektoja changed game from 'Portal 2' to 'Half-Life: Alyx' after 2 hours")
+
+    assert f"{colored['game']}Portal 2{monitor.ANSI_RESET}" in result
+    assert f"{colored['game']}Half-Life: Alyx{monitor.ANSI_RESET}" in result
+
+
+# Verifies quoted values shaped like a file name or a path stay plain, since a log destination is not a title
+@pytest.mark.parametrize("value", ["steam_misiektoja_last_status.json", "/var/log/steam.log", "~/logs/output.txt", "C:\\Users\\me\\state.json"])
+def test_quoted_file_and_path_values_stay_plain(colored, value):
+    line = f"* Last status loaded from file '{value}'"
+
+    assert monitor._colorize_line(line) == line
+
+
+# Verifies a quoted placeholder inside a printed command stays plain, since it is text to replace rather than a title
+@pytest.mark.parametrize("line", ["Run: steam_monitor '<steam64_id>'", "Replace '<topic>' with your own ntfy topic"])
+def test_quoted_command_placeholders_stay_plain(colored, line):
+    assert colored["game"] not in monitor._colorize_line(line)
+
+
+# Verifies a quoted command-line option is left plain, since it is text to retype rather than a title
+def test_quoted_command_options_stay_plain(colored):
+    assert colored["game"] not in monitor._colorize_line("Replace '--env-file none' with a writable path")
+
+
+# Verifies a quoted fragment of a URL stays plain, since it is a piece of an address rather than a title
+@pytest.mark.parametrize("value", ["?code=", "&state="])
+def test_quoted_url_fragments_stay_plain(colored, value):
+    line = f"Copy everything after '{value}' from the address bar."
+
+    assert monitor._colorize_line(line) == line
+
+
+# Verifies every part the shipped theme offers is actually looked up somewhere, so a documented setting cannot do nothing
+def test_every_theme_part_is_used():
+    looked_up = set(re.findall(r"""colorize\(\s*["']([a-z_]+)["']""", SOURCE))
+    looked_up |= set(re.findall(r"""_COLOR_STYLES\.get\(["']([a-z_]+)["']""", SOURCE))
+    looked_up |= set(re.findall(r"""(?:style_name|state_style|key) = ["']([a-z_]+)["']""", SOURCE))
+    looked_up |= set(re.findall(r""",\s*["']([a-z_]+)["']\),?\s*$""", SOURCE, re.M))
+    looked_up |= set(re.findall(r"""["'][A-Za-z ]+["']:\s*["']([a-z_]+)["']""", SOURCE))
+
+    assert not set(monitor.DEFAULT_COLOR_THEME) - looked_up
+
+
+# Verifies argparse never adds a palette of its own, which from Python 3.14 would survive --no-color
+def test_argparse_adds_no_palette_of_its_own():
+    expected = {"color": False} if sys.version_info >= (3, 14) else {}
+
+    assert monitor.argparse_color_kwargs() == expected
+
+
+# Verifies the switch is actually passed to the parser, since the helper alone colours nothing
+def test_the_parser_is_built_with_the_argparse_colour_switch():
+    assert "**argparse_color_kwargs()" in SOURCE.split("argparse.ArgumentParser(", 1)[1].split("\n\n", 1)[0]
+
+
 # Verifies a link printed inside a sentence is coloured too, not only a labelled URL row
 def test_links_in_sentences_are_coloured(colored):
     line = monitor._colorize_line(f"Guide: {monitor.QUICK_START_GUIDE_URL}")

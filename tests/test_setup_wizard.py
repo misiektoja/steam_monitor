@@ -415,12 +415,12 @@ def test_a_rejected_target_is_asked_again(tmp_path, monkeypatch, wizard_globals,
     assert "Enter a Steam64 ID" in capsys.readouterr().out
 
 
-# Verifies an existing configuration is backed up rather than overwritten
+# Verifies an existing configuration is replaced only after the user agrees, and is backed up rather than overwritten
 def test_an_existing_configuration_is_backed_up(tmp_path, monkeypatch, wizard_globals):
     config = tmp_path / "steam_monitor.conf"
     config.write_text("CLEAR_SCREEN = False\n", encoding="utf-8")
 
-    run_wizard(tmp_path, monkeypatch, minimal_answers())
+    run_wizard(tmp_path, monkeypatch, ["y", *minimal_answers()])
 
     backups = list(tmp_path.glob("steam_monitor.conf.*.bak"))
     assert len(backups) == 1
@@ -929,3 +929,90 @@ def test_prompts_restore_the_default_interrupt_handler():
         assert signal.getsignal(signal.SIGINT) is monitor.signal_handler
     finally:
         signal.signal(signal.SIGINT, previous_handler)
+
+
+# Verifies a destination that cannot be written is refused before the first question is asked
+def test_an_unwritable_destination_is_refused_before_any_question(tmp_path, capsys):
+    def refuse_every_question(prompt=""):
+        raise AssertionError(f"Setup asked a question before checking its destinations: {prompt!r}")
+
+    code = monitor.run_setup_wizard(config_file="/steam_monitor_unwritable_root.conf", env_file=str(tmp_path / ".env"), input_func=refuse_every_question, interactive=True)
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "Configuration destination is not writable" in out
+    assert "To fix:" in out
+
+
+# Verifies a directory given as a destination is refused rather than failing at the save step
+def test_a_directory_destination_is_refused(tmp_path, capsys):
+    code = monitor.run_setup_wizard(config_file=str(tmp_path), env_file=str(tmp_path / ".env"), interactive=True)
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "must be a file path, not a directory" in out
+
+
+# Verifies the disabled config setting is refused, since setup exists to write one
+def test_a_disabled_config_destination_is_refused(tmp_path, capsys):
+    code = monitor.run_setup_wizard(config_file="none", env_file=str(tmp_path / ".env"), interactive=True)
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "--setup requires a config destination" in out
+
+
+# Verifies an existing config can be kept by sending the run to another path instead
+def test_an_existing_config_can_be_redirected_to_another_path(tmp_path, monkeypatch, wizard_globals):
+    config = tmp_path / "steam_monitor.conf"
+    config.write_text("CLEAR_SCREEN = False\n", encoding="utf-8")
+    elsewhere = tmp_path / "elsewhere.conf"
+
+    code = run_wizard(tmp_path, monkeypatch, ["n", str(elsewhere), *minimal_answers()])
+
+    assert code == 0
+    assert config.read_text(encoding="utf-8") == "CLEAR_SCREEN = False\n"
+    assert monitor.parse_config_content(elsewhere.read_text(encoding="utf-8"), str(elsewhere))["TARGET_STEAM_ID"] == str(STEAM64)
+
+
+# Verifies declining to replace an existing config and naming no alternative ends the run without writing
+def test_declining_an_existing_config_without_an_alternative_writes_nothing(tmp_path, monkeypatch, wizard_globals, capsys):
+    config = tmp_path / "steam_monitor.conf"
+    config.write_text("CLEAR_SCREEN = False\n", encoding="utf-8")
+
+    code = run_wizard(tmp_path, monkeypatch, ["n", ""])
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert config.read_text(encoding="utf-8") == "CLEAR_SCREEN = False\n"
+    assert not (tmp_path / ".env").exists()
+    assert "Setup cancelled. Destination files were not changed." in out
+
+
+# Returns the answers for one email run with the extra answer the dotenv replace prompt needs
+def email_answers_with_smtp_replace(replace):
+    return [str(STEAM64), "y", "5m", "45s", "y", *EMAIL_ANSWERS, replace, "1", "n", "y", "", "1", "n", "n"]
+
+
+# Verifies a secret already in the dotenv file is kept when the replacement is declined
+def test_an_existing_dotenv_secret_is_kept_unless_the_replacement_is_confirmed(tmp_path, monkeypatch, wizard_globals):
+    env_file = tmp_path / ".env"
+    env_file.write_text('SMTP_PASSWORD="original"\n', encoding="utf-8")
+
+    code = run_wizard(tmp_path, monkeypatch, email_answers_with_smtp_replace("n"), secrets=[API_KEY, "typed-password"])
+
+    written = env_file.read_text(encoding="utf-8")
+    assert code == 0
+    assert 'SMTP_PASSWORD="original"' in written
+    assert "typed-password" not in written
+
+
+# Verifies a confirmed replacement does reach the dotenv file
+def test_a_confirmed_dotenv_secret_replacement_is_written(tmp_path, monkeypatch, wizard_globals):
+    env_file = tmp_path / ".env"
+    env_file.write_text('SMTP_PASSWORD="original"\n', encoding="utf-8")
+
+    code = run_wizard(tmp_path, monkeypatch, email_answers_with_smtp_replace("y"), secrets=[API_KEY, "typed-password"])
+
+    assert code == 0
+    assert 'SMTP_PASSWORD="typed-password"' in env_file.read_text(encoding="utf-8")
