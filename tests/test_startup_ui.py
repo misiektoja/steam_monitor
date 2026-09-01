@@ -527,6 +527,7 @@ CROSS_TOOL_STRINGS = (
     "Keeps the private value without displaying or changing it.",
     "Paste the Discord webhook URL",
     "Paste the ntfy topic URL or ntfy.sh topic name",
+    "In ntfy: choose a hard-to-guess topic. Paste its complete topic URL, or just the topic name when it is hosted on ntfy.sh.",
     "That does not look like a complete HTTPS webhook URL. Copy it from the webhook service and try again.",
     "Enter a complete HTTPS ntfy topic URL or a topic name containing up to 64 letters, numbers, dashes or underscores.",
     "Which ntfy authentication should be used?",
