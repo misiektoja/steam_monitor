@@ -6222,7 +6222,7 @@ def main():
         dest="setup",
         action="store_true",
         default=None,
-        help="Answer a few questions and write a ready-to-run configuration",
+        help="Run the guided setup and write a ready-to-run configuration",
     )
     conf.add_argument(
         "--config-file",
