@@ -127,3 +127,14 @@ def test_a_short_secret_is_masked_the_same_way():
 def test_an_absent_secret_is_reported_as_not_set():
     assert monitor.mask_secret("") == "(not set)"
     assert monitor.mask_secret(None) == "(not set)"
+
+
+# Verifies the setup advice names the files this run was given instead of sending the user to the default ones
+def test_setup_advice_names_the_files_this_run_was_given(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["/home/user/steam_monitor.py", "--set-smtp-password"])
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", "/etc/steam.conf")
+    monkeypatch.setattr(monitor, "DOTENV_FILE", "/etc/steam.env")
+
+    advice = monitor.classify_recovery_error(ValueError("The mail server settings are incomplete"), context="set_smtp_password")
+
+    assert "run python3 steam_monitor.py --setup --config-file /etc/steam.conf --env-file /etc/steam.env" in advice.fix

@@ -2309,7 +2309,7 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
             return advice("auth.api_key_invalid", safe_detail or "Steam rejected the entered Web API key", f"Copy a fresh key from {STEAM_API_KEY_REGISTRATION_URL} then run {flag} again", False, guide)
         if context == "set_smtp_password":
             if "settings are incomplete" in message:
-                return advice("smtp.invalid", safe_detail or "The mail server settings are incomplete", f"Set SMTP_HOST, SMTP_USER, SENDER_EMAIL and RECEIVER_EMAIL, or run {render_command(['--setup'], include_paths=False)}", False, guide)
+                return advice("smtp.invalid", safe_detail or "The mail server settings are incomplete", f"Set SMTP_HOST, SMTP_USER, SENDER_EMAIL and RECEIVER_EMAIL, or run {render_command(['--setup'])}", False, guide)
             return advice("smtp.authentication", safe_detail or "The mail server did not accept the password", f"Use an app password when the provider requires one then run {flag} again", False, guide)
         return advice("webhook.invalid", safe_detail or "The webhook URL was not changed", f"Copy a complete Discord or ntfy webhook URL then run {flag} again", False, guide)
 
