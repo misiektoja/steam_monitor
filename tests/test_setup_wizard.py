@@ -1016,3 +1016,15 @@ def test_a_confirmed_dotenv_secret_replacement_is_written(tmp_path, monkeypatch,
 
     assert code == 0
     assert 'SMTP_PASSWORD="typed-password"' in env_file.read_text(encoding="utf-8")
+
+
+# Verifies debug output is off while a hidden wizard answer is read and restored afterwards
+def test_a_hidden_wizard_answer_is_read_with_debug_output_off(monkeypatch):
+    monkeypatch.setattr(monitor, "DEBUG_MODE", True)
+    seen = []
+
+    answer = monitor._wizard_ask_secret("SMTP password", getpass_func=lambda prompt: seen.append(monitor.DEBUG_MODE) or "secret")
+
+    assert answer == "secret"
+    assert seen == [False]
+    assert monitor.DEBUG_MODE is True

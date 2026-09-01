@@ -846,3 +846,12 @@ def test_the_wizard_doctor_prompt_is_shared():
     source = (REPO_ROOT / "steam_monitor.py").read_text(encoding="utf-8")
 
     assert SHARED_CONTRACT["doctor_prompt"] in source
+
+
+# Verifies the Python row states the minimum it was judged against, whichever way the judgement went
+def test_the_python_row_names_the_minimum_supported_version():
+    supported = monitor.doctor_check_environment(version_info=(3, 14, 0))[0]
+    unsupported = monitor.doctor_check_environment(version_info=(2, 7, 18))[0]
+
+    assert supported.detail == f"Minimum supported version: {monitor.MINIMUM_PYTHON_VERSION_TEXT}"
+    assert unsupported.detail == supported.detail

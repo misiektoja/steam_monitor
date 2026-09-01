@@ -2873,11 +2873,12 @@ def doctor_check_environment(version_info=None, spec_finder=None):
     checks = []
     selected_version = sys.version_info if version_info is None else version_info
     version_text = ".".join(str(part) for part in tuple(selected_version)[:3])
+    minimum_detail = f"Minimum supported version: {MINIMUM_PYTHON_VERSION_TEXT}"
     if tuple(selected_version)[:2] >= MINIMUM_PYTHON_VERSION:
-        checks.append(make_doctor_check("Environment", "PASS", f"Python {version_text} is supported"))
+        checks.append(make_doctor_check("Environment", "PASS", f"Python {version_text} is supported", minimum_detail))
     else:
         advice = make_recovery_advice("dependency.missing", f"Python {version_text} is unsupported", f"Install Python {MINIMUM_PYTHON_VERSION_TEXT} or newer then retry", False)
-        checks.append(make_doctor_check("Environment", "FAIL", advice.summary, advice=advice))
+        checks.append(make_doctor_check("Environment", "FAIL", advice.summary, minimum_detail, advice))
 
     find_spec = importlib.util.find_spec if spec_finder is None else spec_finder
 
@@ -3414,12 +3415,13 @@ def _wizard_ask_duration(question, default, input_func=None):
         print("  Enter a positive duration such as 120, 2m, 1.5h, 1h 30m or 1d.")
 
 
-# Asks one secret through a hidden prompt, so it never reaches the screen or the shell history
+# Asks one secret through a hidden prompt with debug output off, so it never reaches the screen, the shell history or the debug stream
 def _wizard_ask_secret(question, getpass_func=None):
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
         # Colorized like the visible prompts, so a hidden answer does not look like a different question
-        return str(read_interactively(hidden_prompt, colorize("info", f"{question}: "))).strip()
+        with debug_output_suppressed():
+            return str(read_interactively(hidden_prompt, colorize("info", f"{question}: "))).strip()
     except (EOFError, KeyboardInterrupt):
         print()
         raise
