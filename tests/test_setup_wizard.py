@@ -57,7 +57,7 @@ def scripted_input(answers, transcript=None):
 
 
 # Runs the whole wizard offline with a scripted operator and no real Steam call
-def run_wizard(tmp_path, monkeypatch, answers, secrets=None, transcript=None, initial_target=None, validator=None):
+def run_wizard(tmp_path, monkeypatch, answers, secrets=None, transcript=None, initial_target=None, validator=None, input_func=None):
     monkeypatch.setattr(monitor, "validate_steam_api_key", validator or (lambda _key, timeout=10: True))
     monkeypatch.setattr(monitor, "run_doctor", lambda **_kwargs: 0)
     secret_answers = list(secrets or [API_KEY])
@@ -71,7 +71,7 @@ def run_wizard(tmp_path, monkeypatch, answers, secrets=None, transcript=None, in
         initial_target=initial_target,
         config_file=str(tmp_path / "steam_monitor.conf"),
         env_file=str(tmp_path / ".env"),
-        input_func=scripted_input(answers, transcript),
+        input_func=input_func or scripted_input(answers, transcript),
         getpass_func=fake_getpass,
         interactive=True,
     )
@@ -867,3 +867,47 @@ def test_interrupting_the_welcome_offer_reports_a_cancellation(monkeypatch, caps
 
     assert monitor.print_welcome_screen(input_func=interrupt, interactive=True) == 1
     assert "Setup cancelled." in capsys.readouterr().out
+
+
+# Returns an input function that answers the script and then interrupts the next prompt, as Ctrl+C does
+def answers_then_interrupt(answers):
+    remaining = list(answers)
+
+    def respond(_prompt):
+        if not remaining:
+            raise KeyboardInterrupt
+        return remaining.pop(0)
+
+    return respond
+
+
+# Verifies an interrupt before the save says the destination files are untouched
+def test_interrupting_the_questions_reports_untouched_files(tmp_path, monkeypatch, wizard_globals, capsys):
+    code = run_wizard(tmp_path, monkeypatch, [], input_func=answers_then_interrupt([]))
+
+    assert code == 1
+    assert "Setup cancelled. Destination files were not changed." in capsys.readouterr().out
+    assert not (tmp_path / "steam_monitor.conf").exists()
+
+
+# Verifies an interrupt at the doctor offer reports the saved setup instead of a cancellation
+def test_interrupting_the_doctor_offer_keeps_the_saved_setup(tmp_path, monkeypatch, wizard_globals, capsys):
+    code = run_wizard(tmp_path, monkeypatch, [], input_func=answers_then_interrupt(minimal_answers()[:-2]))
+
+    output = capsys.readouterr().out
+    assert code == 0
+    assert "Setup is saved. Use the commands below when ready." in output
+    assert "Setup cancelled" not in output
+    assert "Next steps" in output
+    assert (tmp_path / "steam_monitor.conf").is_file()
+
+
+# Verifies an interrupt at the launch offer reports the saved setup and points at the printed command
+def test_interrupting_the_launch_offer_keeps_the_saved_setup(tmp_path, monkeypatch, wizard_globals, capsys):
+    code = run_wizard(tmp_path, monkeypatch, [], input_func=answers_then_interrupt(minimal_answers()[:-1]))
+
+    output = capsys.readouterr().out
+    assert code == 0
+    assert "Setup is saved. Start monitoring with the command above when ready." in output
+    assert "Setup cancelled" not in output
+    assert (tmp_path / "steam_monitor.conf").is_file()
