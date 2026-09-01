@@ -105,6 +105,38 @@ def test_the_readme_links_resolve():
     assert not broken, f"the README links at missing documentation pages: {broken}"
 
 
+# Every markdown file outside the site that links into the repository, and which a docs move can silently break
+REPOSITORY_MARKDOWN = ("README.md", "SUPPORT.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "THIRD_PARTY_NOTICES.md", ".github/pull_request_template.md")
+
+# The issue templates link out of YAML rather than markdown, which is where the last README anchors survived
+ISSUE_TEMPLATES = (".github/ISSUE_TEMPLATE/config.yml", ".github/ISSUE_TEMPLATE/bug_report.yml", ".github/ISSUE_TEMPLATE/feature_request.yml")
+
+
+# Returns the local link targets one repository file names, reading a link to the project page as a README anchor
+def repository_link_targets(text):
+    targets = re.findall(r"\]\((?!https?:|mailto:)([^)]+)\)", text)
+    return list(targets) + [f"README.md#{anchor}" for anchor in re.findall(rf"{re.escape(monitor.PROJECT_URL)}/?#([^\s)\"']+)", text)]
+
+
+# Verifies no repository document still points at a README section, which is how a docs move leaves dead links behind
+def test_no_repository_document_links_at_a_missing_local_target():
+    broken = []
+    for relative_path in REPOSITORY_MARKDOWN + ISSUE_TEMPLATES:
+        path = REPO_ROOT / relative_path
+        if not path.exists():
+            continue
+        for target in repository_link_targets(path.read_text(encoding="utf-8")):
+            page_part, _, anchor = target.partition("#")
+            target_page = path if not page_part else (REPO_ROOT / page_part)
+            if page_part and not target_page.exists():
+                broken.append(f"{relative_path} -> {target}")
+                continue
+            if anchor and anchor not in page_anchors(target_page):
+                broken.append(f"{relative_path} -> {target}")
+
+    assert not broken, f"repository documents linking at missing targets: {broken}"
+
+
 # Verifies each user-facing command is documented, since an undocumented one may as well not exist
 @pytest.mark.parametrize("flag", ["--setup", "--doctor", "--verbose", "--debug", "--generate-config", "--set-steam-api-key", "--set-webhook-url", "--send-test-email", "--send-test-webhook", "--env-file", "--config-file"])
 def test_user_facing_flags_are_documented(flag):
@@ -197,12 +229,13 @@ def test_the_readme_is_a_landing_page():
     assert monitor.DOCS_BASE_URL in text, "the README does not link to the documentation site"
 
 
-# Verifies the documentation build is a gate CI runs, not something only checked by hand
+# Verifies the documentation build is a step CI runs, rather than only a job name that says so
 def test_the_documentation_build_is_a_ci_gate():
     workflow = (REPO_ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
+    commands = [match.strip() for match in re.findall(r"^\s*run:\s*(.+)$", workflow, flags=re.MULTILINE)]
 
-    assert "mkdocs build --strict" in workflow, "CI does not build the documentation site"
-    assert "docs/requirements.txt" in workflow, "CI does not install the documentation dependencies"
+    assert any("mkdocs build --strict" in command for command in commands), "CI does not build the documentation site"
+    assert any("docs/requirements.txt" in command for command in commands), "CI does not install the documentation dependencies"
 
 
 # Verifies a published site can actually be built, since the workflow that deploys it must have somewhere to deploy from

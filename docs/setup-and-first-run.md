@@ -16,6 +16,8 @@ Answers are accepted in the formats people actually paste. The profile takes a *
 
 For webhook alerts, setup asks which service receives them, then takes the Discord webhook URL or an ntfy topic. A bare ntfy.sh topic name is expanded to its full URL. For ntfy it also offers a separate access token and artwork attachments.
 
+Every answer setup cannot use offers a way out, so one value you cannot produce right now does not cost you the answers already given. A blank answer asks whether to continue without it and names what stops working, and a rejected one offers to enter it again. Declining switches the channel that needed it off, so half a mail server or a webhook with no destination is never written.
+
 Secrets are typed at a hidden prompt and go to the dotenv file. Non-secret settings go to the config file. Existing files are backed up before being replaced. When it finishes, setup offers to run [`--doctor`](troubleshooting.md#doctor-preflight) and prints the exact commands to start monitoring. For a local install it then offers to **start monitoring right away**.
 
 If the config file names a target in [`TARGET_STEAM_ID`](configuration.md#target-profile), running the tool with no arguments starts monitoring that profile. With no saved target, running it **with no arguments at all** prints the same four commands and offers to start the wizard.

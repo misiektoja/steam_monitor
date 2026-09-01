@@ -4,7 +4,7 @@ contact_links:
     url: https://github.com/misiektoja/steam_monitor/security/advisories/new
     about: Report privately through GitHub. Never open a public issue for a suspected vulnerability.
   - name: Documentation
-    url: https://github.com/misiektoja/steam_monitor#table-of-contents
+    url: https://misiektoja.github.io/steam_monitor/
     about: Requirements, installation, configuration, usage and troubleshooting.
   - name: Getting help
     url: https://github.com/misiektoja/steam_monitor/blob/main/SUPPORT.md

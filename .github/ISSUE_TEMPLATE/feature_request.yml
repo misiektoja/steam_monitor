@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        The [README](https://github.com/misiektoja/steam_monitor#table-of-contents) describes what is already supported. Check the configuration section before asking for a setting that may already exist.
+        The [documentation](https://misiektoja.github.io/steam_monitor/) describes what is already supported. Check the [configuration page](https://misiektoja.github.io/steam_monitor/configuration/) before asking for a setting that may already exist.
 
   - type: textarea
     id: problem

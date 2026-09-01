@@ -51,8 +51,8 @@ def scripted_input(answers, transcript=None):
 
 
 # Runs the whole wizard offline with a scripted operator and no real Steam call
-def run_wizard(tmp_path, monkeypatch, answers, secrets=None, transcript=None, initial_target=None):
-    monkeypatch.setattr(monitor, "validate_steam_api_key", lambda _key, timeout=10: True)
+def run_wizard(tmp_path, monkeypatch, answers, secrets=None, transcript=None, initial_target=None, validator=None):
+    monkeypatch.setattr(monitor, "validate_steam_api_key", validator or (lambda _key, timeout=10: True))
     monkeypatch.setattr(monitor, "run_doctor", lambda **_kwargs: 0)
     secret_answers = list(secrets or [API_KEY])
 
@@ -247,6 +247,124 @@ def test_declining_email_turns_every_email_alert_off(tmp_path, monkeypatch, wiza
     values = monitor.parse_config_content((tmp_path / "steam_monitor.conf").read_text(encoding="utf-8"))
     for key in ("ACTIVE_INACTIVE_NOTIFICATION", "GAME_CHANGE_NOTIFICATION", "ERROR_NOTIFICATION"):
         assert values[key] is False
+
+
+# Verifies a blank key is offered the way out rather than only being asked for again
+def test_an_empty_api_key_answer_is_asked_again(tmp_path, monkeypatch, wizard_globals):
+    transcript = []
+    # The extra "n" declines "Continue without the Steam Web API key?", which asks for the key a second time
+    answers = [str(STEAM64), "y", "5m", "45s", "n", "n", "n", "y", "", "1", "n", "n"]
+
+    assert run_wizard(tmp_path, monkeypatch, answers, secrets=["", API_KEY], transcript=transcript) == 0
+
+    assert any("Continue without the Steam Web API key?" in prompt for prompt in transcript)
+    assert f'STEAM_API_KEY="{API_KEY}"' in (tmp_path / ".env").read_text(encoding="utf-8")
+
+
+# Verifies a key Steam refuses is offered again, since a mistyped key is the common case
+def test_a_rejected_api_key_is_asked_again(tmp_path, monkeypatch, wizard_globals):
+    accepted = [False, True]
+    transcript = []
+    # The extra "y" accepts the offer to enter the refused key again
+    answers = [str(STEAM64), "y", "5m", "45s", "y", "n", "n", "y", "", "1", "n", "n"]
+
+    assert run_wizard(tmp_path, monkeypatch, answers, secrets=["bad-key", API_KEY], transcript=transcript, validator=lambda _key, timeout=10: accepted.pop(0)) == 0
+
+    assert any("Try entering the Steam Web API key again?" in prompt for prompt in transcript)
+    assert f'STEAM_API_KEY="{API_KEY}"' in (tmp_path / ".env").read_text(encoding="utf-8")
+
+
+# Verifies a key Steam keeps refusing can be given up on, since it cannot be corrected from inside the loop
+def test_a_rejected_api_key_can_be_abandoned(tmp_path, monkeypatch, wizard_globals):
+    # The extra "n" declines entering the refused key again
+    answers = [str(STEAM64), "y", "5m", "45s", "n", "n", "n", "y", "", "1", "n", "n"]
+
+    assert run_wizard(tmp_path, monkeypatch, answers, secrets=["bad-key"], validator=lambda _key, timeout=10: False) == 0
+
+    assert not (tmp_path / ".env").exists(), "a refused key was written anyway"
+
+
+# The answers that reach each mail server question, so every one of them can be left blank in turn
+EMAIL_ANSWERS_BEFORE = {
+    "SMTP_HOST": [],
+    "SMTP_USER": ["smtp.example.com", "587", "y"],
+    "SENDER_EMAIL": ["smtp.example.com", "587", "y", "monitor"],
+    "RECEIVER_EMAIL": ["smtp.example.com", "587", "y", "monitor", "sender@example.com"],
+}
+
+
+@pytest.mark.parametrize("abandoned", sorted(EMAIL_ANSWERS_BEFORE))
+# Verifies an abandoned mail server answer switches email off rather than writing half a configuration
+def test_an_abandoned_mail_server_answer_turns_email_off(tmp_path, monkeypatch, wizard_globals, capsys, abandoned):
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "GAME_CHANGE_NOTIFICATION", True)
+    # Cleared so the prompts have no default to fall back on, which is what a first-time setup looks like
+    for name in EMAIL_ANSWERS_BEFORE:
+        monkeypatch.setattr(monitor, name, "")
+    # One blank mail server answer, then declining to enter it again, then declining webhooks
+    answers = [str(STEAM64), "y", "5m", "45s", "y"] + EMAIL_ANSWERS_BEFORE[abandoned] + ["", "n", "n", "y", "", "1", "n", "n"]
+
+    assert run_wizard(tmp_path, monkeypatch, answers) == 0
+
+    values = monitor.parse_config_content((tmp_path / "steam_monitor.conf").read_text(encoding="utf-8"))
+    assert values["ERROR_NOTIFICATION"] is False
+    assert values["GAME_CHANGE_NOTIFICATION"] is False
+    assert "Email notifications stay off" in capsys.readouterr().out
+
+
+# Verifies a blank destination is told apart from a malformed one and that skipping it leaves the channel off
+def test_a_blank_webhook_url_is_worded_as_a_blank_one(tmp_path, monkeypatch, wizard_globals, capsys):
+    transcript = []
+    # The "y" accepts continuing without a URL, which is what the blank wording offers
+    answers = [str(STEAM64), "y", "5m", "45s", "n", "y", "1", "y", "y", "", "1", "n", "n"]
+
+    assert run_wizard(tmp_path, monkeypatch, answers, secrets=[API_KEY, ""], transcript=transcript) == 0
+
+    values = monitor.parse_config_content((tmp_path / "steam_monitor.conf").read_text(encoding="utf-8"))
+    assert values["WEBHOOK_ENABLED"] is False
+    assert values["WEBHOOK_ERROR_NOTIFICATION"] is False
+    assert any("Continue without the webhook URL?" in prompt for prompt in transcript)
+    assert "complete HTTPS webhook URL" not in capsys.readouterr().out
+    assert "WEBHOOK_URL" not in (tmp_path / ".env").read_text(encoding="utf-8")
+
+
+# Verifies a URL the wizard cannot use can be given up on, which leaves the channel and its alerts off
+def test_a_malformed_webhook_url_can_be_abandoned(tmp_path, monkeypatch, wizard_globals, capsys):
+    # The "n" declines entering the malformed URL again
+    answers = [str(STEAM64), "y", "5m", "45s", "n", "y", "1", "n", "y", "", "1", "n", "n"]
+
+    assert run_wizard(tmp_path, monkeypatch, answers, secrets=[API_KEY, "not-a-url"]) == 0
+
+    values = monitor.parse_config_content((tmp_path / "steam_monitor.conf").read_text(encoding="utf-8"))
+    assert values["WEBHOOK_ENABLED"] is False
+    assert values["WEBHOOK_ERROR_NOTIFICATION"] is False
+    assert "complete HTTPS webhook URL" in capsys.readouterr().out
+    assert "WEBHOOK_URL" not in (tmp_path / ".env").read_text(encoding="utf-8")
+
+
+# Verifies a token pasted with its authorization scheme can be given up on without losing the topic already entered
+def test_a_pasted_ntfy_authorization_scheme_can_be_abandoned(tmp_path, monkeypatch, wizard_globals):
+    transcript = []
+    # The "n" declines entering the token again, leaving the topic URL that was already accepted
+    answers = [str(STEAM64), "y", "5m", "45s", "n", "y", "2", "y", "n", "n", "1", "y", "", "1", "n", "n"]
+
+    assert run_wizard(tmp_path, monkeypatch, answers, secrets=[API_KEY, "private-topic", "Bearer tk_a_real_looking_token"], transcript=transcript) == 0
+
+    assert any("Try entering the ntfy access token again?" in prompt for prompt in transcript)
+    env = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert 'WEBHOOK_URL="https://ntfy.sh/private-topic"' in env
+    assert "NTFY_ACCESS_TOKEN" not in env
+
+
+# Verifies a blank token is read as no token, so an optional answer cannot trap the wizard or save an empty secret
+def test_a_blank_ntfy_access_token_means_no_token(tmp_path, monkeypatch, wizard_globals):
+    answers = [str(STEAM64), "y", "5m", "45s", "n", "y", "2", "y", "n", "1", "y", "", "1", "n", "n"]
+
+    assert run_wizard(tmp_path, monkeypatch, answers, secrets=[API_KEY, "private-topic", ""]) == 0
+
+    env = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert 'WEBHOOK_URL="https://ntfy.sh/private-topic"' in env
+    assert "NTFY_ACCESS_TOKEN" not in env
 
 
 # Verifies the webhook service is chosen before the URL is pasted, the shared order across these tools

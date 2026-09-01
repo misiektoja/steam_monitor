@@ -1,6 +1,6 @@
 # Getting help
 
-Start with the [README](README.md). [Requirements](README.md#requirements), [Installation](README.md#installation) and [Quick Start](README.md#quick-start) cover most first-run problems, and [Configuration](README.md#configuration) explains every setting the tool reads.
+Start with the [documentation](https://misiektoja.github.io/steam_monitor/). [Installation](https://misiektoja.github.io/steam_monitor/installation/) and [Setup & First Run](https://misiektoja.github.io/steam_monitor/setup-and-first-run/) cover most first-run problems, [Configuration](https://misiektoja.github.io/steam_monitor/configuration/) explains every setting the tool reads and [Troubleshooting](https://misiektoja.github.io/steam_monitor/troubleshooting/) covers what to do when a check fails.
 
 ## Check your setup first
 

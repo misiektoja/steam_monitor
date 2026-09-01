@@ -20,8 +20,6 @@ Edit the `steam_monitor.conf` file and change any desired configuration options 
 
 Passing a filename that already exists copies the previous file to a timestamped `.bak` beside it before writing, and prints where it went, so regenerating the template never loses your edits.
 
-By default every outbound request verifies TLS certificates. Set `VERIFY_SSL = False` only on a network that intercepts TLS with its own certificate authority, and understand that it removes protection against an intercepted connection.
-
 ## Target Profile
 
 Save the monitored profile in the configuration file so you do not have to repeat it on every run:
@@ -145,6 +143,14 @@ steam_monitor <steam_target> --env-file none
 ```
 
 As a fallback, you can also store secrets in the configuration file or source code.
+
+## TLS Verification
+
+The tool verifies the TLS certificate of every server it contacts: the Steam Web API, the connectivity check endpoint and, when enabled, the webhook service.
+
+Set `VERIFY_SSL` to `False` only on a network that intercepts TLS with its own certificate authority, such as a corporate proxy. With verification off, an intercepted connection cannot be told apart from the real service.
+
+The startup summary shows `TLS verification` and [`--doctor`](troubleshooting.md#doctor-preflight) reports a warning while it is off.
 
 ## Check Intervals
 

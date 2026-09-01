@@ -365,7 +365,8 @@ CROSS_TOOL_STRINGS = (
     "Secrets go to the dotenv file. Non-secret settings go to the config file.",
     "Detected install method: ",
     "This value is required.",
-    "This secret is required and cannot be empty.",
+    "Try entering the {label} again?",
+    "Continue without the {label}? {consequence}",
     "Enter a positive duration such as 120, 2m, 1.5h, 1h 30m or 1d.",
     "Configure email notifications?",
     "Which email notifications should be enabled?",
@@ -405,7 +406,6 @@ CROSS_TOOL_STRINGS = (
     "seconds or use s/m/h/d",
     "  Enter a positive whole number.",
     "  This value is required.",
-    "  This secret is required and cannot be empty.",
     "  Please answer 'y' or 'n'.",
     "  Enter a positive duration such as 120, 2m, 1.5h, 1h 30m or 1d.",
     # Setup summary rows, which the sibling monitors render from the same aligned label list

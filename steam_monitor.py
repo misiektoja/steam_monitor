@@ -447,6 +447,7 @@ PRIVACY_GUIDE_URL = f"{DOCS_BASE_URL}/setup-and-first-run/#user-privacy-settings
 SMTP_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#smtp-settings"
 WEBHOOK_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#webhook-settings"
 SECRETS_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#storing-secrets"
+TLS_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#tls-verification"
 USAGE_GUIDE_URL = f"{DOCS_BASE_URL}/usage/"
 STEAM_API_KEY_REGISTRATION_URL = "https://steamcommunity.com/dev/apikey"
 STEAM_TARGET_FORMS = "Steam64 ID, Steam3 identifier, vanity name or full profile URL"
@@ -513,6 +514,7 @@ from datetime import datetime
 from dateutil import relativedelta
 import calendar
 import requests as req
+import urllib3
 import signal
 import smtplib
 import ssl
@@ -741,12 +743,22 @@ def create_timestamped_backup(destination, attempts=100):
     raise OSError(f"Could not create a unique backup for '{destination_path}' after {attempts} attempts")
 
 
+# Silences the repeated certificate warning once verification is off, so the choice is reported by the summary and the doctor instead of on every request
+def apply_tls_verification_setting():
+    if not VERIFY_SSL:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
 # Returns a Steam Web API client whose session honors the configured TLS verification setting
 def steam_web_api_client(api_key=None):
     selected_key = STEAM_API_KEY if api_key is None else api_key
     # Interfaces are loaded manually because the automatic load fires before the session can be configured
     client = steam.webapi.WebAPI(key=selected_key, auto_load_interfaces=False)
-    client.session.verify = VERIFY_SSL
+    # A release that moves the session should still start, verifying, rather than fail on the missing attribute
+    try:
+        client.session.verify = VERIFY_SSL
+    except AttributeError as exc:
+        print_debug(f"TLS verification could not be applied to the Steam Web API session: {exc}")
     client.load_interfaces(client.fetch_interfaces())
     return client
 
@@ -1934,7 +1946,7 @@ def sanitize_error_text(value):
 
 # Every recovery category the tool can report, kept closed so a message is testable, deduplicable and translatable later
 RECOVERY_CODES = frozenset({
-    "config.missing", "config.invalid",
+    "config.missing", "config.invalid", "config.insecure",
     "dependency.missing",
     "secret.missing",
     "auth.api_key_invalid", "auth.rejected",
@@ -2726,6 +2738,12 @@ def doctor_check_configuration(config_path=None, env_path=None, target_value=Non
         checks.append(make_doctor_check("Configuration", "PASS", "No dotenv file selected", "Using environment variables and other configured sources"))
     checks.extend(doctor_secret_checks(env_path))
 
+    if VERIFY_SSL:
+        checks.append(make_doctor_check("Configuration", "PASS", "TLS certificate verification is on", "Every outbound request checks the server certificate"))
+    else:
+        advice = make_recovery_advice("config.insecure", "TLS certificate verification is off", recovery_fix_with_guide("Set VERIFY_SSL back to True unless this network intercepts TLS with its own certificate authority", TLS_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "WARN", "TLS certificate verification is off", "VERIFY_SSL is False, so an intercepted connection cannot be told apart from the real service", advice))
+
     checks.extend(doctor_output_destination_checks(target_value))
     return checks
 
@@ -3025,6 +3043,8 @@ def _wizard_ask_text(question, default="", required=False, input_func=None):
         if answer or not required:
             return answer
         print("  This value is required.")
+        if not _wizard_offer_retry(question, input_func=input_func):
+            return ""
 
 
 # Asks one yes or no question with a visible default
@@ -3039,6 +3059,13 @@ def _wizard_ask_yes_no(question, default=True, input_func=None):
         if answer in ("n", "no"):
             return False
         print("  Please answer 'y' or 'n'.")
+
+
+# Offers the one way out after an entry the wizard cannot use, so declining keeps every answer already given
+def _wizard_offer_retry(label, consequence="", input_func=None):
+    if consequence:
+        return not _wizard_ask_yes_no(f"Continue without the {label}? {consequence}", default=False, input_func=input_func)
+    return _wizard_ask_yes_no(f"Try entering the {label} again?", default=True, input_func=input_func)
 
 
 # Asks one numbered multiple-choice question and returns the chosen index
@@ -3100,14 +3127,10 @@ def _wizard_ask_duration(question, default, input_func=None):
 
 
 # Asks one secret through a hidden prompt, so it never reaches the screen or the shell history
-def _wizard_ask_secret(question, getpass_func=None, required=False):
+def _wizard_ask_secret(question, getpass_func=None):
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
-    while True:
-        # Colorized like the visible prompts, so a hidden answer does not look like a different question
-        value = hidden_prompt(colorize("info", f"{question}: ")).strip()
-        if value or not required:
-            return value
-        print("  This secret is required and cannot be empty.")
+    # Colorized like the visible prompts, so a hidden answer does not look like a different question
+    return str(hidden_prompt(colorize("info", f"{question}: "))).strip()
 
 
 # Renders one configuration file from the built-in template with the chosen values substituted in
@@ -3255,7 +3278,8 @@ def _wizard_collect_auth_section(state, input_func=None, getpass_func=None, vali
     while True:
         api_key = _wizard_ask_secret("Steam Web API key", getpass_func=getpass_func)
         if not api_key:
-            if _wizard_ask_yes_no("Continue without a key? Nothing can be monitored until one is set", default=False, input_func=input_func):
+            # Monitoring cannot run without it, so leaving it unset has to be a decision rather than a fallthrough
+            if not _wizard_offer_retry("Steam Web API key", "Nothing can be monitored until one is set", input_func=input_func):
                 return
             continue
         if validate(api_key):
@@ -3263,20 +3287,45 @@ def _wizard_collect_auth_section(state, input_func=None, getpass_func=None, vali
             print("  Steam accepted the key.")
             return
         print("  Steam rejected that key. Check it was copied in full.")
+        # A key Steam keeps rejecting cannot be corrected from inside the loop, so the wizard must be leavable here too
+        if not _wizard_offer_retry("Steam Web API key", input_func=input_func):
+            return
+
+
+# Switches every email alert off together, so an abandoned answer cannot leave half a mail server configured
+def _wizard_disable_email(state):
+    for key in WIZARD_EMAIL_NOTIFICATION_KEYS + ("STEAM_LEVEL_XP_NOTIFICATION", "FRIENDS_NOTIFICATION", "GAMES_LIBRARY_NOTIFICATION"):
+        state.config_values[key] = False
+
+
+# Reports whether one required mail server answer was abandoned, switching the channel off when it was
+def _wizard_email_answer_missing(state, key):
+    if state.config_values.get(key):
+        return False
+    print("  Email notifications stay off until every mail server setting is answered.")
+    _wizard_disable_email(state)
+    return True
 
 
 # Asks whether to send email alerts and collects only the settings that choice needs
 def _wizard_collect_email_section(state, input_func=None, getpass_func=None):
     if not _wizard_ask_yes_no("Configure email notifications?", default=False, input_func=input_func):
-        for key in WIZARD_EMAIL_NOTIFICATION_KEYS + ("STEAM_LEVEL_XP_NOTIFICATION", "FRIENDS_NOTIFICATION", "GAMES_LIBRARY_NOTIFICATION"):
-            state.config_values[key] = False
+        _wizard_disable_email(state)
         return
     state.config_values["SMTP_HOST"] = _wizard_ask_text("SMTP host", default=_wizard_default(state.config_values.get("SMTP_HOST")), required=True, input_func=input_func)
+    if _wizard_email_answer_missing(state, "SMTP_HOST"):
+        return
     state.config_values["SMTP_PORT"] = _wizard_ask_positive_int("SMTP port", int(state.config_values.get("SMTP_PORT") or 587), input_func=input_func)
     state.config_values["SMTP_SSL"] = _wizard_ask_yes_no("Enable TLS/SSL for SMTP?", default=True, input_func=input_func)
     state.config_values["SMTP_USER"] = _wizard_ask_text("SMTP username", default=_wizard_default(state.config_values.get("SMTP_USER")), required=True, input_func=input_func)
+    if _wizard_email_answer_missing(state, "SMTP_USER"):
+        return
     state.config_values["SENDER_EMAIL"] = _wizard_ask_text("Sender email", default=_wizard_default(state.config_values.get("SENDER_EMAIL")), required=True, input_func=input_func)
+    if _wizard_email_answer_missing(state, "SENDER_EMAIL"):
+        return
     state.config_values["RECEIVER_EMAIL"] = _wizard_ask_text("Receiver email", default=_wizard_default(state.config_values.get("RECEIVER_EMAIL")), required=True, input_func=input_func)
+    if _wizard_email_answer_missing(state, "RECEIVER_EMAIL"):
+        return
     password = _wizard_ask_secret("SMTP password", getpass_func=getpass_func)
     if password:
         state.secret_updates["SMTP_PASSWORD"] = password
@@ -3302,12 +3351,17 @@ def _wizard_collect_email_section(state, input_func=None, getpass_func=None):
     state.config_values.update(selected)
 
 
+# Switches the channel and every alert it owns off together, so a half-configured webhook cannot be written
+def _wizard_disable_webhook(state):
+    state.config_values["WEBHOOK_ENABLED"] = False
+    state.config_values["NTFY_IMAGES"] = False
+    state.config_values.update({name: False for name in WIZARD_WEBHOOK_NOTIFICATION_KEYS})
+
+
 # Asks whether to send webhook alerts and collects the provider, the hidden URL and the alert choices
 def _wizard_collect_webhook_section(state, input_func=None, getpass_func=None):
     if not _wizard_ask_yes_no("Set up webhook alerts (Discord, ntfy etc.)?", default=False, input_func=input_func):
-        state.config_values["WEBHOOK_ENABLED"] = False
-        state.config_values["NTFY_IMAGES"] = False
-        state.config_values.update({name: False for name in WIZARD_WEBHOOK_NOTIFICATION_KEYS})
+        _wizard_disable_webhook(state)
         return
     provider_choice = _wizard_ask_choice("Which webhook service should receive alerts?", [
         ("Discord", "Sends a Discord embed to one channel webhook."),
@@ -3333,10 +3387,19 @@ def _wizard_collect_webhook_section(state, input_func=None, getpass_func=None):
             if validate_webhook_url(webhook_url):
                 state.secret_updates["WEBHOOK_URL"] = webhook_url
                 break
+            # Nothing can be delivered without a destination, so giving up has to stay reachable from the prompt
+            if not webhook_url:
+                if not _wizard_offer_retry("webhook URL", "Webhook alerts stay off until one is set", input_func=input_func):
+                    _wizard_disable_webhook(state)
+                    return
+                continue
             if provider == "ntfy":
                 print("  Enter a complete HTTPS ntfy topic URL or a topic name containing up to 64 letters, numbers, dashes or underscores.")
             else:
                 print("  That does not look like a complete HTTPS webhook URL. Copy it from the webhook service and try again.")
+            if not _wizard_offer_retry("webhook URL", input_func=input_func):
+                _wizard_disable_webhook(state)
+                return
     if provider == "ntfy":
         _wizard_collect_ntfy_access_token(state, input_func=input_func, getpass_func=getpass_func)
     state.config_values["NTFY_IMAGES"] = _wizard_collect_ntfy_images(input_func=input_func) if provider == "ntfy" else False
@@ -3384,10 +3447,13 @@ def _wizard_collect_ntfy_access_token(state, input_func=None, getpass_func=None)
         return
     while True:
         token = _wizard_ask_secret("Paste the ntfy access token only", getpass_func=getpass_func)
-        if token and "\r" not in token and "\n" not in token and not token.casefold().startswith(("bearer ", "basic ")):
-            break
+        if not token or ("\r" not in token and "\n" not in token and not token.casefold().startswith(("bearer ", "basic "))):
+            if token:
+                state.secret_updates["NTFY_ACCESS_TOKEN"] = token
+            return
         print("  Paste only the access token without a Bearer or Basic prefix.")
-    state.secret_updates["NTFY_ACCESS_TOKEN"] = token
+        if not _wizard_offer_retry("ntfy access token", input_func=input_func):
+            return
 
 
 # Offers artwork attachments for ntfy alerts, which need the optional Pillow package
@@ -3772,6 +3838,7 @@ def build_startup_summary(config_path=None, env_path=None, log_path=None):
     output_state = str(log_path) if logging_enabled else "Terminal only (logging disabled)"
     rows = [
         StartupSummaryRow("Polling intervals", f"[offline: {display_time(STEAM_CHECK_INTERVAL)}] [online: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]", concise=True),
+        StartupSummaryRow("TLS verification", "On" if VERIFY_SSL else "Off, server certificates are not checked", concise=not VERIFY_SSL),
         StartupSummaryRow("Notifications (email)", _startup_notification_state(_startup_email_notification_categories()), concise=True),
         StartupSummaryRow("Notifications (webhook)", _startup_notification_state(_startup_webhook_notification_categories()), concise=True),
         StartupSummaryRow("Output", output_state, concise=True, full=False, log=False),
@@ -6057,6 +6124,8 @@ def main():
 
     # Reapplied because the config file may carry VERBOSE_MODE or DEBUG_MODE values that must not beat an explicit flag
     apply_diagnostic_cli_flags(args)
+
+    apply_tls_verification_setting()
 
     # Runs after the config file is read so a persisted TARGET_STEAM_ID counts as a target
     if len(sys.argv) == 1 and not TARGET_STEAM_ID:
