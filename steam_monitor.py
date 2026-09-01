@@ -660,6 +660,11 @@ def quote_command_argument(argument):
     return shlex.quote(text)
 
 
+# True when a command writes the dotenv file itself, so it refuses an --env-file that switches dotenv loading off
+def command_writes_dotenv(arguments=()):
+    return any(str(argument) == "--setup" or str(argument).startswith("--set-") for argument in arguments)
+
+
 # Returns a copy-pasteable command line for the detected install method, carrying non-default config and dotenv paths
 def render_command(arguments=None, include_paths=True, config_path=None, env_path=None):
     parts = list(install_command_prefix())
@@ -669,7 +674,9 @@ def render_command(arguments=None, include_paths=True, config_path=None, env_pat
     selected_env = env_path if env_path is not None else (DOTENV_FILE if include_paths else None)
     if selected_config:
         parts.extend(["--config-file", str(selected_config)])
-    if selected_env and str(selected_env).casefold() != "none":
+    # The "none" sentinel is carried so the printed command checks the setup this run checked, except into a
+    # command that writes the dotenv file, since those refuse the sentinel at their own argument gate
+    if selected_env and not (str(selected_env).casefold() == "none" and command_writes_dotenv(arguments or ())):
         parts.extend(["--env-file", str(selected_env)])
     return " ".join(quote_command_argument(part) for part in parts)
 

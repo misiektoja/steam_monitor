@@ -79,12 +79,14 @@ def test_an_explicit_path_wins_over_the_active_ones(monkeypatch):
     assert rendered == "steam_monitor --send-test-webhook --env-file /home/user/chosen.env"
 
 
-# Verifies a disabled dotenv search is never rendered as a path
-def test_a_disabled_dotenv_search_is_not_rendered(monkeypatch):
+# Verifies the disabled dotenv search reaches the commands that accept it and stays out of the ones that refuse it
+def test_a_disabled_dotenv_search_is_carried_only_where_it_is_accepted(monkeypatch):
     monkeypatch.setattr("sys.argv", ["/usr/local/bin/steam_monitor"])
     monkeypatch.setattr(monitor, "DOTENV_FILE", "none")
 
-    assert monitor.render_command(["--version"]) == "steam_monitor --version"
+    assert monitor.render_command(["--doctor"]) == "steam_monitor --doctor --env-file none"
+    assert monitor.render_command(["--set-steam-api-key"]) == "steam_monitor --set-steam-api-key"
+    assert monitor.render_command(["--setup"]) == "steam_monitor --setup"
 
 
 # Verifies arguments containing spaces are quoted for the shell the user pastes into
