@@ -789,6 +789,21 @@ def resolve_status_file(username):
     return f"steam_{username}_last_status.json"
 
 
+# Returns the first player entry of a profile lookup response, or None when the response carries none
+def player_summary_entry(summary):
+    try:
+        return summary["response"]["players"][0]
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
+# Returns the persona name a player entry carries, or an empty string when there is none
+def player_display_name(player):
+    if not isinstance(player, dict):
+        return ""
+    return sanitize_untrusted_text(player.get("personaname") or "")
+
+
 # Writes JSON to a file atomically, so a crash cannot leave a half-written state file behind
 def write_json_atomic(destination, payload, mode=None):
     destination_path = Path(destination).expanduser()
@@ -3200,12 +3215,20 @@ def doctor_output_destination_checks(target_value=None):
         checks.append(doctor_destination_check("Profile CSV destination", PROFILE_CSV_FILE))
     else:
         checks.append(make_doctor_check("Configuration", "PASS", "Profile CSV logging is disabled"))
-    # The default name carries the persona name, which is only known after the first check
+    # A configured path is fixed, so it is checked here. The default name carries the persona name and waits for the profile lookup
     if STEAM_STATUS_FILE:
         checks.append(doctor_destination_check("Status destination", STEAM_STATUS_FILE))
-    else:
-        checks.append(make_doctor_check("Configuration", "PASS", "Status file will be finalized after the first check", "Base name: steam_<user_display_name>_last_status.json in the working directory"))
     return checks
+
+
+# Reports the default status file once the profile lookup has returned the persona name its name carries
+def doctor_default_status_file_check(report):
+    if STEAM_STATUS_FILE:
+        return []
+    display_name = player_display_name(report.player_summary)
+    if display_name:
+        return [doctor_destination_check("Status destination", resolve_status_file(display_name))]
+    return [make_doctor_check("Configuration", "PASS", "Status file will be finalized after the first check", "Base name: steam_<user_display_name>_last_status.json in the working directory")]
 
 
 # Returns all type and range errors in settings that control runtime timing or counts
@@ -3549,7 +3572,7 @@ def run_doctor(target_value=None, config_path=None, env_path=None):
             ("configuration", lambda: doctor_check_configuration(config_path, env_path, target_value)),
             ("connectivity", lambda: doctor_check_connectivity()),
             ("authentication", lambda: doctor_check_authentication(report)),
-            ("the monitored profile", lambda: doctor_check_target(report, target_value)),
+            ("the monitored profile", lambda: doctor_check_target(report, target_value) + doctor_default_status_file_check(report)),
             ("notifications", lambda: doctor_check_email_notifications(report) + doctor_check_webhook_notifications(report)),
         ):
             if progress is not None:
@@ -4319,7 +4342,7 @@ def _wizard_print_setup_summary(state):
         ("Webhook alerts", ", ".join(enabled_webhooks) if enabled_webhooks else "none"),
         ("Output log", "disabled" if state.config_values.get("DISABLE_LOGGING") else "enabled"),
         ("CSV output", state.config_values.get("CSV_FILE") or "disabled"),
-        ("Status file", state.config_values.get("STEAM_STATUS_FILE") or "default"),
+        ("Status file", state.config_values.get("STEAM_STATUS_FILE") or "steam_<user_display_name>_last_status.json"),
         ("Config destination", state.config_path),
         ("Dotenv destination", state.env_path),
         ("Install method", install_method_display_name()),
@@ -4608,7 +4631,7 @@ def emit_startup_summary(rows, show_full=False, stream=None):
 
 
 # Builds every startup summary row, deciding per row whether it belongs in the concise view, the full view and the log
-def build_startup_summary(target=None, config_path=None, env_path=None, log_path=None):
+def build_startup_summary(target=None, config_path=None, env_path=None, log_path=None, display_name=None):
     dotenv_secrets, environment_secrets, config_secrets, command_line_secrets = doctor_secret_sources(env_path)
     from_dotenv, from_environment, from_config, from_command_line = sorted(dotenv_secrets), sorted(environment_secrets), sorted(config_secrets), sorted(command_line_secrets)
     logging_enabled = bool(log_path) and not DISABLE_LOGGING
@@ -4629,7 +4652,7 @@ def build_startup_summary(target=None, config_path=None, env_path=None, log_path
         StartupSummaryRow("Liveness output", display_time(LIVENESS_CHECK_INTERVAL) if LIVENESS_CHECK_INTERVAL else "Disabled", concise=bool(LIVENESS_CHECK_INTERVAL)),
         StartupSummaryRow("CSV output", CSV_FILE or "Disabled", concise=bool(CSV_FILE)),
         StartupSummaryRow("Profile CSV output", PROFILE_CSV_FILE or "Disabled", concise=bool(PROFILE_CSV_FILE)),
-        StartupSummaryRow("Status file", STEAM_STATUS_FILE or "steam_<user_display_name>_last_status.json"),
+        StartupSummaryRow("Status file", STEAM_STATUS_FILE or (resolve_status_file(display_name) if display_name else "steam_<user_display_name>_last_status.json")),
         StartupSummaryRow("Terminal truncation", f"{TRUNCATE_CHARS} chars" if TRUNCATE_CHARS else "Disabled", concise=bool(TRUNCATE_CHARS)),
         StartupSummaryRow("Install method", install_method_display_name()),
         StartupSummaryRow("Secrets from dotenv", ", ".join(from_dotenv) if from_dotenv else "None"),
@@ -5513,7 +5536,20 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
 
 
 # Main function that monitors gaming activity of the specified Steam user
-def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
+# Fetches the profile once before the startup summary, so the status file row can name the persona the default carries
+def fetch_player_summary(steamid):
+    try:
+        debug_print("Opening the Steam Web API", steamid=steamid, key=mask_secret(STEAM_API_KEY))
+        summary = steam_web_api_client().call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
+        debug_print("Opening the Steam Web API", steamid=steamid, received="profile", outcome="OK")
+        return summary
+    except Exception as exc:
+        # The monitor loop repeats the lookup and reports its failure with recovery advice
+        debug_swallowed_exception("Opening the Steam Web API", exc)
+        return None
+
+
+def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None, player_summary=None):
 
     mark_monitoring_started()
 
@@ -5550,7 +5586,8 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     try:
         debug_print("Opening the Steam Web API", steamid=steamid, key=mask_secret(STEAM_API_KEY))
         s_api = steam_web_api_client()
-        s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
+        # The startup summary already fetched the profile when it could, so that response is reused here
+        s_user = player_summary if player_summary is not None else s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
         s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
         debug_print("Opening the Steam Web API", steamid=steamid, received="profile and recent games", outcome="OK")
     except Exception as e:
@@ -7247,7 +7284,8 @@ def main():
         verbose_print("Webhook notifications are off because WEBHOOK_URL is not a complete HTTPS link")
         WEBHOOK_ENABLED = False
 
-    emit_startup_summary(build_startup_summary(s_id, cfg_path, env_path, FINAL_LOG_PATH), show_full=full_startup_summary_enabled())
+    player_summary = fetch_player_summary(s_id)
+    emit_startup_summary(build_startup_summary(s_id, cfg_path, env_path, FINAL_LOG_PATH, player_display_name(player_summary_entry(player_summary))), show_full=full_startup_summary_enabled())
 
     if NTFY_IMAGES and not NTFY_IMAGES_AVAILABLE:
         NTFY_IMAGES = False
@@ -7272,7 +7310,7 @@ def main():
         signal.signal(signal.SIGABRT, decrease_active_check_signal_handler)
         signal.signal(signal.SIGHUP, reload_secrets_signal_handler)
 
-    steam_monitor_user(s_id, CSV_FILE, PROFILE_CSV_FILE)
+    steam_monitor_user(s_id, CSV_FILE, PROFILE_CSV_FILE, player_summary=player_summary)
 
     sys.stdout = stdout_bck
     sys.exit(0)

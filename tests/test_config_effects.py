@@ -57,6 +57,7 @@ def run_startup(monkeypatch, argv, config_path, env_path="none", exported_api_ke
     monkeypatch.setattr(monitor, "load_config_file", recording_load_config_file)
     monkeypatch.setattr(monitor, "check_internet", recording_check_internet)
     monkeypatch.setattr(monitor, "steam_monitor_user", stop_before_monitoring)
+    monkeypatch.setattr(monitor, "fetch_player_summary", lambda steamid: None)
     monkeypatch.setenv("STEAM_API_KEY", exported_api_key)
     command = ["steam_monitor.py"] + ([str(target)] if target is not None else []) + ["--env-file", str(env_path), "--config-file", str(config_path)] + argv
     monkeypatch.setattr("sys.argv", command)
