@@ -4473,7 +4473,6 @@ def load_config_file(config_path, namespace=None, report_errors=True):
         selected_namespace.update(parsed_values)
         if report_errors:
             debug_print("Configuration applied", path=config_path, settings=len(parsed_values))
-            verbose_print(f"Loaded {len(parsed_values)} settings from the configuration file")
         if retired_settings and report_errors:
             print(f"* Note: {describe_retired_settings(retired_settings, chr(39) + str(config_path) + chr(39))}")
         return True
@@ -6563,6 +6562,7 @@ def main():
         GAMES_LIBRARY_NOTIFICATION = True
 
     if SMTP_HOST.startswith("your_smtp_server_"):
+        verbose_print("Email notifications are off because SMTP_HOST is still the shipped placeholder")
         ACTIVE_INACTIVE_NOTIFICATION = False
         GAME_CHANGE_NOTIFICATION = False
         STATUS_NOTIFICATION = False
