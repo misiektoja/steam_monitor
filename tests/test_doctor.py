@@ -1002,3 +1002,15 @@ def test_the_summary_is_rendered_after_the_delivery_tests():
         assert max(offers) < min(summaries), f"{function.name} renders the summary before the delivery tests"
 
     assert checked, "no doctor entry point runs the delivery tests and then the summary"
+
+
+# Verifies the Doctor target row reuses the startup gate's advice, so the two surfaces cannot word it differently
+def test_a_missing_target_reuses_the_startup_gate_advice(doctor_globals):
+    report = monitor.DoctorReport()
+
+    checks = monitor.doctor_check_target(report, None)
+
+    assert checks[0].status == "WARN"
+    assert checks[0].advice is not None
+    assert checks[0].advice.code == "target.missing"
+    assert checks[0].advice.fix == monitor.classify_recovery_error(context="target.missing").fix

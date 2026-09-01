@@ -38,6 +38,8 @@ Guide: https://misiektoja.github.io/steam_monitor/setup-and-first-run/#steam-web
 
 The `To fix:` line names the command for the way you installed the tool and carries the `--config-file` or `--env-file` you started with, so it can be pasted as-is. The `Guide:` line opens the page of this documentation that covers the failure.
 
+Startup uses the same shape. Starting without a profile to watch reports the missing target and the forms it accepts rather than printing the whole help screen.
+
 Adding `--debug` appends a `Technical detail:` line with the underlying exception. That detail is for a bug report; the `To fix:` line is the one to act on. Secret values are redacted from all three.
 
 During monitoring, a failure that keeps recurring prints its one-line summary each cycle but repeats the `To fix:` line only when the kind of failure changes, so a long Steam outage cannot fill the log with the same paragraph. A failure that is worth retrying, such as a timeout or a Steam outage, gets one short retry before the tool falls back to waiting a full polling interval. A rate limit waits for the period Steam asked for, and a rejected API key is not retried at all.

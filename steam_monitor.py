@@ -2227,7 +2227,7 @@ RECOVERY_CODES = frozenset({
     "auth.api_key_invalid", "auth.rejected",
     "network.unavailable", "network.timeout",
     "steam.rate_limited", "steam.unavailable",
-    "target.invalid", "target.not_found", "target.not_visible",
+    "target.missing", "target.invalid", "target.not_found", "target.not_visible",
     "smtp.invalid", "smtp.authentication", "smtp.connection",
     "webhook.invalid", "webhook.rejected", "webhook.rate_limited", "webhook.connection",
     "file.unreadable", "file.unwritable",
@@ -2312,6 +2312,9 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
                 return advice("smtp.invalid", safe_detail or "The mail server settings are incomplete", f"Set SMTP_HOST, SMTP_USER, SENDER_EMAIL and RECEIVER_EMAIL, or run {render_command(['--setup'])}", False, guide)
             return advice("smtp.authentication", safe_detail or "The mail server did not accept the password", f"Use an app password when the provider requires one then run {flag} again", False, guide)
         return advice("webhook.invalid", safe_detail or "The webhook URL was not changed", f"Copy a complete Discord or ntfy webhook URL then run {flag} again", False, guide)
+
+    if context == "target.missing":
+        return advice("target.missing", safe_detail or "No Steam profile is configured", f"Pass the profile to watch as a {STEAM_TARGET_FORMS}: {render_command(['<steam_target>'])}", False, QUICK_START_GUIDE_URL)
 
     if context == "target":
         if any(term in message for term in ("rate limit", "429")) or status == 429:
@@ -3095,7 +3098,7 @@ def doctor_check_authentication(report):
 # Confirms the monitored profile exists and is visible, reusing the client the authentication check opened
 def doctor_check_target(report, target_value=None):
     if not target_value:
-        advice = make_recovery_advice("target.invalid", "No Steam profile is configured", recovery_fix_with_guide(f"Pass a {STEAM_TARGET_FORMS}", USAGE_GUIDE_URL), False)
+        advice = classify_recovery_error(context="target.missing")
         return [make_doctor_check("Target", "WARN", advice.summary, "Nothing will be monitored until one is given", advice)]
     if report.steam_client is None:
         return [make_doctor_check("Target", "SKIP", "The monitored profile was not checked", "The Steam Web API key did not validate, so no lookup was attempted")]
@@ -6626,23 +6629,6 @@ def main():
     if len(sys.argv) == 1 and not TARGET_STEAM_ID:
         sys.exit(print_welcome_screen())
 
-    # Allow empty targets if utility flags are used or the config file names one
-    if not args.steam64_id and not args.resolve_community_url and not TARGET_STEAM_ID:
-        utility_flags = {
-            "--no-color", "-h", "--help",
-            "--version", "--generate-config",
-            "--send-test-email", "--send-test-webhook", "--doctor", "--setup", "--set-smtp-password",
-            "--webhook", "--no-webhook", "--webhook-errors", "--no-webhook-error-notify"
-        }
-        utility_action = args.send_test_email or args.send_test_webhook or args.doctor or args.setup or args.set_smtp_password
-        complex_args = [] if utility_action else [a for a in sys.argv[1:] if a not in utility_flags]
-
-        if complex_args or not utility_action:
-            print("\n* Error: A Steam profile target needs to be defined !\n", flush=True)
-
-            parser.print_help(sys.stderr)
-            sys.exit(1)
-
     if args.env_file:
         DOTENV_FILE = os.path.expanduser(args.env_file)
     else:
@@ -6691,6 +6677,13 @@ def main():
     if args.no_color is True:
         COLORED_OUTPUT = False
     init_color_output(stdout_bck)
+
+    # A target is optional only for the utility actions below or when the config file names one. Checked after the
+    # dotenv file is resolved, so the command this prints carries the same paths the run was given
+    if not args.steam64_id and not args.resolve_community_url and not TARGET_STEAM_ID:
+        if not (args.send_test_email or args.send_test_webhook or args.doctor or args.setup or args.set_smtp_password):
+            print_recovery_error(context="target.missing", detail="A Steam profile target needs to be defined")
+            sys.exit(1)
 
     if args.set_smtp_password:
         # Runs after the config file so the mail server it signs in to is the one monitoring would use

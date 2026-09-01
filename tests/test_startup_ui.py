@@ -618,3 +618,14 @@ def test_the_shared_summary_rows_match_the_sibling_tools(summary_globals):
     assert [row.label for row in rows if row.label in SHARED_ROW_ORDER] == list(SHARED_ROW_ORDER)
     # The renderer pads "<label>:" into a 30-character column, so a longer label swallows the separating space
     assert max(len(row.label) for row in rows) <= 28
+
+
+# Verifies a run without a target reports the shared three-line block rather than dumping the whole help screen
+def test_a_missing_target_reports_the_shared_error_block():
+    result = run_cli("--config-file", "none", "--env-file", "none")
+
+    assert result.returncode == 1
+    assert "* Error: A Steam profile target needs to be defined" in result.stdout
+    assert f"To fix: Pass the profile to watch as a {monitor.STEAM_TARGET_FORMS}" in result.stdout
+    assert f"Guide: {monitor.QUICK_START_GUIDE_URL}" in result.stdout
+    assert "usage: steam_monitor" not in result.stdout + result.stderr

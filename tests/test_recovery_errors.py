@@ -229,3 +229,29 @@ def test_no_error_is_printed_outside_the_classifier():
                 offenders.append(f"{number}: {stripped}")
 
     assert not offenders, "errors printed without recovery advice:\n" + "\n".join(offenders)
+
+
+# Verifies the missing-target advice names the accepted forms and a command carrying the paths this run was given
+def test_a_missing_target_advises_the_accepted_forms(restored_globals):
+    monitor.CLI_CONFIG_PATH = "/tmp/steam_monitor.conf"
+    monitor.DOTENV_FILE = "/tmp/steam_monitor.env"
+
+    advice = monitor.classify_recovery_error(context="target.missing")
+
+    assert advice.code == "target.missing"
+    assert monitor.STEAM_TARGET_FORMS in advice.fix
+    assert "--config-file /tmp/steam_monitor.conf" in advice.fix
+    assert "--env-file /tmp/steam_monitor.env" in advice.fix
+    assert f"Guide: {monitor.QUICK_START_GUIDE_URL}" in advice.fix
+
+
+# Verifies the startup gate can restate the missing target in its own words without losing the shared fix
+def test_a_missing_target_keeps_the_shared_fix_under_its_own_summary(restored_globals):
+    monitor.CLI_CONFIG_PATH = ""
+    monitor.DOTENV_FILE = ""
+
+    advice = monitor.classify_recovery_error(context="target.missing", detail="A Steam profile target needs to be defined")
+
+    assert advice.code == "target.missing"
+    assert advice.summary == "A Steam profile target needs to be defined"
+    assert advice.fix == monitor.classify_recovery_error(context="target.missing").fix
