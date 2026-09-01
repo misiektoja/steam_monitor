@@ -33,16 +33,23 @@ class SecretInputTests(unittest.TestCase):
         if os.name == "posix":
             self.assertEqual(stat.S_IMODE(self.destination.stat().st_mode), 0o600)
 
-    # Verifies the printed next steps carry no placeholder target, so both commands can be pasted as they are
-    def test_next_steps_carry_no_placeholder_target(self):
-        printed = []
-        with patch("builtins.print", side_effect=lambda *args, **kwargs: printed.append(" ".join(str(item) for item in args))):
-            steam_monitor.run_set_steam_api_key(env_file=str(self.destination), interactive=True, getpass_func=lambda prompt: "A" * 32, validator=lambda key: True)
+    # Verifies the monitoring command carries a target only when the config file will not supply one
+    def test_next_steps_carry_the_target_the_config_does_not_supply(self):
+        for saved, expects_placeholder in (("", True), ('TARGET_STEAM_ID = "76561198000000000"', False)):
+            with self.subTest(saved=saved):
+                config_path = Path(self.tempdir.name) / "steam_monitor.conf"
+                config_path.write_text(saved + "\n", encoding="utf-8")
+                destination = Path(self.tempdir.name) / f"secrets{len(saved)}.env"
+                printed = []
+                with patch("steam_monitor.find_config_file", return_value=str(config_path)), patch("builtins.print", side_effect=lambda *args, **kwargs: printed.append(" ".join(str(item) for item in args))):
+                    steam_monitor.run_set_steam_api_key(env_file=str(destination), interactive=True, getpass_func=lambda prompt: "A" * 32, validator=lambda key: True)
 
-        output = "\n".join(printed)
-        self.assertIn("Check setup again:", output)
-        self.assertIn("After Doctor passes, start monitoring:", output)
-        self.assertNotIn("<steam_target>", output)
+                output = "\n".join(printed)
+                self.assertIn("Check setup again:", output)
+                self.assertIn("After Doctor passes, start monitoring:", output)
+                self.assertNotIn("<steam_target>", output.split("After Doctor passes, start monitoring:", 1)[0])
+                self.assertEqual("<steam_target>" in output, expects_placeholder)
+                self.assertNotIn("76561198000000000", output)
 
 
     # Verifies hidden webhook entry saves the URL without displaying it

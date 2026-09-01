@@ -673,6 +673,27 @@ def command_writes_config(arguments=()):
     return any(str(argument) == "--setup" for argument in arguments)
 
 
+# Reads only the persisted target from a config file, so a printed command can omit a positional the config already supplies
+def config_file_target(config_path):
+    if not config_path or str(config_path).casefold() == "none":
+        return ""
+    namespace = {}
+    if not load_config_file(config_path, namespace=namespace, report_errors=False):
+        return ""
+    return str(namespace.get("TARGET_STEAM_ID") or "")
+
+
+# Returns the targets for the printed doctor and monitoring commands, dropping one the effective config already supplies
+def command_targets(explicit_target=None, saved_target=None, placeholder="<steam_target>"):
+    saved = str(saved_target or "")
+    known = str(explicit_target or "") or saved
+    if not known:
+        # Monitoring cannot run without a target, so it keeps the placeholder while the doctor reports the gap itself
+        return None, placeholder
+    printed = None if known == saved else known
+    return printed, printed
+
+
 # Returns a copy-pasteable command line for the detected install method, carrying non-default config and dotenv paths
 def render_command(arguments=None, include_paths=True, config_path=None, env_path=None):
     parts = list(install_command_prefix())
@@ -2028,8 +2049,9 @@ def run_set_steam_api_key(env_file=None, interactive=None, input_func=None, getp
     if result.get("backup_path"):
         print(f"* Previous private settings file backed up to: {result['backup_path']}")
     print()
+    monitor_target = command_targets(None, config_file_target(find_config_file()))[1]
     _wizard_print_command("Check setup again:", render_command(["--doctor"], include_paths=False, env_path=destination))
-    _wizard_print_command("After Doctor passes, start monitoring:", render_command([], include_paths=False, env_path=destination))
+    _wizard_print_command("After Doctor passes, start monitoring:", render_command([monitor_target] if monitor_target else [], include_paths=False, env_path=destination))
     return str(destination)
 
 
@@ -4291,10 +4313,11 @@ def _wizard_print_command(label, command, suffix=""):
 
 # Prints the command that starts monitoring with the files this run checked, so a report read on its own
 # ends with the next action rather than leaving the reader to assemble the command
-def print_doctor_next_steps(target_value=None, doctor_exit=0):
+def print_doctor_next_steps(target_value=None, saved_target=None, doctor_exit=0):
     print(colorize("header", "\nNext steps\n"))
     label = "After Doctor passes, start monitoring:" if doctor_exit else "Start monitoring:"
-    _wizard_print_command(label, render_command([str(target_value)] if target_value else []))
+    monitor_target = command_targets(target_value, saved_target)[1]
+    _wizard_print_command(label, render_command([monitor_target] if monitor_target else []))
     # No trailing blank line: the command printer already left one and the report must not end on two
     print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}")
 
@@ -6793,7 +6816,7 @@ def main():
         doctor_target = args.resolve_community_url or args.steam64_id or TARGET_STEAM_ID
         doctor_exit = run_doctor(target_value=doctor_target, config_path=cfg_path, env_path=env_path)
         # A target the config file already carries is left out, so the command stays as short as the wizard's
-        print_doctor_next_steps(None if doctor_target == TARGET_STEAM_ID else doctor_target, doctor_exit)
+        print_doctor_next_steps(doctor_target, TARGET_STEAM_ID, doctor_exit)
         sys.exit(doctor_exit)
 
     if not check_internet():

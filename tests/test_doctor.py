@@ -1081,6 +1081,21 @@ def test_a_command_line_target_is_carried_into_the_command(monkeypatch, capsys):
     assert "76561197960435530" in capsys.readouterr().out
 
 
+# Verifies the monitoring command carries a target only when the config file will not supply one
+def test_the_monitoring_command_leaves_out_a_target_the_config_supplies(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", "")
+    monkeypatch.setattr(monitor, "DOTENV_FILE", "")
+
+    monitor.print_doctor_next_steps("76561197960435530", "76561197960435530", doctor_exit=0)
+    saved_transcript = capsys.readouterr().out
+    monitor.print_doctor_next_steps(None, "", doctor_exit=0)
+    unsaved_transcript = capsys.readouterr().out
+
+    assert "76561197960435530" not in saved_transcript
+    assert "<steam_target>" not in saved_transcript
+    assert "<steam_target>" in unsaved_transcript
+
+
 # Verifies Ctrl+C at a delivery prompt ends the run instead of declining one test and asking the next
 def test_a_delivery_prompt_interrupt_ends_the_run(monkeypatch):
     def interrupt(prompt=""):
