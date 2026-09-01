@@ -319,3 +319,18 @@ def test_the_email_placeholder_notice_explains_why_alerts_are_off(tmp_path, monk
     run_startup(monkeypatch, ["--verbose"], config)
 
     assert "Email notifications are off because SMTP_HOST is still the shipped placeholder" in capsys.readouterr().out
+
+
+# Verifies debug keeps whatever is already on the screen, since a cleared terminal loses the run being compared against
+@pytest.mark.parametrize("flag,expected", [("--debug", False), ("--verbose", True)])
+def test_only_debug_mode_keeps_the_screen(tmp_path, monkeypatch, restored_globals, flag, expected):
+    cleared = []
+    monkeypatch.setattr(monitor, "clear_screen", lambda enabled=True: cleared.append(bool(enabled)))
+    monkeypatch.setattr(monitor, "DEBUG_MODE", False)
+    monkeypatch.setattr(monitor, "VERBOSE_MODE", False)
+    config = tmp_path / "steam_monitor.conf"
+    config.write_text("CLEAR_SCREEN = True\nDISABLE_LOGGING = True\n", encoding="utf-8")
+
+    run_startup(monkeypatch, [flag], config)
+
+    assert cleared == [expected]

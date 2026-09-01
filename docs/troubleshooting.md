@@ -46,7 +46,9 @@ During monitoring, a failure that keeps recurring prints its one-line summary ea
 
 Two flags control how much the tool explains about itself.
 
-`--verbose` reports what the tool is doing in plain `* ` lines. It expands the startup summary, which is where the configuration file, dotenv file, install method and the source of each secret are named. During monitoring it stays quiet unless something happens: it explains a liveness banner and reports any tracked feature that could not fire its alert this cycle. Use `--debug` for a line per completed check:
+`--verbose` reports what the tool is doing in plain `* ` lines. It expands the startup summary, which is where the configuration file, dotenv file, install method and the source of each secret are named. During monitoring it stays quiet unless something happens: it explains a liveness banner and reports any tracked feature that could not fire its alert this cycle. Use `--debug` for a line per completed check.
+
+A `--debug` run leaves the terminal as it was instead of clearing it, so the output you are comparing against stays on screen. `--verbose` clears it like an ordinary run.
 
 ```sh
 steam_monitor <steam_target> --verbose
