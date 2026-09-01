@@ -8,6 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import signal
 import pytest
 
 import steam_monitor as monitor
@@ -911,3 +912,20 @@ def test_interrupting_the_launch_offer_keeps_the_saved_setup(tmp_path, monkeypat
     assert "Setup is saved. Start monitoring with the command above when ready." in output
     assert "Setup cancelled" not in output
     assert (tmp_path / "steam_monitor.conf").is_file()
+
+
+# Verifies a prompt runs with Python's default Ctrl+C behavior, so the signal handler cannot pre-empt it
+def test_prompts_restore_the_default_interrupt_handler():
+    observed = {}
+
+    def answer(_prompt):
+        observed["during"] = signal.getsignal(signal.SIGINT)
+        return "value"
+
+    previous_handler = signal.signal(signal.SIGINT, monitor.signal_handler)
+    try:
+        assert monitor._wizard_input("Prompt: ", input_func=answer) == "value"
+        assert observed["during"] is signal.default_int_handler
+        assert signal.getsignal(signal.SIGINT) is monitor.signal_handler
+    finally:
+        signal.signal(signal.SIGINT, previous_handler)

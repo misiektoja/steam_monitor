@@ -1284,6 +1284,23 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
+# Reads one answer with Python's default Ctrl+C behavior, so the prompt reports the outcome instead of the signal handler
+def read_interactively(reader, *args, **kwargs):
+    try:
+        previous_handler = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, signal.default_int_handler)
+    except (ValueError, OSError):
+        # Handlers can only be replaced from the main thread, which is where every prompt runs
+        return reader(*args, **kwargs)
+    try:
+        return reader(*args, **kwargs)
+    finally:
+        try:
+            signal.signal(signal.SIGINT, previous_handler)
+        except (ValueError, OSError):
+            pass
+
+
 # Checks internet connectivity against the configured URL and timeout
 def check_internet(url=None, timeout=None, quiet=False):
     # Resolved at call time so a config file can change these, which binding them as default arguments prevented
@@ -1832,14 +1849,14 @@ def run_set_steam_api_key(env_file=None, interactive=None, input_func=None, getp
     prompt = input if input_func is None else input_func
     if _dotenv_contains_key(destination, "STEAM_API_KEY"):
         try:
-            confirmed = prompt(f"Replace the saved Steam Web API key in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
+            confirmed = read_interactively(prompt, f"Replace the saved Steam Web API key in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
         except (EOFError, KeyboardInterrupt):
             confirmed = False
         if not confirmed:
             raise SecretConfigurationError("Steam Web API key setup was cancelled. The private settings file was not changed.")
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
-        api_key = hidden_prompt("Paste the Steam Web API key (input hidden): ").strip()
+        api_key = read_interactively(hidden_prompt, "Paste the Steam Web API key (input hidden): ").strip()
     except (EOFError, KeyboardInterrupt):
         raise SecretConfigurationError("Steam Web API key setup was cancelled. The private settings file was not changed.")
     validate = validate_steam_api_key if validator is None else validator
@@ -1909,14 +1926,14 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
     prompt = input if input_func is None else input_func
     if _dotenv_contains_key(destination, "WEBHOOK_URL"):
         try:
-            confirmed = prompt(f"Replace the saved webhook URL in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
+            confirmed = read_interactively(prompt, f"Replace the saved webhook URL in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
         except (EOFError, KeyboardInterrupt):
             confirmed = False
         if not confirmed:
             raise SecretConfigurationError("Webhook setup was cancelled. The private settings file was not changed.")
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
-        webhook_url = hidden_prompt("Paste the Discord or ntfy webhook URL (input hidden): ").strip()
+        webhook_url = read_interactively(hidden_prompt, "Paste the Discord or ntfy webhook URL (input hidden): ").strip()
     except (EOFError, KeyboardInterrupt):
         raise SecretConfigurationError("Webhook setup was cancelled. The private settings file was not changed.")
     if not validate_webhook_url(webhook_url):
@@ -1969,7 +1986,7 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
     prompt = input if input_func is None else input_func
     if _dotenv_contains_key(destination, "SMTP_PASSWORD"):
         try:
-            confirmed = prompt(f"Replace the saved SMTP password in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
+            confirmed = read_interactively(prompt, f"Replace the saved SMTP password in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
         except (EOFError, KeyboardInterrupt):
             confirmed = False
         if not confirmed:
@@ -1977,7 +1994,7 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
     print(f"* The password is checked by signing in to {SMTP_HOST} as {SMTP_USER}. Nothing is sent")
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
-        smtp_password = str(hidden_prompt("Enter the SMTP password (input hidden): ")).strip()
+        smtp_password = str(read_interactively(hidden_prompt, "Enter the SMTP password (input hidden): ")).strip()
     except (EOFError, KeyboardInterrupt):
         raise SecretConfigurationError("SMTP password setup was cancelled. The private settings file was not changed.")
     check = smtp_sign_in if sign_in is None else sign_in
@@ -3097,7 +3114,7 @@ def render_doctor_notice():
 def _doctor_ask_yes_no(question):
     while True:
         try:
-            value = input(colorize("info", f"{question} [y/N]: ")).strip().casefold()
+            value = read_interactively(input, colorize("info", f"{question} [y/N]: ")).strip().casefold()
         except (EOFError, KeyboardInterrupt):
             print("\nDelivery test skipped.")
             return False
@@ -3180,7 +3197,7 @@ def _wizard_print_default_guidance():
 def _wizard_input(prompt_text, input_func=None):
     prompt = input if input_func is None else input_func
     try:
-        return prompt(colorize("info", prompt_text))
+        return read_interactively(prompt, colorize("info", prompt_text))
     except (EOFError, KeyboardInterrupt):
         # The interrupted prompt owns the line break, so every handler prints its message alone
         print()
@@ -3285,7 +3302,7 @@ def _wizard_ask_secret(question, getpass_func=None):
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
         # Colorized like the visible prompts, so a hidden answer does not look like a different question
-        return str(hidden_prompt(colorize("info", f"{question}: "))).strip()
+        return str(read_interactively(hidden_prompt, colorize("info", f"{question}: "))).strip()
     except (EOFError, KeyboardInterrupt):
         print()
         raise
