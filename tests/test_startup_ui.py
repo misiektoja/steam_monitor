@@ -126,6 +126,42 @@ def test_startup_banner_uses_only_its_own_colours(colored, capsys):
             assert f"{colored['header']}{line}{monitor.ANSI_RESET}" in output
 
 
+# Verifies every identity value is coloured for what it is: an id, a name or a link
+def test_identity_values_are_coloured_by_their_kind(colored):
+    assert monitor._colorize_line("* Target:                       76561198128683189") == f"* Target:                       {colored['id']}76561198128683189{monitor.ANSI_RESET}"
+    assert monitor._colorize_line("Steam64 ID:\t\t\t76561198128683189") == f"Steam64 ID:\t\t\t{colored['id']}76561198128683189{monitor.ANSI_RESET}"
+    assert monitor._colorize_line("Display name:\t\t\tmisiektoja") == f"Display name:\t\t\t{colored['username']}misiektoja{monitor.ANSI_RESET}"
+    assert monitor._colorize_line("Profile URL:\t\t\thttps://steamcommunity.com/id/misiektoja") == f"Profile URL:\t\t\t{colored['link']}https://steamcommunity.com/id/misiektoja{monitor.ANSI_RESET}"
+
+
+# Verifies a link printed inside a sentence is coloured too, not only a labelled URL row
+def test_links_in_sentences_are_coloured(colored):
+    line = monitor._colorize_line(f"Guide: {monitor.QUICK_START_GUIDE_URL}")
+    assert line == f"Guide: {colored['link']}{monitor.QUICK_START_GUIDE_URL}{monitor.ANSI_RESET}"
+
+
+# Verifies a config written against the pre-rename 'steam_id' key still colours identifiers
+def test_legacy_theme_key_still_applies(monkeypatch):
+    monkeypatch.setattr(monitor, "COLORED_OUTPUT", True)
+    monkeypatch.setattr(monitor, "COLOR_THEME", {"steam_id": "red"})
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", False)
+    monkeypatch.setattr(monitor, "_COLOR_STYLES", {})
+    monkeypatch.setattr(monitor, "_stream_supports_color", lambda stream: True)
+    monitor.init_color_output(sys.stdout)
+    assert monitor._COLOR_STYLES["id"] == monitor._build_ansi_sequence("red")
+
+
+# Verifies the current key name wins when a config sets both the old and the new name
+def test_current_theme_key_wins_over_the_legacy_name(monkeypatch):
+    monkeypatch.setattr(monitor, "COLORED_OUTPUT", True)
+    monkeypatch.setattr(monitor, "COLOR_THEME", {"steam_id": "red", "id": "green"})
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", False)
+    monkeypatch.setattr(monitor, "_COLOR_STYLES", {})
+    monkeypatch.setattr(monitor, "_stream_supports_color", lambda stream: True)
+    monitor.init_color_output(sys.stdout)
+    assert monitor._COLOR_STYLES["id"] == monitor._build_ansi_sequence("green")
+
+
 # Verifies the Setup Wizard heading keeps the newline inside the sibling-style header span
 def test_setup_wizard_heading_uses_header_colour(colored, capsys):
     def interrupt(_prompt):

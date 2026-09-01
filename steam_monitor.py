@@ -328,8 +328,8 @@ COLOR_THEME = {
     "header": "bright_cyan",
     "section": "bright_white",
     # Identity
-    "username": "blue underline",
-    "steam_id": "bright_magenta",
+    "username": "bright_cyan underline",
+    "id": "bright_magenta",
     # Status values
     "status_online": "green",
     "status_offline": "red",
@@ -353,6 +353,8 @@ COLOR_THEME = {
     # Boolean values
     "boolean_true": "green",
     "boolean_false": "red",
+    # Links
+    "link": "blue underline",
 }
 
 # Value used by signal handlers increasing/decreasing the check for player activity
@@ -875,8 +877,8 @@ DEFAULT_COLOR_THEME = {
     "header": "bright_cyan",
     "section": "bright_white",
     # Identity
-    "username": "blue underline",
-    "steam_id": "bright_magenta",
+    "username": "bright_cyan underline",
+    "id": "bright_magenta",
     # Status values
     "status_online": "green",
     "status_offline": "red",
@@ -900,7 +902,12 @@ DEFAULT_COLOR_THEME = {
     # Boolean values
     "boolean_true": "green",
     "boolean_false": "red",
+    # Links
+    "link": "blue underline",
 }
+
+# COLOR_THEME key names used by older releases, still honoured so an existing config keeps working
+_THEME_KEY_ALIASES = {"steam_id": "id"}
 
 ANSI_RESET = "\033[0m"
 
@@ -960,6 +967,12 @@ _BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b")
 _NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \((?:email|webhook)\):\s+)(On|Off)(.*)$")
 # Game names in quotes, but exclude file paths (containing underscores followed by more text, dots, or slashes)
 _GAME_NAME_QUOTED_RE = re.compile(r"(['\"])((?![^'\"]*[._/])[^'\"]+)\1")
+_URL_RE = re.compile(r"(https?://[^\s\]]+)")
+
+# Output labels whose value is coloured with one theme style, longest label first so a prefix cannot win
+_LABEL_STYLES = (
+    (("Steam64 ID:", "Target:"), "id"),
+)
 
 
 # Builds ANSI escape sequence from a style description string
@@ -1017,6 +1030,11 @@ def init_color_output(stream):
     user_theme = globals().get("COLOR_THEME") if isinstance(globals().get("COLOR_THEME"), dict) else {}
     theme = {**DEFAULT_COLOR_THEME, **(user_theme or {})}
 
+    # A config written against an older key name still wins over the default, unless it also sets the current name
+    for legacy_name, current_name in _THEME_KEY_ALIASES.items():
+        if user_theme and legacy_name in user_theme and current_name not in user_theme:
+            theme[current_name] = user_theme[legacy_name]
+
     styles = {}
     for name, style_str in theme.items():
         seq = _build_ansi_sequence(style_str)
@@ -1051,6 +1069,24 @@ def colorize_status(status_text):
     return colorize(key, status_text)
 
 
+# Splits a labelled output row into its label and value, tolerating a leading '* ' summary marker
+def _split_output_label(value, labels):
+    body = value.rstrip("\n")
+    cursor = len(body) - len(body.lstrip())
+    if body[cursor:cursor + 1] == "*":
+        cursor += 1
+        cursor += len(body[cursor:]) - len(body[cursor:].lstrip())
+    for label in labels:
+        if not body.startswith(label, cursor):
+            continue
+        value_start = cursor + len(label)
+        value_start += len(body[value_start:]) - len(body[value_start:].lstrip())
+        if value_start == cursor + len(label):
+            return None
+        return body[:value_start], body[value_start:]
+    return None
+
+
 # Applies colour rules to a single output line
 def _colorize_line(line, notification_summary=False):
     original = line
@@ -1083,6 +1119,20 @@ def _colorize_line(line, notification_summary=False):
         label, name = m.groups()
         colored = f"{label}{colorize('username', name)}"
         return colored + ("\n" if line.endswith("\n") else "")
+
+    # Any '<something> URL:' row is a link, checked before the label table so 'Profile URL:' is not read as a name
+    if " URL:" in line or _split_output_label(line, ("URL:",)):
+        return _URL_RE.sub(lambda mo: colorize("link", mo.group(0)), line)
+
+    # Labelled identifier rows keep their label plain and colour only the value
+    for labels, style_name in _LABEL_STYLES:
+        labeled_value = _split_output_label(line, labels)
+        if labeled_value:
+            label, rest = labeled_value
+            return f"{label}{colorize(style_name, rest)}" + ("\n" if line.endswith("\n") else "")
+
+    # Links printed inside a sentence, such as the guide link on the welcome and doctor screens
+    line = _URL_RE.sub(lambda mo: colorize("link", mo.group(0)), line)
 
     # Steam user <name> ... lines (apply username colour but continue for further rules)
     m = _STEAM_USER_LINE_RE.match(line)
@@ -3930,7 +3980,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     _wizard_print_command("Check setup again:", render_command(["--doctor"] + target_arguments, config_path=str(state.config_path), env_path=env_argument))
     start_label = "After Doctor passes, start monitoring:" if doctor_exit not in (None, 0) else "Start monitoring:"
     _wizard_print_command(start_label, render_command(target_arguments, config_path=str(state.config_path), env_path=env_argument))
-    print(f"Guide: {colorize('url', QUICK_START_GUIDE_URL)}\n")
+    print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}\n")
 
     api_key_ready = "STEAM_API_KEY" in state.secret_updates or doctor_value_is_set(state.config_values.get("STEAM_API_KEY"))
     try:
@@ -4004,7 +4054,7 @@ def print_welcome_screen(input_func=None, interactive=None):
     _wizard_print_command("Easiest start (guided setup wizard):", render_command(["--setup"], include_paths=False), setup_suffix)
     _wizard_print_command("Check setup before monitoring:", render_command(["--doctor", "<steam_target>"], include_paths=False))
     print(f"Full options: {colorize('section', render_command(['--help'], include_paths=False))}")
-    print(f"\nGuide:        {colorize('url', QUICK_START_GUIDE_URL)}\n")
+    print(f"\nGuide:        {colorize('link', QUICK_START_GUIDE_URL)}\n")
     if terminal_is_interactive:
         try:
             start_setup = _wizard_ask_yes_no("Run the guided setup wizard now?", default=True, input_func=input_func)
@@ -4727,7 +4777,7 @@ def display_persona_name_history(steamid):
 
 # Gets detailed user information and displays it (for -i/--info mode)
 def display_user_info(steamid, list_friends=False, show_name_history=False, show_achievements=False, achievements_count=None, achievements_use_owned_games=False):
-    steamid_coloured = colorize("steam_id", str(steamid))
+    steamid_coloured = colorize("id", str(steamid))
     print(f"* Fetching details for Steam user with ID '{steamid_coloured}'...\n")
 
     try:
@@ -6624,7 +6674,7 @@ def main():
         if WEBHOOK_ENABLED and normalized_webhook_provider() == "ntfy":
             print(f"\n* Warning: ntfy artwork is enabled, but the optional 'Pillow' package is not installed\n\nTo attach artwork, run:\n    {ntfy_images_install_command()}\n\nOnce installed, re-run this tool. To stop this warning, set NTFY_IMAGES to False\n\nSending ntfy alerts as text only...")
 
-    out = f"\nMonitoring user with Steam64 ID {colorize('steam_id', str(s_id))}"
+    out = f"\nMonitoring user with Steam64 ID {colorize('id', str(s_id))}"
     print(colorize("header", out))
     print("─" * len(out))
 
