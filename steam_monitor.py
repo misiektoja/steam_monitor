@@ -3017,7 +3017,7 @@ def doctor_destination_check(label, destination):
 def doctor_output_destination_checks(target_value=None):
     checks = []
     if DISABLE_LOGGING:
-        checks.append(make_doctor_check("Configuration", "PASS", "Output logging is disabled", "No log file will be written"))
+        checks.append(make_doctor_check("Configuration", "PASS", "Output logging is disabled"))
     elif ST_LOGFILE:
         suffix = str(FILE_SUFFIX or "") or (str(target_value) if target_value else "")
         if suffix:
@@ -3027,11 +3027,11 @@ def doctor_output_destination_checks(target_value=None):
     if CSV_FILE:
         checks.append(doctor_destination_check("CSV destination", CSV_FILE))
     else:
-        checks.append(make_doctor_check("Configuration", "PASS", "CSV logging is disabled", "No activity CSV file will be written"))
+        checks.append(make_doctor_check("Configuration", "PASS", "CSV logging is disabled"))
     if PROFILE_CSV_FILE:
         checks.append(doctor_destination_check("Profile CSV destination", PROFILE_CSV_FILE))
     else:
-        checks.append(make_doctor_check("Configuration", "PASS", "Profile CSV logging is disabled", "No profile CSV file will be written"))
+        checks.append(make_doctor_check("Configuration", "PASS", "Profile CSV logging is disabled"))
     return checks
 
 
@@ -3066,7 +3066,7 @@ def doctor_check_connectivity():
     global LAST_CONNECTIVITY_ERROR
     LAST_CONNECTIVITY_ERROR = None
     if check_internet(quiet=True):
-        return [make_doctor_check("Connectivity", "PASS", "The connectivity endpoint is reachable", f"Endpoint: {CHECK_INTERNET_URL} (TLS verification: {bool(VERIFY_SSL)})")]
+        return [make_doctor_check("Connectivity", "PASS", "The connectivity endpoint is reachable", f"Endpoint: {CHECK_INTERNET_URL}")]
     advice = classify_recovery_error(LAST_CONNECTIVITY_ERROR, context="runtime", detail=f"Could not reach {CHECK_INTERNET_URL}")
     return [make_doctor_check("Connectivity", "FAIL", advice.summary, advice.detail, advice)]
 
@@ -3161,7 +3161,7 @@ def doctor_check_webhook_notifications(report):
     selected_categories = _selected_webhook_notification_categories()
     deliberate_categories = [category for category in selected_categories if category != "errors"]
     if not WEBHOOK_ENABLED and not deliberate_categories:
-        return [make_doctor_check("Notifications", "PASS", "Webhook alerts are disabled", "No webhook was sent")]
+        return [make_doctor_check("Notifications", "PASS", "Webhook alerts are disabled")]
     if not WEBHOOK_ENABLED:
         advice = make_recovery_advice("webhook.invalid", "Webhook alert types are selected but webhooks are switched off", recovery_fix_with_guide("Set WEBHOOK_ENABLED to True, or turn the alert types off", WEBHOOK_GUIDE_URL), False)
         return [make_doctor_check("Notifications", "WARN", advice.summary, "Nothing would ever be delivered", advice)]
