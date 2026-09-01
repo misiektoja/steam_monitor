@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 
+import copy
 import pytest
 
 import steam_monitor as monitor
@@ -37,8 +38,9 @@ class StoppedAfterOneCycle(Exception):
 
 class FakeSteamWebAPI:
     # Answers the Steam endpoints the monitoring cycle calls, failing the ones named in failing_endpoints
-    def __init__(self, failing_endpoints=(), poll_error=None, healthy_polls=1, **_kwargs):
+    def __init__(self, failing_endpoints=(), poll_error=None, healthy_polls=1, persona_state=0, **_kwargs):
         self.failing_endpoints = set(failing_endpoints)
+        self.persona_state = persona_state
         # A poll error is raised only after the startup snapshot has succeeded, so the loop is actually reached
         self.poll_error = poll_error
         self.healthy_polls = healthy_polls
@@ -54,7 +56,9 @@ class FakeSteamWebAPI:
         if endpoint in self.failing_endpoints:
             raise RuntimeError(f"{endpoint} is unavailable")
         if endpoint == "ISteamUser.GetPlayerSummaries":
-            return PLAYER_SUMMARY
+            summary = copy.deepcopy(PLAYER_SUMMARY)
+            summary["response"]["players"][0]["personastate"] = self.persona_state
+            return summary
         if endpoint == "IPlayerService.GetRecentlyPlayedGames":
             return RECENTLY_PLAYED
         if endpoint == "IPlayerService.GetSteamLevel":
@@ -71,7 +75,7 @@ class FakeSteamWebAPI:
 
 
 # Runs one monitoring cycle with every tracked feature on and the named endpoints failing
-def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True, poll_error=None, stop_after_sleeps=2, error_notifications=False, liveness_counter=0, debug=None):
+def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True, poll_error=None, stop_after_sleeps=2, error_notifications=False, liveness_counter=0, debug=None, persona_state=0):
     monkeypatch.setattr(monitor, "DEBUG_MODE", diagnostics if debug is None else debug)
     monkeypatch.setattr(monitor, "VERBOSE_MODE", diagnostics)
     monkeypatch.setattr(monitor, "STEAM_LEVEL_XP_CHECK", True)
@@ -91,7 +95,7 @@ def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True,
     # Keep every generated file inside the temporary directory
     monkeypatch.chdir(tmp_path)
 
-    api = FakeSteamWebAPI(failing_endpoints, poll_error=poll_error)
+    api = FakeSteamWebAPI(failing_endpoints, poll_error=poll_error, persona_state=persona_state)
     monkeypatch.setattr(monitor, "steam_web_api_client", lambda *args, **kwargs: api)
 
     sleeps = []
@@ -340,7 +344,16 @@ def test_the_liveness_banner_explains_itself_in_verbose(tmp_path, monkeypatch, c
     run_one_cycle(tmp_path, monkeypatch, liveness_counter=1)
 
     output = capsys.readouterr().out
-    assert "Monitoring healthy for 76561197960435530. The user is still offline with no status or game change" in output
+    assert "Monitoring healthy for 76561197960435530. The user is offline with no status or game change since the last check" in output
+    assert "Liveness check, timestamp:" in output
+
+
+# Verifies an online target still reports the liveness banner, since nothing changed there either
+def test_the_liveness_banner_reports_an_online_target(tmp_path, monkeypatch, capsys):
+    run_one_cycle(tmp_path, monkeypatch, liveness_counter=1, persona_state=1)
+
+    output = capsys.readouterr().out
+    assert "Monitoring healthy for 76561197960435530. The user is online with no status or game change since the last check" in output
     assert "Liveness check, timestamp:" in output
 
 

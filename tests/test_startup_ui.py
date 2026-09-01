@@ -512,6 +512,8 @@ CROSS_TOOL_STRINGS = (
     "You declined the real delivery test",
     "Run doctor again and approve the email test when ready",
     "Run doctor again and approve the webhook test when ready",
+    "Monitoring healthy for ",
+    " since the last check",
     # Setup wizard
     "The setup wizard needs an interactive terminal (TTY).",
     "This asks a few questions and writes a ready-to-run configuration.",
