@@ -1,5 +1,9 @@
 """Tests that a config file is read as data and never executed."""
 
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 
 import steam_monitor as monitor
@@ -92,3 +96,15 @@ def test_invalid_encoding_is_reported(tmp_path):
     config.write_bytes(b"\xff\xfe\x00bad\n")
 
     assert monitor.load_config_file(config, namespace={}, report_errors=False) is False
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+# Verifies `--config-file none` switches discovery off instead of being read as a missing file
+def test_config_file_none_disables_discovery(tmp_path):
+    result = subprocess.run([sys.executable, str(PROJECT_ROOT / "steam_monitor.py"), "--config-file", "none", "--env-file", "none", "--no-color"], cwd=tmp_path, capture_output=True, text=True, check=False)
+
+    output = result.stdout + result.stderr
+    assert "Config file 'none' does not exist" not in output
+    assert "<steam_target>" in output

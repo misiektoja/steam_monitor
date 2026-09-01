@@ -6190,7 +6190,7 @@ def main():
         "--config-file",
         dest="config_file",
         metavar="PATH",
-        help="Location of the optional config file",
+        help="Location of the optional config file (auto-search if not set, disable with 'none')",
     )
     conf.add_argument(
         "--generate-config",
@@ -6571,10 +6571,12 @@ def main():
     if args.send_test_email and args.send_test_webhook:
         parser.error("--send-test-email cannot be combined with --send-test-webhook")
 
-    if args.config_file:
+    # "none" is the documented sentinel that switches discovery off, so it is a selection rather than a missing file
+    config_discovery_disabled = args.config_file is not None and str(args.config_file).casefold() == "none"
+    if args.config_file and not config_discovery_disabled:
         CLI_CONFIG_PATH = os.path.expanduser(args.config_file)
 
-    cfg_path = find_config_file(CLI_CONFIG_PATH)
+    cfg_path = None if config_discovery_disabled else find_config_file(CLI_CONFIG_PATH)
 
     if not cfg_path and CLI_CONFIG_PATH and not args.setup:
         # Setup is allowed to name a file that does not exist yet, since creating it is the point
