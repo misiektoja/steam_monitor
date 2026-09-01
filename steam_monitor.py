@@ -3760,6 +3760,7 @@ WIZARD_SECTIONS = (
     ("Email", "Email notifications", "Change SMTP details and email events.", WIZARD_SMTP_CONFIG_KEYS + WIZARD_EMAIL_NOTIFICATION_KEYS, ("SMTP_PASSWORD",)),
     ("Webhook", "Webhook alerts", "Change Discord or ntfy details and events.", ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "NTFY_IMAGES") + WIZARD_WEBHOOK_NOTIFICATION_KEYS, ("WEBHOOK_URL", "NTFY_ACCESS_TOKEN")),
     ("Output", "Output files", "Change log and CSV output settings.", ("DISABLE_LOGGING", "CSV_FILE"), ()),
+    ("Destinations", "File destinations", "Change the configuration or dotenv output path.", (), ()),
 )
 
 
@@ -4116,6 +4117,50 @@ def _wizard_existing_secret(key, env_path):
     return doctor_value_is_set(value)
 
 
+# Changes where setup writes, re-asking the sections that hold secrets when the dotenv destination moves
+def _wizard_collect_destination_section(state, input_func=None, getpass_func=None):
+    while True:
+        config_text = _wizard_ask_text("Configuration file destination", default=str(state.config_path), required=True, input_func=input_func)
+        try:
+            selected_config = _wizard_validate_destination(config_text, "Configuration destination")
+            break
+        except ValueError as exc:
+            print(f"  {exc}.")
+    # Both sides are compared resolved, so an unchanged answer written a different way is not read as a move
+    if selected_config != Path(state.config_path).expanduser().resolve():
+        chosen_config = _wizard_choose_config_destination(selected_config, input_func=input_func)
+        # Giving up on every offered path keeps the current destination rather than cancelling the whole setup
+        if chosen_config is not None:
+            state.config_path = chosen_config
+    while True:
+        env_text = _wizard_ask_text("Dotenv file destination", default=str(state.env_path), required=True, input_func=input_func)
+        if env_text.casefold() == "none":
+            print("  Setup needs a writable dotenv file and cannot use 'none'.")
+            continue
+        try:
+            selected_env = _wizard_validate_destination(env_text, "Dotenv destination")
+        except ValueError as exc:
+            print(f"  {exc}.")
+            continue
+        # One file cannot hold both, since saving the configuration would overwrite the secrets beside it
+        if selected_env == Path(state.config_path).expanduser().resolve():
+            print("  The dotenv file has to be a different file from the configuration.")
+            continue
+        break
+    state.config_values["DOTENV_FILE"] = str(selected_env)
+    if selected_env == Path(state.env_path).expanduser().resolve():
+        return
+    state.env_path = selected_env
+    # A secret kept rather than retyped was never queued, so it would be missing from a dotenv file that just moved
+    print("  The dotenv destination changed. Re-enter authentication and notification settings that may contain secrets.")
+    _wizard_collect_auth_section(state, input_func=input_func, getpass_func=getpass_func)
+    _wizard_resolve_pending_target(state, input_func=input_func)
+    print()
+    _wizard_collect_email_section(state, input_func=input_func, getpass_func=getpass_func)
+    print()
+    _wizard_collect_webhook_section(state, input_func=input_func, getpass_func=getpass_func)
+
+
 # Runs one editable section again after resetting only the keys it owns
 def _wizard_edit_setup_section(state, input_func=None, getpass_func=None):
     options = [(label, description) for _name, label, description, _config_keys, _secret_keys in WIZARD_SECTIONS]
@@ -4135,6 +4180,7 @@ def _wizard_edit_setup_section(state, input_func=None, getpass_func=None):
         "Email": lambda: _wizard_collect_email_section(state, input_func=input_func, getpass_func=getpass_func),
         "Webhook": lambda: _wizard_collect_webhook_section(state, input_func=input_func, getpass_func=getpass_func),
         "Output": lambda: _wizard_collect_output_section(state, input_func=input_func),
+        "Destinations": lambda: _wizard_collect_destination_section(state, input_func=input_func, getpass_func=getpass_func),
     }
     collectors[name]()
     if name in ("Target", "Authentication"):

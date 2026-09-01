@@ -1106,3 +1106,41 @@ def test_the_wizard_announces_the_key_check(tmp_path, capsys, wizard_globals):
 
     lines = capsys.readouterr().out.splitlines()
     assert lines.index("  Checking the key with Steam ...") < lines.index("  Steam accepted the key.")
+
+
+# Verifies the review can move the configuration file, since the summary shows a destination it could not change
+def test_the_destination_section_moves_the_configuration_file(tmp_path):
+    moved = tmp_path / "elsewhere"
+    moved.mkdir()
+    state = monitor.WizardSetupState(tmp_path / "steam_monitor.conf", tmp_path / ".env", dict(vars(monitor)))
+
+    monitor._wizard_collect_destination_section(state, input_func=scripted_input([str(moved / "steam_monitor.conf"), ""]))
+
+    assert state.config_path == moved / "steam_monitor.conf"
+    assert state.env_path == tmp_path / ".env"
+    assert state.config_values["DOTENV_FILE"] == str(tmp_path / ".env")
+
+
+# Verifies moving the dotenv re-asks every section holding a secret, since a kept secret was never queued
+def test_moving_the_dotenv_destination_re_asks_the_secret_sections(tmp_path, monkeypatch, capsys):
+    asked = []
+    for name in ("_wizard_collect_auth_section", "_wizard_collect_email_section", "_wizard_collect_webhook_section"):
+        monkeypatch.setattr(monitor, name, lambda state, section=name, **kwargs: asked.append(section))
+    state = monitor.WizardSetupState(tmp_path / "steam_monitor.conf", tmp_path / ".env", dict(vars(monitor)))
+
+    monitor._wizard_collect_destination_section(state, input_func=scripted_input(["", str(tmp_path / ".env-moved")]))
+
+    assert state.env_path == tmp_path / ".env-moved"
+    assert state.config_values["DOTENV_FILE"] == str(tmp_path / ".env-moved")
+    assert asked == ["_wizard_collect_auth_section", "_wizard_collect_email_section", "_wizard_collect_webhook_section"]
+    assert "The dotenv destination changed" in capsys.readouterr().out
+
+
+# Verifies one file cannot hold both, since saving the configuration would overwrite the secrets beside it
+def test_the_dotenv_destination_cannot_be_the_configuration_file(tmp_path, capsys):
+    state = monitor.WizardSetupState(tmp_path / "steam_monitor.conf", tmp_path / ".env", dict(vars(monitor)))
+
+    monitor._wizard_collect_destination_section(state, input_func=scripted_input(["", str(tmp_path / "steam_monitor.conf"), ""]))
+
+    assert state.env_path == tmp_path / ".env"
+    assert "has to be a different file" in capsys.readouterr().out
