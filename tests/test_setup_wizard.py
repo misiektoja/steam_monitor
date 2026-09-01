@@ -794,12 +794,12 @@ def test_the_output_section_records_the_log_and_csv_choices(tmp_path, wizard_glo
     assert state.config_values["STEAM_STATUS_FILE"] == ""
 
 
-# Verifies the summary names the default status file pattern, since the persona name it carries is not known yet
+# Verifies the summary names the status file the run will use, built from the target when no path was given
 def test_the_summary_names_the_default_status_file(tmp_path, monkeypatch, capsys):
     run_wizard(tmp_path, monkeypatch, [str(STEAM64), "y", "5m", "45s", "n", "n", "y", "", "", "1", "n", "n"])
 
     summary = capsys.readouterr().out.rsplit("Setup summary", 1)[1]
-    assert "Status file:                    steam_<user_display_name>_last_status.json" in summary
+    assert f"Status file:                    steam_{STEAM64}_last_status.json" in summary
 
 
 # Verifies the status file answer is kept, so a restart resumes from the file the user chose

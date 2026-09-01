@@ -665,23 +665,15 @@ def test_the_install_method_vocabulary_is_shared():
 SHARED_ROW_ORDER = ("Target", "Polling intervals", "Notifications (email)", "Notifications (webhook)", "Output", "Output logging", "Config", "Dotenv", "Liveness output", "CSV output", "Terminal truncation", "Install method", "Secrets from dotenv", "Secrets from environment", "Secrets from config file", "Secrets from command line", "TLS verification", "ASCII log separators", "Coloured output", "Verbose mode", "Debug mode", "More details")
 
 
-# Verifies the status file row names the file the run will use once the persona name is known
-def test_the_status_file_row_names_the_file_once_the_persona_is_known(monkeypatch, summary_globals):
+# Verifies the status file row names the file the run will use, built from the target when no path was given
+def test_the_status_file_row_names_the_file_the_run_will_use(monkeypatch, summary_globals):
     monkeypatch.setattr(monitor, "STEAM_STATUS_FILE", "")
 
-    pending = [row.value for row in monitor.build_startup_summary("76561198000000000", "tool.conf", None, "tool.log") if row.label == "Status file"]
-    named = [row.value for row in monitor.build_startup_summary("76561198000000000", "tool.conf", None, "tool.log", display_name="Persona") if row.label == "Status file"]
+    named = [row.value for row in monitor.build_startup_summary("76561198000000000", "tool.conf", None, "tool.log") if row.label == "Status file"]
+    unknown = [row.value for row in monitor.build_startup_summary(None, "tool.conf", None, "tool.log") if row.label == "Status file"]
 
-    assert pending == ["steam_<user_display_name>_last_status.json"]
-    assert named == ["steam_Persona_last_status.json"]
-
-
-# Verifies the profile lookup helpers tolerate a missing or malformed response
-def test_the_profile_lookup_helpers_tolerate_a_missing_response():
-    assert monitor.player_summary_entry(None) is None
-    assert monitor.player_summary_entry({"response": {"players": []}}) is None
-    assert monitor.player_display_name(None) == ""
-    assert monitor.player_display_name({"personaname": "Persona"}) == "Persona"
+    assert named == ["steam_76561198000000000_last_status.json"]
+    assert unknown == ["None"]
 
 
 # Verifies the shared rows keep the order and the label column width every sibling monitor prints

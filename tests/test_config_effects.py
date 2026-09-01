@@ -57,7 +57,6 @@ def run_startup(monkeypatch, argv, config_path, env_path="none", exported_api_ke
     monkeypatch.setattr(monitor, "load_config_file", recording_load_config_file)
     monkeypatch.setattr(monitor, "check_internet", recording_check_internet)
     monkeypatch.setattr(monitor, "steam_monitor_user", stop_before_monitoring)
-    monkeypatch.setattr(monitor, "fetch_player_summary", lambda steamid: None)
     monkeypatch.setenv("STEAM_API_KEY", exported_api_key)
     command = ["steam_monitor.py"] + ([str(target)] if target is not None else []) + ["--env-file", str(env_path), "--config-file", str(config_path)] + argv
     monkeypatch.setattr("sys.argv", command)
@@ -424,11 +423,46 @@ def test_the_status_file_from_the_config_file_reaches_the_monitor(monkeypatch, t
     assert monitor.resolve_status_file("misiektoja").endswith("saved_status.json")
 
 
-# Verifies the default status file name is still the per-display-name one, so an upgrade keeps its history
-def test_the_default_status_file_keeps_the_existing_name(monkeypatch, tmp_path, restored_globals):
+# Verifies the default status file is named after the Steam64 ID, which is known before any Steam call and never changes
+def test_the_default_status_file_is_named_after_the_steam64_id(monkeypatch, tmp_path, restored_globals):
     config = write_config(tmp_path)
 
     run_startup(monkeypatch, [], config)
 
-    assert monitor.resolve_status_file("misiektoja") == "steam_misiektoja_last_status.json"
+    assert monitor.resolve_status_file(76561197960435530) == "steam_76561197960435530_last_status.json"
+    assert monitor.default_games_file(76561197960435530) == "steam_76561197960435530_games.json"
+
+
+# Verifies the state files an earlier release named after the persona are renamed once, so the upgrade resumes from them
+def test_legacy_state_files_are_renamed_to_the_steam64_id(monkeypatch, tmp_path, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(monitor, "STEAM_STATUS_FILE", "")
+    (tmp_path / "steam_Persona_last_status.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "steam_Persona_games.json").write_text("{}", encoding="utf-8")
+
+    monitor.migrate_legacy_state_files(76561197960435530, "Persona")
+
+    assert (tmp_path / "steam_76561197960435530_last_status.json").is_file()
+    assert (tmp_path / "steam_76561197960435530_games.json").is_file()
+    assert not (tmp_path / "steam_Persona_last_status.json").exists()
+    out = capsys.readouterr().out
+    assert "* Saved state file 'steam_Persona_last_status.json' was renamed to 'steam_76561197960435530_last_status.json'" in out
+    assert "* Saved state file 'steam_Persona_games.json' was renamed to 'steam_76561197960435530_games.json'" in out
+
+
+# Verifies a file already saved under the new name wins and a configured status path leaves the legacy status file alone
+def test_legacy_state_files_never_replace_current_ones(monkeypatch, tmp_path, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(monitor, "STEAM_STATUS_FILE", str(tmp_path / "chosen.json"))
+    (tmp_path / "steam_Persona_last_status.json").write_text("legacy", encoding="utf-8")
+    (tmp_path / "steam_Persona_games.json").write_text("legacy", encoding="utf-8")
+    (tmp_path / "steam_76561197960435530_games.json").write_text("current", encoding="utf-8")
+
+    monitor.migrate_legacy_state_files(76561197960435530, "Persona")
+    monitor.migrate_legacy_state_files(76561197960435530, "")
+
+    assert (tmp_path / "steam_Persona_last_status.json").is_file()
+    assert (tmp_path / "steam_Persona_games.json").read_text(encoding="utf-8") == "legacy"
+    assert (tmp_path / "steam_76561197960435530_games.json").read_text(encoding="utf-8") == "current"
+    assert capsys.readouterr().out == ""
 

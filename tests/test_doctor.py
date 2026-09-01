@@ -517,7 +517,8 @@ def test_an_unwritable_output_path_fails(monkeypatch, doctor_globals, setting, l
     monkeypatch.setattr(monitor, "DISABLE_LOGGING", False)
     monkeypatch.setattr(monitor, "ST_LOGFILE", "")
     monkeypatch.setattr(monitor, setting, "/nonexistent-root-dir/steam_monitor")
-    monkeypatch.setattr(monitor.os, "access", lambda *_args, **_kwargs: False)
+    # The missing path resolves to the root directory, which is the only parent made unwritable, so the default status file in the working directory keeps passing
+    monkeypatch.setattr(monitor.os, "access", lambda path, *_args, **_kwargs: str(path) != "/")
 
     failures = [check for check in monitor.doctor_output_destination_checks(76561197960435530) if check.status == "FAIL"]
 
@@ -1151,37 +1152,15 @@ def test_the_report_names_the_status_file(monkeypatch, doctor_globals, tmp_path)
     assert str(destination) in checks[0].detail
 
 
-# Verifies an unset status file is reported as pending while the profile lookup has not returned a persona name
-def test_a_default_status_file_is_reported_as_pending(monkeypatch, doctor_globals):
+# Verifies the default status file is checked under the target's name, and reported as pending without a target
+def test_a_default_status_file_follows_the_target(monkeypatch, doctor_globals):
     monkeypatch.setattr(monitor, "STEAM_STATUS_FILE", "")
 
-    labels = [check.label for check in monitor.doctor_output_destination_checks(76561197960435530)]
-    pending = monitor.doctor_default_status_file_check(monitor.DoctorReport())
+    with_target = [check for check in monitor.doctor_output_destination_checks(76561197960435530) if check.label.startswith("Status")]
+    without_target = [check for check in monitor.doctor_output_destination_checks() if check.label.startswith("Status")]
 
-    assert not any(label.startswith("Status") for label in labels)
-    assert [check.label for check in pending] == ["Status file will be finalized after the first check"]
-    assert pending[0].detail == "Base name: steam_<user_display_name>_last_status.json in the working directory"
-
-
-# Verifies the default status file is checked under its real name once the profile lookup has returned the persona name
-def test_a_default_status_file_is_named_after_the_profile_lookup(monkeypatch, doctor_globals):
-    monkeypatch.setattr(monitor, "STEAM_STATUS_FILE", "")
-    report = monitor.DoctorReport()
-    report.player_summary = {"personaname": "Persona"}
-
-    checks = monitor.doctor_default_status_file_check(report)
-
-    assert [(check.section, check.status, check.label) for check in checks] == [("Configuration", "PASS", "Status destination appears writable")]
-    assert checks[0].detail == "Path: steam_Persona_last_status.json"
-
-
-# Verifies a configured status path takes no second row after the profile lookup
-def test_a_configured_status_file_is_not_reported_twice(monkeypatch, doctor_globals, tmp_path):
-    monkeypatch.setattr(monitor, "STEAM_STATUS_FILE", str(tmp_path / "status.json"))
-    report = monitor.DoctorReport()
-    report.player_summary = {"personaname": "Persona"}
-
-    assert monitor.doctor_default_status_file_check(report) == []
+    assert [(check.status, check.label, check.detail) for check in with_target] == [("PASS", "Status destination appears writable", "Path: steam_76561197960435530_last_status.json")]
+    assert [(check.status, check.label, check.detail) for check in without_target] == [("PASS", "Status file will be finalized after a target is selected", "Base name: steam_<steam64_id>_last_status.json in the working directory")]
 
 
 # An interval below the safe floor gets the key rate limited, which looks like the tool being broken
