@@ -620,15 +620,16 @@ def test_an_interrupt_writes_nothing(tmp_path, monkeypatch, wizard_globals, caps
     assert "Destination files were not changed." in capsys.readouterr().out
 
 
-# Verifies the welcome screen offers the four commands a newcomer needs next
-def test_the_welcome_screen_offers_four_commands(capsys):
+# Verifies the welcome screen offers the commands a newcomer needs next, in the order the siblings print them
+def test_the_welcome_screen_offers_the_shared_commands(capsys):
     monitor.print_welcome_screen(interactive=False)
 
     output = capsys.readouterr().out
-    assert "Quickest start (already configured):" in output
-    assert "Easiest start (guided setup wizard):" in output
-    assert "Check setup before monitoring:" in output
-    assert "Full options:" in output
+    labels = ("Quickest start (already configured):", "Easiest start (guided setup wizard):", "Check setup before monitoring:", "Show profile details and exit:", "Full options:")
+    positions = [output.find(label) for label in labels]
+
+    assert -1 not in positions
+    assert positions == sorted(positions)
     assert monitor.QUICK_START_GUIDE_URL in output
 
 
@@ -644,11 +645,11 @@ def test_the_welcome_commands_suit_the_install(monkeypatch, capsys):
     assert "'<steam_target>'" not in output
 
 
-# Verifies the wizard is not offered when there is no terminal to answer on
+# Verifies the wizard is not offered when there is no terminal to answer on, where the bare run stays a usage error
 def test_the_welcome_screen_does_not_offer_the_wizard_without_a_terminal(monkeypatch, capsys):
     monkeypatch.setattr(monitor, "run_setup_wizard", lambda **_kwargs: pytest.fail("the wizard ran without a terminal"))
 
-    assert monitor.print_welcome_screen(interactive=False) == 0
+    assert monitor.print_welcome_screen(interactive=False) == 1
     assert "Run the guided setup wizard now?" not in capsys.readouterr().out
 
 
@@ -1038,3 +1039,15 @@ def test_the_canonical_target_is_not_echoed_back(tmp_path, monkeypatch, wizard_g
     assert run_wizard(tmp_path, monkeypatch, minimal_answers()) == 0
 
     assert "Using Steam64 ID" not in capsys.readouterr().out
+
+
+# Verifies the screen closes with one blank line, the way it does in every sibling
+def test_the_welcome_screen_closes_with_a_blank_line(capsys):
+    monitor.print_welcome_screen(interactive=False)
+
+    assert capsys.readouterr().out.endswith(f"{monitor.QUICK_START_GUIDE_URL}\n\n")
+
+
+# Verifies the guide link opens the section of the page rather than the top of it
+def test_the_welcome_guide_link_opens_the_quick_start_section():
+    assert monitor.QUICK_START_GUIDE_URL.endswith("/setup-and-first-run/#quick-start")

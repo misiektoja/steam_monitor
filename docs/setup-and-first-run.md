@@ -20,7 +20,7 @@ Every answer setup cannot use offers a way out, so one value you cannot produce 
 
 Secrets are typed at a hidden prompt and go to the dotenv file. Non-secret settings go to the config file. Both destinations are checked before the first question, so an unwritable path or a directory given by mistake is reported straight away rather than after you have answered everything. A configuration file already in place is replaced only after you agree, and setup offers to write somewhere else instead. The replaced file is backed up first. A secret already in the dotenv file is never replaced without asking. When it finishes, setup offers to run [`--doctor`](troubleshooting.md#doctor-preflight) and prints the exact commands to start monitoring. For a local install it then offers to **start monitoring right away**.
 
-If the config file names a target in [`TARGET_STEAM_ID`](configuration.md#target-profile), running the tool with no arguments starts monitoring that profile. With no saved target, running it **with no arguments at all** prints the same four commands and offers to start the wizard.
+If the config file names a target in [`TARGET_STEAM_ID`](configuration.md#target-profile), running the tool with no arguments starts monitoring that profile. With no saved target, running it **with no arguments at all** prints the commands worth starting with and offers to open the wizard. Answering that offer exits 0. With no terminal to answer on there is no offer, so the run exits 1 like the argument error it replaced.
 
 If there is no terminal to answer on, setup says so and points at `--generate-config` instead of hanging.
 

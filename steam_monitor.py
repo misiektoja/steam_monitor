@@ -447,7 +447,7 @@ PROJECT_URL = "https://github.com/misiektoja/steam_monitor"
 DOCS_BASE_URL = "https://misiektoja.github.io/steam_monitor"
 GUIDE_URL = f"{DOCS_BASE_URL}/"
 INSTALL_GUIDE_URL = f"{DOCS_BASE_URL}/installation/"
-QUICK_START_GUIDE_URL = f"{DOCS_BASE_URL}/setup-and-first-run/"
+QUICK_START_GUIDE_URL = f"{DOCS_BASE_URL}/setup-and-first-run/#quick-start"
 CONFIG_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/"
 CONFIG_FILE_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#configuration-file"
 STEAM_API_KEY_GUIDE_URL = f"{DOCS_BASE_URL}/setup-and-first-run/#steam-web-api-key"
@@ -4227,7 +4227,7 @@ def _wizard_print_command(label, command, suffix=""):
     print(f"    {colorize('section', command)}{colorize('info', suffix) if suffix else ''}\n")
 
 
-# Prints the four commands a newcomer needs next, instead of an argparse usage error
+# Prints the commands a newcomer needs next, instead of an argparse usage error
 def print_welcome_screen(input_func=None, interactive=None):
     terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
     print(f"For <steam_target>, use a {STEAM_TARGET_FORMS}.\n")
@@ -4235,6 +4235,7 @@ def print_welcome_screen(input_func=None, interactive=None):
     setup_suffix = "   (or just answer Y below)" if terminal_is_interactive else ""
     _wizard_print_command("Easiest start (guided setup wizard):", render_command(["--setup"], include_paths=False), setup_suffix)
     _wizard_print_command("Check setup before monitoring:", render_command(["--doctor", "<steam_target>"], include_paths=False))
+    _wizard_print_command("Show profile details and exit:", render_command(["-i", "<steam_target>"], include_paths=False))
     print(f"Full options: {colorize('section', render_command(['--help'], include_paths=False))}")
     print(f"\nGuide:        {colorize('link', QUICK_START_GUIDE_URL)}\n")
     if terminal_is_interactive:
@@ -4247,7 +4248,8 @@ def print_welcome_screen(input_func=None, interactive=None):
         if start_setup:
             print()
             return run_setup_wizard()
-    return 0
+    # Without a terminal there was nothing to answer, so a bare invocation stays the usage error it was
+    return 0 if terminal_is_interactive else 1
 
 
 # One startup summary setting, routed independently to the concise view, the verbose view and the log file
