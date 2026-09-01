@@ -176,12 +176,11 @@ def test_a_repeated_failure_prints_one_hint(capsys, restored_globals):
     tracker = monitor.RecoveryHintTracker()
 
     for _ in range(50):
-        monitor.print_monitor_recovery(http_error(503), "runtime", tracker, "* ")
+        monitor.print_monitor_recovery(http_error(503), "runtime", tracker, "retrying in 5 minutes")
 
     output = capsys.readouterr().out
     assert output.count("To fix: ") == 1
-    assert output.count("* Error") == 0
-    assert output.count("The Steam Web API is temporarily unavailable") == 50
+    assert output.count("* Error: The Steam Web API is temporarily unavailable (retrying in 5 minutes)") == 50
 
 
 # Verifies a changed failure category prints its own hint, since the fix is now a different one
@@ -189,9 +188,9 @@ def test_a_changed_failure_category_prints_its_hint(capsys, restored_globals):
     monitor.DEBUG_MODE = False
     tracker = monitor.RecoveryHintTracker()
 
-    monitor.print_monitor_recovery(http_error(503), "runtime", tracker, "* ")
-    monitor.print_monitor_recovery(http_error(503), "runtime", tracker, "* ")
-    monitor.print_monitor_recovery(http_error(403), "runtime", tracker, "* ")
+    monitor.print_monitor_recovery(http_error(503), "runtime", tracker, "retrying in 5 minutes")
+    monitor.print_monitor_recovery(http_error(503), "runtime", tracker, "retrying in 5 minutes")
+    monitor.print_monitor_recovery(http_error(403), "runtime", tracker, "retrying in 5 minutes")
 
     assert capsys.readouterr().out.count("To fix: ") == 2
 
@@ -201,9 +200,9 @@ def test_a_successful_cycle_clears_suppression(capsys, restored_globals):
     monitor.DEBUG_MODE = False
     tracker = monitor.RecoveryHintTracker()
 
-    monitor.print_monitor_recovery(http_error(503), "runtime", tracker, "* ")
+    monitor.print_monitor_recovery(http_error(503), "runtime", tracker, "retrying in 5 minutes")
     tracker.reset()
-    monitor.print_monitor_recovery(http_error(503), "runtime", tracker, "* ")
+    monitor.print_monitor_recovery(http_error(503), "runtime", tracker, "retrying in 5 minutes")
 
     assert capsys.readouterr().out.count("To fix: ") == 2
 

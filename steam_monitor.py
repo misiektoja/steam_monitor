@@ -2541,14 +2541,20 @@ class FeatureOutageTracker:
         return recovered + started
 
 
-# Prints one monitoring failure, repeating the fix only when the failure category changes
-def print_monitor_recovery(error, context, tracker, prefix):
-    advice = classify_recovery_error(error, context)
-    print(prefix + advice.summary)
-    if tracker.should_render(advice):
-        print(f"To fix: {advice.fix}")
+# Renders one monitoring failure in the shape every monitor in this family prints
+def render_monitor_recovery(advice, retry_note="", with_fix=True, label="Error"):
+    lines = [f"* {label}: {advice.summary}" + (f" ({retry_note})" if retry_note else "")]
+    if with_fix:
+        lines.append(f"To fix: {advice.fix}")
         if DEBUG_MODE and advice.detail:
-            print(f"Technical detail: {sanitize_error_text(advice.detail)}")
+            lines.append(f"Technical detail: {sanitize_error_text(advice.detail)}")
+    return "\n".join(lines)
+
+
+# Prints one monitoring failure, repeating the fix only when the failure category changes
+def print_monitor_recovery(error, context, tracker, retry_note="", label="Error"):
+    advice = classify_recovery_error(error, context)
+    print(render_monitor_recovery(advice, retry_note, tracker is None or tracker.should_render(advice), label))
     return advice
 
 
@@ -5715,34 +5721,33 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             if advice.code == "steam.rate_limited":
                 # Rate limits carry their own wait, so they skip the retry path rather than burning an attempt
                 retry_after = steam_retry_after_seconds(response, sleep_interval) if response is not None else sleep_interval
+                retry_note = f"retrying in {display_time(retry_after)}"
                 if outage_outcome == "full":
-                    print_monitor_recovery(e, "runtime", recovery_hint_tracker, "* ")
-                    verbose_print(f"Waiting {display_time(retry_after)} before retrying")
+                    print_monitor_recovery(e, "runtime", recovery_hint_tracker, retry_note)
                     print_cur_ts("Timestamp:\t\t\t")
                 elif outage_outcome == "degraded":
                     print_outage_liveness(steamid, advice, outage.since)
                 elif outage_outcome == "repeat":
-                    print(f"* {advice.summary}")
+                    print(render_monitor_recovery(advice, retry_note, with_fix=False))
                     print_cur_ts("Timestamp:\t\t\t")
                 time.sleep(retry_after)
                 continue
             else:
+                # One short retry absorbs a blip without waiting a whole polling interval
+                transient_retry = advice.retryable and not transient_retry_used
+                retry_note = f"retrying in {display_time(TRANSIENT_RETRY_SECONDS if transient_retry else sleep_interval)}"
                 if outage_outcome == "full":
-                    print_monitor_recovery(e, "runtime", recovery_hint_tracker, "* ")
+                    print_monitor_recovery(e, "runtime", recovery_hint_tracker, retry_note)
                 elif outage_outcome == "degraded":
                     print_outage_liveness(steamid, advice, outage.since)
                 elif outage_outcome == "repeat":
-                    print(f"* {advice.summary}")
-                if advice.retryable and not transient_retry_used:
-                    # One short retry absorbs a blip without waiting a whole polling interval
+                    print(render_monitor_recovery(advice, retry_note, with_fix=False))
+                if transient_retry:
                     transient_retry_used = True
-                    verbose_print(f"Retrying once in {display_time(TRANSIENT_RETRY_SECONDS)}")
                     if outage_outcome in ("full", "repeat"):
                         print_cur_ts("Timestamp:\t\t\t")
                     time.sleep(TRANSIENT_RETRY_SECONDS)
                     continue
-                if outage_outcome in ("full", "repeat"):
-                    print(f"* Retrying in {display_time(sleep_interval)}")
                 if advice.code == "auth.api_key_invalid":
                     m_subject = f"steam_monitor: API key error! (user: {username})"
                     m_body = f"{advice.summary}{nl_ch}{nl_ch}To fix: {advice.fix}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"

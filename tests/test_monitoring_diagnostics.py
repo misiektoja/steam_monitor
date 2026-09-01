@@ -238,8 +238,7 @@ def test_a_transient_failure_retries_once_quickly(tmp_path, monkeypatch, capsys)
     assert sleeps[1] == monitor.TRANSIENT_RETRY_SECONDS
     assert sleeps[2] == 60
     output = capsys.readouterr().out
-    assert "The Steam Web API request timed out" in output
-    assert f"Retrying once in {monitor.display_time(monitor.TRANSIENT_RETRY_SECONDS)}" in output
+    assert f"* Error: The Steam Web API request timed out (retrying in {monitor.display_time(monitor.TRANSIENT_RETRY_SECONDS)})" in output
 
 
 # Verifies a rate limit skips the short retry and waits the period Steam asked for
@@ -254,7 +253,7 @@ def test_a_rate_limit_waits_instead_of_retrying_quickly(tmp_path, monkeypatch, c
     assert sleeps[1] == 120
     assert monitor.TRANSIENT_RETRY_SECONDS not in sleeps
     output = capsys.readouterr().out
-    assert "Steam is rate limiting requests" in output
+    assert f"* Error: Steam is rate limiting requests (retrying in {monitor.display_time(120)})" in output
 
 
 # Verifies a standard HTTP-date Retry-After value reaches the real monitoring sleep without crashing
