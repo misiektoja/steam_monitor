@@ -84,7 +84,7 @@ def test_the_startup_summary_names_every_destination(monkeypatch):
     monkeypatch.setattr(monitor, "PROFILE_CSV_FILE", "/tmp/profile.csv")
     monkeypatch.setattr(monitor, "DISABLE_LOGGING", False)
 
-    rows = monitor.build_startup_summary("tool.conf", "/tmp/.env", "/tmp/tool.log")
+    rows = monitor.build_startup_summary("76561198000000000", "tool.conf", "/tmp/.env", "/tmp/tool.log")
     rendered = "\n".join(f"{row.label}: {row.value}" for row in rows)
 
     for expected in ("/tmp/activity.csv", "/tmp/profile.csv", "/tmp/tool.log", "tool.conf", "/tmp/.env"):

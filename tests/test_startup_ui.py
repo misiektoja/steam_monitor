@@ -170,7 +170,7 @@ def test_rows_are_routed_independently(summary_globals):
 
 # Verifies the real summary hides the diagnostic rows until the full view is asked for
 def test_the_real_summary_hides_diagnostics_until_asked(summary_globals):
-    rows = monitor.build_startup_summary("tool.conf", None, "tool.log")
+    rows = monitor.build_startup_summary("76561198000000000", "tool.conf", None, "tool.log")
 
     concise = rendered_summary(rows, show_full=False)
     full = rendered_summary(rows, show_full=True)
@@ -187,7 +187,7 @@ def test_the_real_summary_hides_diagnostics_until_asked(summary_globals):
 
 # Verifies the concise view points at the diagnostic modes and stops once one of them is on
 def test_the_concise_summary_points_at_the_diagnostic_modes(summary_globals):
-    rows = monitor.build_startup_summary("tool.conf", None, "tool.log")
+    rows = monitor.build_startup_summary("76561198000000000", "tool.conf", None, "tool.log")
 
     concise = rendered_summary(rows, show_full=False)
     full = rendered_summary(rows, show_full=True)
@@ -204,7 +204,7 @@ def test_the_notification_rollups_name_their_categories(monkeypatch, summary_glo
     monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", False)
     monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", False)
 
-    concise = rendered_summary(monitor.build_startup_summary("tool.conf", None, "tool.log"), show_full=False)
+    concise = rendered_summary(monitor.build_startup_summary("76561198000000000", "tool.conf", None, "tool.log"), show_full=False)
 
     assert "Notifications (email)" in concise
     assert "On (online/offline, game)" in concise
@@ -302,14 +302,14 @@ def test_rows_are_verbose_only_by_default():
 def test_a_feature_row_is_concise_only_when_it_is_on(monkeypatch, summary_globals, enabled):
     monkeypatch.setattr(monitor, "FRIENDS_CHECK", enabled)
 
-    concise = rendered_summary(monitor.build_startup_summary("tool.conf", None, None), show_full=False)
+    concise = rendered_summary(monitor.build_startup_summary("76561198000000000", "tool.conf", None, None), show_full=False)
 
     assert ("Friends tracking" in concise) is enabled
 
 
 # Verifies the concise view ends by naming the flags that reveal the rest
 def test_the_concise_view_points_at_the_verbose_flags(summary_globals):
-    concise = rendered_summary(monitor.build_startup_summary("tool.conf", None, None), show_full=False)
+    concise = rendered_summary(monitor.build_startup_summary("76561198000000000", "tool.conf", None, None), show_full=False)
 
     assert concise.rstrip().endswith("use --verbose or --debug")
 
@@ -502,3 +502,16 @@ def test_the_install_method_vocabulary_is_shared():
     assert (monitor.INSTALL_METHOD_PYPI, monitor.INSTALL_METHOD_SCRIPT) == ("pip", "manual")
     assert monitor.install_method_display_name("pip") == "PyPI install"
     assert monitor.install_method_display_name("manual") == "downloaded script"
+
+
+# The rows shared with the sibling monitors, in the order every one of them prints
+SHARED_ROW_ORDER = ("Target", "Polling intervals", "Notifications (email)", "Notifications (webhook)", "Output", "Output logging", "Config", "Dotenv", "Liveness output", "CSV output", "Terminal truncation", "Install method", "Secrets from dotenv", "Secrets from environment", "Secrets from config file", "TLS verification", "ASCII log separators", "Coloured output", "Verbose mode", "Debug mode", "More details")
+
+
+# Verifies the shared rows keep the order and the label column width every sibling monitor prints
+def test_the_shared_summary_rows_match_the_sibling_tools(summary_globals):
+    rows = monitor.build_startup_summary("76561198000000000", "tool.conf", ".env", "tool.log")
+
+    assert [row.label for row in rows if row.label in SHARED_ROW_ORDER] == list(SHARED_ROW_ORDER)
+    # The renderer pads "<label>:" into a 30-character column, so a longer label swallows the separating space
+    assert max(len(row.label) for row in rows) <= 28

@@ -3570,7 +3570,7 @@ def _wizard_print_setup_summary(state):
         ("CSV output", state.config_values.get("CSV_FILE") or "disabled"),
         ("Config destination", state.config_path),
         ("Dotenv destination", state.env_path),
-        ("Install method", install_method()),
+        ("Install method", install_method_display_name()),
     ]
     print(colorize("header", "\nSetup summary\n"))
     _wizard_print_summary_rows(rows)
@@ -3840,25 +3840,20 @@ def emit_startup_summary(rows, show_full=False, printer=None):
 
 
 # Builds every startup summary row, deciding per row whether it belongs in the concise view, the full view and the log
-def build_startup_summary(config_path=None, env_path=None, log_path=None):
-    startup_secret_sources = secret_sources(env_path)
-    dotenv_supplied = sorted(name for name, source in startup_secret_sources.items() if source != "environment")
-    environment_supplied = sorted(name for name, source in startup_secret_sources.items() if source == "environment")
+def build_startup_summary(target=None, config_path=None, env_path=None, log_path=None):
+    dotenv_secrets, environment_secrets, config_secrets = doctor_secret_sources(env_path)
+    from_dotenv, from_environment, from_config = sorted(dotenv_secrets), sorted(environment_secrets), sorted(config_secrets)
     logging_enabled = bool(log_path) and not DISABLE_LOGGING
     output_state = str(log_path) if logging_enabled else "Terminal only (logging disabled)"
     rows = [
+        StartupSummaryRow("Target", str(target) if target else "None", concise=True),
         StartupSummaryRow("Polling intervals", f"[offline: {display_time(STEAM_CHECK_INTERVAL)}] [online: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]", concise=True),
-        StartupSummaryRow("TLS verification", "On" if VERIFY_SSL else "Off, server certificates are not checked", concise=not VERIFY_SSL),
         StartupSummaryRow("Notifications (email)", _startup_notification_state(_startup_email_notification_categories()), concise=True),
         StartupSummaryRow("Notifications (webhook)", _startup_notification_state(_startup_webhook_notification_categories()), concise=True),
         StartupSummaryRow("Output", output_state, concise=True, full=False, log=False),
         StartupSummaryRow("Output logging", str(log_path) if logging_enabled else "Disabled"),
-        StartupSummaryRow("ASCII log separators", f"{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})"),
         StartupSummaryRow("Config", str(config_path) if config_path else "None", concise=True),
         StartupSummaryRow("Dotenv", str(env_path) if env_path else "None", concise=True),
-        StartupSummaryRow("Install method", install_method_display_name()),
-        StartupSummaryRow("Secrets from dotenv", ", ".join(dotenv_supplied) if dotenv_supplied else "None"),
-        StartupSummaryRow("Secrets from environment", ", ".join(environment_supplied) if environment_supplied else "None"),
         # Each tracked feature earns a concise row only when it is actually switched on
         StartupSummaryRow("Level/XP tracking", str(STEAM_LEVEL_XP_CHECK), concise=bool(STEAM_LEVEL_XP_CHECK)),
         StartupSummaryRow("Friends tracking", str(FRIENDS_CHECK), concise=bool(FRIENDS_CHECK)),
@@ -3867,6 +3862,14 @@ def build_startup_summary(config_path=None, env_path=None, log_path=None):
         StartupSummaryRow("CSV output", CSV_FILE or "Disabled", concise=bool(CSV_FILE)),
         StartupSummaryRow("Profile CSV output", PROFILE_CSV_FILE or "Disabled", concise=bool(PROFILE_CSV_FILE)),
         StartupSummaryRow("Terminal truncation", f"{TRUNCATE_CHARS} chars" if TRUNCATE_CHARS else "Disabled", concise=bool(TRUNCATE_CHARS)),
+        StartupSummaryRow("Install method", install_method_display_name()),
+        StartupSummaryRow("Secrets from dotenv", ", ".join(from_dotenv) if from_dotenv else "None"),
+        StartupSummaryRow("Secrets from environment", ", ".join(from_environment) if from_environment else "None"),
+        StartupSummaryRow("Secrets from config file", ", ".join(from_config) if from_config else "None"),
+        StartupSummaryRow("TLS verification", "On" if VERIFY_SSL else "Off, server certificates are not checked", concise=not VERIFY_SSL),
+        StartupSummaryRow("ASCII log separators", f"{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})"),
+        # The resolved state, not the setting: colour also switches itself off when the output is not a terminal
+        StartupSummaryRow("Coloured output", f"{COLOR_ENABLED} (setting: {COLORED_OUTPUT})"),
         StartupSummaryRow("Verbose mode", str(VERBOSE_MODE), concise=bool(VERBOSE_MODE)),
         StartupSummaryRow("Debug mode", str(DEBUG_MODE), concise=bool(DEBUG_MODE)),
         # Points at the two modes for a reader who does not know they exist, so the full view drops it
@@ -6377,7 +6380,7 @@ def main():
         FRIENDS_NOTIFICATION = False
         GAMES_LIBRARY_NOTIFICATION = False
 
-    emit_startup_summary(build_startup_summary(cfg_path, env_path, FINAL_LOG_PATH), show_full=full_startup_summary_enabled())
+    emit_startup_summary(build_startup_summary(s_id, cfg_path, env_path, FINAL_LOG_PATH), show_full=full_startup_summary_enabled())
 
     if NTFY_IMAGES and not NTFY_IMAGES_AVAILABLE:
         NTFY_IMAGES = False
