@@ -856,3 +856,14 @@ def test_abandoning_a_refused_sign_in_switches_email_off(tmp_path, monkeypatch, 
     assert "Email notifications stay off until the mail server accepts the settings." in capsys.readouterr().out
     values = monitor.parse_config_content((tmp_path / "steam_monitor.conf").read_text(encoding="utf-8"))
     assert all(values[name] is False for name in monitor.WIZARD_EMAIL_NOTIFICATION_KEYS)
+
+
+# Verifies Ctrl+C at the welcome offer reports one line instead of a traceback
+def test_interrupting_the_welcome_offer_reports_a_cancellation(monkeypatch, capsys):
+    def interrupt(_prompt):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(monitor, "run_setup_wizard", lambda **_kwargs: pytest.fail("the wizard ran after being interrupted"))
+
+    assert monitor.print_welcome_screen(input_func=interrupt, interactive=True) == 1
+    assert "Setup cancelled." in capsys.readouterr().out

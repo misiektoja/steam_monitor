@@ -3975,9 +3975,16 @@ def print_welcome_screen(input_func=None, interactive=None):
     _wizard_print_command("Check setup before monitoring:", render_command(["--doctor", "<steam_target>"], include_paths=False))
     print(f"Full options: {colorize('section', render_command(['--help'], include_paths=False))}")
     print(f"\nGuide:        {colorize('url', QUICK_START_GUIDE_URL)}\n")
-    if terminal_is_interactive and _wizard_ask_yes_no("Run the guided setup wizard now?", default=True, input_func=input_func):
-        print()
-        return run_setup_wizard()
+    if terminal_is_interactive:
+        try:
+            start_setup = _wizard_ask_yes_no("Run the guided setup wizard now?", default=True, input_func=input_func)
+        except (EOFError, KeyboardInterrupt):
+            # This prompt sits outside the wizard, which handles its own interrupts
+            print("\n" + colorize("warning", "Setup cancelled."))
+            return 1
+        if start_setup:
+            print()
+            return run_setup_wizard()
     return 0
 
 
