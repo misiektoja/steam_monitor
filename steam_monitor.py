@@ -3690,7 +3690,7 @@ def _wizard_destinations(config_file=None, env_file=None):
 # Confirms replacing an existing config before any question is asked, so a long run cannot end in a surprise
 def _wizard_choose_config_destination(config_path, input_func=None):
     selected = Path(config_path)
-    while selected.exists() and not _wizard_ask_yes_no(f"Configuration file '{selected}' exists. Replace it with a fresh configuration built from defaults and create a timestamped backup?", default=False, input_func=input_func):
+    while selected.exists() and not _wizard_ask_yes_no(f"Configuration file '{selected}' exists. A timestamped backup is kept. Rebuild it from your answers, starting from its current settings?", default=False, input_func=input_func):
         alternative = _wizard_ask_text("Another config destination or leave empty to cancel", input_func=input_func)
         if not alternative:
             return None
@@ -3751,6 +3751,18 @@ def _wizard_reset_section(state, config_keys, secret_keys):
     for key in config_keys:
         if key in state.baseline_values:
             state.config_values[key] = state.baseline_values[key]
+        else:
+            state.config_values.pop(key, None)
+    for key in secret_keys:
+        state.secret_updates.pop(key, None)
+
+
+# Returns one declined section to the built-in template values, so nothing the user turned down is written
+def _wizard_clear_section(state, config_keys, secret_keys=()):
+    defaults = _config_template_defaults()
+    for key in config_keys:
+        if key in defaults:
+            state.config_values[key] = defaults[key]
         else:
             state.config_values.pop(key, None)
     for key in secret_keys:
@@ -3846,6 +3858,7 @@ def _wizard_collect_auth_section(state, input_func=None, getpass_func=None, vali
 
 # Switches every email alert off together, so an abandoned answer cannot leave half a mail server configured
 def _wizard_disable_email(state):
+    _wizard_clear_section(state, WIZARD_SMTP_CONFIG_KEYS, ("SMTP_PASSWORD",))
     for key in WIZARD_EMAIL_NOTIFICATION_KEYS + ("STEAM_LEVEL_XP_NOTIFICATION", "FRIENDS_NOTIFICATION", "GAMES_LIBRARY_NOTIFICATION"):
         state.config_values[key] = False
 
@@ -3953,6 +3966,7 @@ def _wizard_collect_email_section(state, input_func=None, getpass_func=None):
 
 # Switches the channel and every alert it owns off together, so a half-configured webhook cannot be written
 def _wizard_disable_webhook(state):
+    _wizard_clear_section(state, ("WEBHOOK_PROVIDER",), ("WEBHOOK_URL", "NTFY_ACCESS_TOKEN"))
     state.config_values["WEBHOOK_ENABLED"] = False
     state.config_values["NTFY_IMAGES"] = False
     state.config_values.update({name: False for name in WIZARD_WEBHOOK_NOTIFICATION_KEYS})
@@ -4132,10 +4146,18 @@ def _wizard_print_summary_rows(rows):
         print(f"  {(label + ':'):<{width}} {_wizard_summary_value(label, value)}")
 
 
+# Adds the .csv extension when the answer carries none, so a bare name still names a CSV file
+def _wizard_normalize_csv_path(answer):
+    text = str(answer).strip()
+    if not text or Path(text).suffix:
+        return text
+    return text + ".csv"
+
+
 # Collects the log and CSV output destinations monitoring would write
 def _wizard_collect_output_section(state, input_func=None):
     state.config_values["DISABLE_LOGGING"] = not _wizard_ask_yes_no("Write the normal per-target log file?", default=not bool(state.config_values.get("DISABLE_LOGGING")), input_func=input_func)
-    state.config_values["CSV_FILE"] = _wizard_ask_text("Optional CSV output path (blank disables it)", default=str(state.config_values.get("CSV_FILE") or ""), input_func=input_func)
+    state.config_values["CSV_FILE"] = _wizard_normalize_csv_path(_wizard_ask_text("Optional CSV output path (blank disables it)", default=str(state.config_values.get("CSV_FILE") or ""), input_func=input_func))
 
 
 # Shows everything that is about to be written, by name and never by secret value
@@ -4874,6 +4896,20 @@ COMMENTED_CONFIG_SETTINGS = frozenset({"COLOR_THEME"})
 def _config_allowed_names():
     template_tree = ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec")
     return frozenset(statement.targets[0].id for statement in template_tree.body if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name)) | COMMENTED_CONFIG_SETTINGS
+
+
+# Returns the literal values the built-in config template ships with, used to clear a section the user declined
+def _config_template_defaults():
+    template_tree = ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec")
+    defaults = {}
+    for statement in template_tree.body:
+        if not isinstance(statement, ast.Assign) or len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
+            continue
+        try:
+            defaults[statement.targets[0].id] = ast.literal_eval(statement.value)
+        except ValueError:
+            continue
+    return defaults
 
 
 # Parses allowlisted literal config assignments without executing any file content
