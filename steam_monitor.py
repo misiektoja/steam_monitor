@@ -1603,6 +1603,15 @@ def clear_screen(enabled=True):
         print("* Cannot clear the screen contents")
 
 
+# Commands that print a one-shot result and exit, so the screen keeps whatever is already on it
+KEEP_HISTORY_FLAGS = (*SECRET_ACTION_FLAGS, "--doctor", "--send-test-email", "--send-test-webhook", "--help", "-h")
+
+
+# Returns True when the running command is a one-shot whose output has to stay scrollable
+def keep_terminal_history():
+    return any(flag in sys.argv for flag in KEEP_HISTORY_FLAGS)
+
+
 # Prints the ASCII startup banner with a separately aligned version
 def print_startup_banner():
     print("\n".join(colorize("header", line) if line else line for line in STARTUP_BANNER.splitlines()))
@@ -6132,7 +6141,7 @@ def main():
         DEBUG_MODE = True
     if CLEAR_SCREEN and DEBUG_MODE:
         debug_print("Terminal screen clear skipped because debug mode is active")
-    clear_screen(CLEAR_SCREEN and not DEBUG_MODE)
+    clear_screen(CLEAR_SCREEN and not keep_terminal_history() and not DEBUG_MODE)
 
     print_startup_banner()
 
