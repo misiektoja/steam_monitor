@@ -1217,6 +1217,24 @@ def _colorize_quoted_name(match):
 
 
 # Applies colour rules to a single output line
+# Applies a substitution only to the parts of a line outside already coloured spans, so styles never nest
+def _sub_outside_color(pattern, replacement, line):
+    if ANSI_RESET not in line:
+        return pattern.sub(replacement, line)
+    parts = []
+    position = 0
+    inside = False
+    for match in SGR_SEQUENCE_RE.finditer(line):
+        segment = line[position:match.start()]
+        parts.append(segment if inside else pattern.sub(replacement, segment))
+        parts.append(match.group(0))
+        inside = match.group(0) != ANSI_RESET
+        position = match.end()
+    trailing = line[position:]
+    parts.append(trailing if inside else pattern.sub(replacement, trailing))
+    return "".join(parts)
+
+
 def _colorize_line(line, notification_summary=False):
     original = line
 
@@ -1258,7 +1276,7 @@ def _colorize_line(line, notification_summary=False):
 
     # Any '<something> URL:' row is a link, checked before the label table so 'Profile URL:' is not read as a name
     if " URL:" in line or _split_output_label(line, ("URL:",)):
-        return _URL_RE.sub(lambda mo: colorize("link", mo.group(0)), line)
+        return _sub_outside_color(_URL_RE, lambda mo: colorize("link", mo.group(0)), line)
 
     # Labelled identifier rows keep their label plain and colour only the value
     for labels, style_name in _LABEL_STYLES:
@@ -1268,7 +1286,7 @@ def _colorize_line(line, notification_summary=False):
             return f"{label}{colorize(style_name, rest)}" + ("\n" if line.endswith("\n") else "")
 
     # Links printed inside a sentence, such as the guide link on the welcome and doctor screens
-    line = _URL_RE.sub(lambda mo: colorize("link", mo.group(0)), line)
+    line = _sub_outside_color(_URL_RE, lambda mo: colorize("link", mo.group(0)), line)
 
     # Steam user <name> ... lines (apply username colour but continue for further rules)
     m = _STEAM_USER_LINE_RE.match(line)
@@ -3422,6 +3440,11 @@ DOCTOR_MARK_STYLES = {"PASS": "boolean_true", "WARN": "warning", "FAIL": "error"
 DOCTOR_PROGRESS_WIDTH = 0
 
 
+# Colours every link in a doctor detail line, since the report is printed before the line colouriser is installed
+def _colorize_doctor_links(text):
+    return _sub_outside_color(_URL_RE, lambda mo: colorize("link", mo.group(0)), text)
+
+
 # Renders one doctor result marker in the colour its status calls for
 def render_doctor_marker(status):
     return colorize(DOCTOR_MARK_STYLES.get(status, "info"), f"[{status}]")
@@ -3447,7 +3470,7 @@ def render_doctor_sections(report):
         for check in section_checks:
             lines.append(f"{render_doctor_marker(check.status)} {check.label}")
             if check.detail:
-                lines.append(f"  {check.detail}")
+                lines.append(f"  {_colorize_doctor_links(check.detail)}")
             if check.status != "PASS" and check.advice is not None:
                 # The fix carries its own guide line, so each line is indented and styled on its own rather
                 # than leaving one colour sequence open across the newline
