@@ -461,7 +461,7 @@ TLS_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#tls-verification"
 USAGE_GUIDE_URL = f"{DOCS_BASE_URL}/usage/"
 STEAM_API_KEY_REGISTRATION_URL = "https://steamcommunity.com/dev/apikey"
 STEAM_TARGET_FORMS = "Steam64 ID, Steam3 identifier, vanity name or full profile URL"
-STEAM_TARGET_INPUT_ERROR = f"Enter a {STEAM_TARGET_FORMS}, for example https://steamcommunity.com/id/<name>/"
+STEAM_TARGET_INPUT_ERROR = f"Enter a {STEAM_TARGET_FORMS}, for example https://steamcommunity.com/id/<vanity_name>/"
 DOCTOR_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#doctor-preflight"
 
 # Shared prefixes for the checks a delivery test depends on, kept as constants because the labels are dynamic
@@ -3288,6 +3288,13 @@ def render_doctor_marker(status):
     return colorize(DOCTOR_MARK_STYLES.get(status, "info"), f"[{status}]")
 
 
+# Prints one result the way the report renders it, so a row printed after the report matches the rows above it
+def print_doctor_check(check):
+    print(f"{render_doctor_marker(check.status)} {check.label}")
+    if check.detail:
+        print(f"  {check.detail}")
+
+
 # Renders the heading and every non-empty section, with a fix line on the rows that are not a pass
 def render_doctor_sections(report):
     # The install method is context rather than a check: it cannot fail, so it is stated once here
@@ -3385,29 +3392,29 @@ def _doctor_offer_notification_tests(report):
         return []
     if not report.email_ready and not report.webhook_ready:
         return []
-    print(colorize("header", "\nOptional delivery tests\n"))
+    print("\n" + colorize("section", "Optional delivery tests") + "\n")
     print("Doctor will not write files. Each approved test sends one real message.\n")
     checks = []
     if report.email_ready:
         if _doctor_ask_yes_no("Send one test email now? This will deliver a real message"):
             delivered = send_email("steam_monitor: doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "", SMTP_SSL, smtp_timeout=5) == 0
-            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS" if delivered else "FAIL", "Doctor test email delivered" if delivered else "Doctor test email delivery failed", "One real test email was sent after confirmation" if delivered else "The approved test email could not be delivered")
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS" if delivered else "FAIL", "Doctor test email delivered" if delivered else "Doctor test email delivery failed", "One real test email was sent after confirmation" if delivered else "The approved test email could not be delivered. Review the SMTP error above")
         else:
-            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test email was not sent")
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test email was not sent", "You declined the real delivery test. Run doctor again and approve the email test when ready")
         checks.append(check)
         # Recorded on the report so the summary sentence and the exit code cannot disagree about the same run
         report.checks.append(check)
-        print(f"{render_doctor_marker(check.status)} {check.label}")
+        print_doctor_check(check)
     if report.webhook_ready:
         provider = webhook_provider_display_name()
         if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
             delivered = send_webhook("steam_monitor: doctor test webhook", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", "status", force=True) == 0
-            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS" if delivered else "FAIL", "Doctor test webhook delivered" if delivered else "Doctor test webhook delivery failed", "One real test webhook was sent after confirmation" if delivered else "The approved test webhook could not be delivered")
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS" if delivered else "FAIL", f"Doctor test webhook through {provider} delivered" if delivered else f"Doctor test webhook through {provider} delivery failed", "One real test webhook was sent after confirmation" if delivered else "The approved test webhook could not be delivered. Review the webhook error above")
         else:
-            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test webhook was not sent")
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", f"Test webhook through {provider} was not sent", "You declined the real delivery test. Run doctor again and approve the webhook test when ready")
         checks.append(check)
         report.checks.append(check)
-        print(f"{render_doctor_marker(check.status)} {check.label}")
+        print_doctor_check(check)
     return checks
 
 
@@ -3433,11 +3440,8 @@ def run_doctor(target_value=None, config_path=None, env_path=None):
     print(render_doctor_sections(report))
     _doctor_offer_notification_tests(report)
     print(render_doctor_summary(report.checks))
-    failed = any(check.status == "FAIL" for check in report.checks)
-    if not failed:
-        print("")
-        print(f"Start monitoring with: {render_command([str(target_value)] if target_value else [])}")
-    return 1 if failed else 0
+    # The next steps block is the one place that prints the monitoring command, so it is not repeated here
+    return 1 if any(check.status == "FAIL" for check in report.checks) else 0
 
 
 # Returns a stored value only when it is a real answer, so template placeholders are never offered as defaults

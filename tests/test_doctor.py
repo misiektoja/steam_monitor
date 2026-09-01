@@ -674,13 +674,15 @@ def test_the_preflight_notice_precedes_the_checks(monkeypatch, doctor_globals, c
     assert output.index("Running preflight checks. No files will be written.") < output.index("Doctor")
 
 
-# Verifies a passing run ends by printing the command that starts monitoring, for this install
-def test_a_passing_run_prints_the_monitoring_command(monkeypatch, doctor_globals, capsys):
+# Verifies the report leaves the monitoring command to the next steps block, so it is printed once
+def test_a_passing_run_leaves_the_monitoring_command_to_the_next_steps(monkeypatch, doctor_globals, capsys):
     client = FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 3}])
 
     run_doctor_offline(monkeypatch, target_value=76561197960435530, client=client)
 
-    assert "Start monitoring with: " in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "Start monitoring with: " not in output
+    assert "76561197960435530" not in output.split("Summary", 1)[1]
 
 
 # Returns the doctor transcript from a real pseudo-terminal, the way a user actually sees it
