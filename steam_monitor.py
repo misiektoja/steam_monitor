@@ -3235,6 +3235,10 @@ class WizardSetupState:
         self.persist_target = True
 
 
+# The mail server settings the wizard collects, and how long its sign-in check waits for the server
+WIZARD_SMTP_CONFIG_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL")
+WIZARD_SMTP_TIMEOUT = 5
+
 # The email and webhook alert settings the wizard offers, in the order the questions are asked
 WIZARD_EMAIL_NOTIFICATION_KEYS = ("ACTIVE_INACTIVE_NOTIFICATION", "GAME_CHANGE_NOTIFICATION", "STATUS_NOTIFICATION", "NAME_CHANGE_NOTIFICATION", "ERROR_NOTIFICATION")
 WIZARD_WEBHOOK_NOTIFICATION_KEYS = ("WEBHOOK_ACTIVE_NOTIFICATION", "WEBHOOK_INACTIVE_NOTIFICATION", "WEBHOOK_GAME_CHANGE_NOTIFICATION", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_NAME_CHANGE_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION")
@@ -3245,7 +3249,7 @@ WIZARD_SECTIONS = (
     ("Target", "Target", "Change the Steam profile that is monitored.", ("TARGET_STEAM_ID",), ()),
     ("Polling", "Polling interval", "Change how often Steam is checked.", ("STEAM_CHECK_INTERVAL", "STEAM_ACTIVE_CHECK_INTERVAL"), ()),
     ("Authentication", "Authentication", "Enter the Steam Web API key again.", (), ("STEAM_API_KEY",)),
-    ("Email", "Email notifications", "Change SMTP details and email events.", ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL") + WIZARD_EMAIL_NOTIFICATION_KEYS, ("SMTP_PASSWORD",)),
+    ("Email", "Email notifications", "Change SMTP details and email events.", WIZARD_SMTP_CONFIG_KEYS + WIZARD_EMAIL_NOTIFICATION_KEYS, ("SMTP_PASSWORD",)),
     ("Webhook", "Webhook alerts", "Change Discord or ntfy details and events.", ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "NTFY_IMAGES") + WIZARD_WEBHOOK_NOTIFICATION_KEYS, ("WEBHOOK_URL", "NTFY_ACCESS_TOKEN")),
     ("Output", "Output files", "Change log and CSV output settings.", ("DISABLE_LOGGING", "CSV_FILE"), ()),
 )
@@ -3356,6 +3360,47 @@ def _wizard_disable_email(state):
         state.config_values[key] = False
 
 
+# Signs in to the collected mail server without sending anything, so a refused login is caught during setup
+def _wizard_verify_smtp(values, password):
+    names = ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SMTP_PASSWORD", "SENDER_EMAIL", "RECEIVER_EMAIL")
+    previous = {name: globals()[name] for name in names}
+    smtp_object = None
+    try:
+        globals().update(values)
+        # A blank answer keeps the password already stored, which is the one the sign-in must then prove
+        globals()["SMTP_PASSWORD"] = password or previous["SMTP_PASSWORD"]
+        smtp_object = smtp_connect_and_login(SMTP_SSL, smtp_timeout=WIZARD_SMTP_TIMEOUT)
+        return None
+    except Exception as exc:
+        return classify_recovery_error(exc, "email")
+    finally:
+        if smtp_object is not None:
+            try:
+                smtp_object.quit()
+            except Exception:
+                pass
+        globals().update(previous)
+
+
+# Reports the outcome of the sign-in check: True to continue, False to ask again, None to switch email off
+def _wizard_smtp_sign_in_accepted(values, password, input_func=None):
+    print("  Checking the sign-in with the mail server ...")
+    advice = _wizard_verify_smtp(values, password)
+    if advice is None:
+        print("  The mail server accepted the sign-in. No email was sent.")
+        return True
+    print(f"  {advice.summary}: {advice.detail}" if advice.detail else f"  {advice.summary}")
+    print(f"  To fix: {advice.fix}")
+    if _wizard_offer_retry("mail server settings", input_func=input_func):
+        return False
+    if advice.retryable:
+        # Being offline is the usual reason a correct setup fails here, so the answers are kept rather than discarded
+        print("  The settings were kept without being checked. Run --doctor to check the sign-in again.")
+        return True
+    print("  Email notifications stay off until the mail server accepts the settings.")
+    return None
+
+
 # Reports whether one required mail server answer was abandoned, switching the channel off when it was
 def _wizard_email_answer_missing(state, key):
     if state.config_values.get(key):
@@ -3370,23 +3415,30 @@ def _wizard_collect_email_section(state, input_func=None, getpass_func=None):
     if not _wizard_ask_yes_no("Configure email notifications?", default=False, input_func=input_func):
         _wizard_disable_email(state)
         return
-    state.config_values["SMTP_HOST"] = _wizard_ask_text("SMTP host", default=_wizard_default(state.config_values.get("SMTP_HOST")), required=True, input_func=input_func)
-    if _wizard_email_answer_missing(state, "SMTP_HOST"):
-        return
-    state.config_values["SMTP_PORT"] = _wizard_ask_positive_int("SMTP port", int(state.config_values.get("SMTP_PORT") or 587), input_func=input_func)
-    state.config_values["SMTP_SSL"] = _wizard_ask_yes_no("Enable TLS/SSL for SMTP?", default=True, input_func=input_func)
-    state.config_values["SMTP_USER"] = _wizard_ask_text("SMTP username", default=_wizard_default(state.config_values.get("SMTP_USER")), required=True, input_func=input_func)
-    if _wizard_email_answer_missing(state, "SMTP_USER"):
-        return
-    state.config_values["SENDER_EMAIL"] = _wizard_ask_text("Sender email", default=_wizard_default(state.config_values.get("SENDER_EMAIL")), required=True, input_func=input_func)
-    if _wizard_email_answer_missing(state, "SENDER_EMAIL"):
-        return
-    state.config_values["RECEIVER_EMAIL"] = _wizard_ask_text("Receiver email", default=_wizard_default(state.config_values.get("RECEIVER_EMAIL")), required=True, input_func=input_func)
-    if _wizard_email_answer_missing(state, "RECEIVER_EMAIL"):
-        return
-    password = _wizard_ask_secret("SMTP password", getpass_func=getpass_func)
-    if password:
-        state.secret_updates["SMTP_PASSWORD"] = password
+    while True:
+        state.config_values["SMTP_HOST"] = _wizard_ask_text("SMTP host", default=_wizard_default(state.config_values.get("SMTP_HOST")), required=True, input_func=input_func)
+        if _wizard_email_answer_missing(state, "SMTP_HOST"):
+            return
+        state.config_values["SMTP_PORT"] = _wizard_ask_positive_int("SMTP port", int(state.config_values.get("SMTP_PORT") or 587), input_func=input_func)
+        state.config_values["SMTP_SSL"] = _wizard_ask_yes_no("Enable TLS/SSL for SMTP?", default=bool(state.config_values.get("SMTP_SSL", True)), input_func=input_func)
+        state.config_values["SMTP_USER"] = _wizard_ask_text("SMTP username", default=_wizard_default(state.config_values.get("SMTP_USER")), required=True, input_func=input_func)
+        if _wizard_email_answer_missing(state, "SMTP_USER"):
+            return
+        state.config_values["SENDER_EMAIL"] = _wizard_ask_text("Sender email", default=_wizard_default(state.config_values.get("SENDER_EMAIL")), required=True, input_func=input_func)
+        if _wizard_email_answer_missing(state, "SENDER_EMAIL"):
+            return
+        state.config_values["RECEIVER_EMAIL"] = _wizard_ask_text("Receiver email", default=_wizard_default(state.config_values.get("RECEIVER_EMAIL")), required=True, input_func=input_func)
+        if _wizard_email_answer_missing(state, "RECEIVER_EMAIL"):
+            return
+        password = _wizard_ask_secret("SMTP password", getpass_func=getpass_func)
+        if password:
+            state.secret_updates["SMTP_PASSWORD"] = password
+        outcome = _wizard_smtp_sign_in_accepted({name: state.config_values[name] for name in WIZARD_SMTP_CONFIG_KEYS}, password, input_func=input_func)
+        if outcome is None:
+            _wizard_disable_email(state)
+            return
+        if outcome:
+            break
     preset = _wizard_ask_choice("Which email notifications should be enabled?", [
         ("Status and errors, recommended", "Online, offline, game change and error notifications."),
         ("Every supported event", "Enables all email notification types."),

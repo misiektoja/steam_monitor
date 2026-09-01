@@ -36,6 +36,12 @@ def wizard_globals(monkeypatch):
             os.environ[name] = value
 
 
+@pytest.fixture(autouse=True)
+# Keeps the wizard's mail server sign-in check offline, so a scripted run never opens a connection
+def accepted_smtp_sign_in(monkeypatch):
+    monkeypatch.setattr(monitor, "_wizard_verify_smtp", lambda values, password: None)
+
+
 # Returns an input function that replays scripted answers and records the prompts it was asked
 def scripted_input(answers, transcript=None):
     remaining = list(answers)
@@ -787,3 +793,66 @@ def test_a_blank_csv_answer_disables_csv_output(tmp_path, wizard_globals):
 
     assert state.config_values["DISABLE_LOGGING"] is False
     assert state.config_values["CSV_FILE"] == ""
+
+
+# The mail server answers the wizard asks for before the hidden password prompt
+EMAIL_ANSWERS = ["smtp.example.com", "587", "y", "monitor", "sender@example.com", "receiver@example.com"]
+
+
+# Verifies the wizard signs in with exactly the answers just given, so a wrong password is caught during setup
+def test_the_wizard_signs_in_with_the_collected_mail_server(tmp_path, monkeypatch, wizard_globals, capsys):
+    attempts = []
+    monkeypatch.setattr(monitor, "_wizard_verify_smtp", lambda values, password: attempts.append((values, password)) or None)
+    answers = [str(STEAM64), "y", "5m", "45s", "y"] + EMAIL_ANSWERS + ["1", "n", "y", "", "1", "n", "n"]
+
+    assert run_wizard(tmp_path, monkeypatch, answers, secrets=[API_KEY, "smtp-password"]) == 0
+
+    assert len(attempts) == 1
+    values, password = attempts[0]
+    assert values == {"SMTP_HOST": "smtp.example.com", "SMTP_PORT": 587, "SMTP_SSL": True, "SMTP_USER": "monitor", "SENDER_EMAIL": "sender@example.com", "RECEIVER_EMAIL": "receiver@example.com"}
+    assert password == "smtp-password"
+    assert "The mail server accepted the sign-in. No email was sent." in capsys.readouterr().out
+
+
+# Verifies a refused sign-in offers the mail server questions again rather than saving settings that cannot work
+def test_a_refused_mail_server_sign_in_offers_another_attempt(tmp_path, monkeypatch, wizard_globals, capsys):
+    advice = monitor.make_recovery_advice("smtp.authentication", "The mail server rejected the sign-in", "Use an app password", False, "535 authentication failed")
+    results = [advice, None]
+    monkeypatch.setattr(monitor, "_wizard_verify_smtp", lambda values, password: results.pop(0))
+    transcript = []
+    answers = [str(STEAM64), "y", "5m", "45s", "y"] + EMAIL_ANSWERS + ["y"] + EMAIL_ANSWERS + ["1", "n", "y", "", "1", "n", "n"]
+
+    assert run_wizard(tmp_path, monkeypatch, answers, secrets=[API_KEY, "wrong", "right"], transcript=transcript) == 0
+
+    output = capsys.readouterr().out
+    assert "The mail server rejected the sign-in: 535 authentication failed" in output
+    assert "To fix: Use an app password" in output
+    assert any("Try entering the mail server settings again?" in prompt for prompt in transcript)
+    assert not results
+
+
+# Verifies declining the retry keeps the answers, since being offline is the usual reason a correct setup fails here
+def test_declining_the_sign_in_retry_keeps_the_mail_server_settings(tmp_path, monkeypatch, wizard_globals, capsys):
+    advice = monitor.make_recovery_advice("smtp.connection", "The SMTP server could not be reached", "Check SMTP_HOST", True)
+    monkeypatch.setattr(monitor, "_wizard_verify_smtp", lambda values, password: advice)
+    answers = [str(STEAM64), "y", "5m", "45s", "y"] + EMAIL_ANSWERS + ["n", "1", "n", "y", "", "1", "n", "n"]
+
+    assert run_wizard(tmp_path, monkeypatch, answers, secrets=[API_KEY, "smtp-password"]) == 0
+
+    assert "The settings were kept without being checked. Run --doctor to check the sign-in again." in capsys.readouterr().out
+    values = monitor.parse_config_content((tmp_path / "steam_monitor.conf").read_text(encoding="utf-8"))
+    assert values["SMTP_HOST"] == "smtp.example.com"
+    assert values["SMTP_USER"] == "monitor"
+
+
+# Verifies giving up on a refused sign-in switches every email alert off rather than saving settings that cannot work
+def test_abandoning_a_refused_sign_in_switches_email_off(tmp_path, monkeypatch, wizard_globals, capsys):
+    advice = monitor.make_recovery_advice("smtp.authentication", "The mail server rejected the sign-in", "Use an app password", False, "535 authentication failed")
+    monkeypatch.setattr(monitor, "_wizard_verify_smtp", lambda values, password: advice)
+    answers = [str(STEAM64), "y", "5m", "45s", "y"] + EMAIL_ANSWERS + ["n", "n", "y", "", "1", "n", "n"]
+
+    assert run_wizard(tmp_path, monkeypatch, answers, secrets=[API_KEY, "wrong"]) == 0
+
+    assert "Email notifications stay off until the mail server accepts the settings." in capsys.readouterr().out
+    values = monitor.parse_config_content((tmp_path / "steam_monitor.conf").read_text(encoding="utf-8"))
+    assert all(values[name] is False for name in monitor.WIZARD_EMAIL_NOTIFICATION_KEYS)
