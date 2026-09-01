@@ -309,3 +309,12 @@ def test_sections_sit_on_the_page_a_reader_expects(section, page):
     located = [path.name for path in sorted(DOCS_DIR.glob("*.md")) if f"## {section}" in "\n".join(prose_lines(path))]
 
     assert located == [page], f"'{section}' is on {located}, expected {page}"
+
+
+# A guide that lists the test files goes stale the moment one is added and nothing else notices
+def test_the_test_suite_guide_lists_every_test_file():
+    listed = set(re.findall(r"^\| `([^`]+)` \|", (REPO_ROOT / "tests" / "README.md").read_text(encoding="utf-8"), re.M))
+    present = {path.name for path in (REPO_ROOT / "tests").glob("test_*.py")} | {path.name for path in (REPO_ROOT / "tests").glob("conftest.py")}
+
+    assert present - listed == set(), f"test files missing from tests/README.md: {sorted(present - listed)}"
+    assert {name for name in listed if name.endswith(".py")} - present == set(), f"tests/README.md names files that do not exist: {sorted({name for name in listed if name.endswith('.py')} - present)}"
