@@ -1048,6 +1048,6 @@ def test_the_welcome_screen_closes_with_a_blank_line(capsys):
     assert capsys.readouterr().out.endswith(f"{monitor.QUICK_START_GUIDE_URL}\n\n")
 
 
-# Verifies the guide link opens the section of the page rather than the top of it
-def test_the_welcome_guide_link_opens_the_quick_start_section():
-    assert monitor.QUICK_START_GUIDE_URL.endswith("/setup-and-first-run/#quick-start")
+# Verifies the guide link opens the setup page the sibling monitors link, with no section fragment
+def test_the_welcome_guide_link_opens_the_shared_setup_page():
+    assert monitor.QUICK_START_GUIDE_URL.endswith("/setup-and-first-run/")
