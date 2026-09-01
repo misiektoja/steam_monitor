@@ -33,6 +33,18 @@ class SecretInputTests(unittest.TestCase):
         if os.name == "posix":
             self.assertEqual(stat.S_IMODE(self.destination.stat().st_mode), 0o600)
 
+    # Verifies the printed next steps carry no placeholder target, so both commands can be pasted as they are
+    def test_next_steps_carry_no_placeholder_target(self):
+        printed = []
+        with patch("builtins.print", side_effect=lambda *args, **kwargs: printed.append(" ".join(str(item) for item in args))):
+            steam_monitor.run_set_steam_api_key(env_file=str(self.destination), interactive=True, getpass_func=lambda prompt: "A" * 32, validator=lambda key: True)
+
+        output = "\n".join(printed)
+        self.assertIn("Check setup again:", output)
+        self.assertIn("After Doctor passes, start monitoring:", output)
+        self.assertNotIn("<steam_target>", output)
+
+
     # Verifies hidden webhook entry saves the URL without displaying it
     def test_hidden_webhook_entry(self):
         secret = "https://discord.com/api/webhooks/123/private-token"

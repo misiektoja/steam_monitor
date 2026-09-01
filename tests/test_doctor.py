@@ -1079,3 +1079,18 @@ def test_a_command_line_target_is_carried_into_the_command(monkeypatch, capsys):
     monitor.print_doctor_next_steps("76561197960435530", doctor_exit=0)
 
     assert "76561197960435530" in capsys.readouterr().out
+
+
+# Verifies Ctrl+C at a delivery prompt ends the run instead of declining one test and asking the next
+def test_a_delivery_prompt_interrupt_ends_the_run(monkeypatch):
+    def interrupt(prompt=""):
+        raise KeyboardInterrupt
+
+    # The handler restores the saved stream, so it is pointed at the one this test captures
+    monkeypatch.setattr(monitor, "stdout_bck", monitor.sys.stdout)
+    monkeypatch.setattr("builtins.input", interrupt)
+
+    with pytest.raises(SystemExit) as raised:
+        monitor._doctor_ask_yes_no("Send one test")
+
+    assert raised.value.code == 0
