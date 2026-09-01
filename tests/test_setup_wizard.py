@@ -1,5 +1,6 @@
 """Tests the guided setup wizard, the zero-argument welcome screen and the input normalizers."""
 
+import itertools
 import os
 import pty
 import re
@@ -1077,3 +1078,21 @@ def test_the_welcome_screen_closes_with_a_blank_line(capsys):
 # Verifies the guide link opens the setup page the sibling monitors link, with no section fragment
 def test_the_welcome_guide_link_opens_the_shared_setup_page():
     assert monitor.QUICK_START_GUIDE_URL.endswith("/setup-and-first-run/")
+
+
+# Verifies the dotenv backup carries its own label, since it and the configuration backup both read "Backup:"
+def test_the_dotenv_backup_row_is_named_apart_from_the_config_backup(tmp_path, monkeypatch, capsys, wizard_globals):
+    (tmp_path / "steam_monitor.conf").write_text("STEAM_CHECK_INTERVAL = 60\n", encoding="utf-8")
+    (tmp_path / ".env").write_text("SMTP_PASSWORD=old-password\n", encoding="utf-8")
+
+    assert run_wizard(tmp_path, monkeypatch, ["y", *minimal_answers()]) == 0
+
+    lines = capsys.readouterr().out.splitlines()
+    start = next(index for index, line in enumerate(lines) if line.strip() == "Saved files")
+    block = list(itertools.takewhile(lambda line: line.startswith("  ") or not line.strip(), lines[start + 1:]))
+    # Matched on the label alone, since the temporary directory name can carry the word too
+    labelled = [(line.split(":", 1)[0].strip(), line.split(":", 1)[1].strip()) for line in block if ":" in line]
+    rows = [(label, value) for label, value in labelled if label.casefold().endswith("backup")]
+
+    assert [label for label, _ in rows] == ["Backup", "Dotenv backup"], block
+    assert rows[0][1] != rows[1][1]

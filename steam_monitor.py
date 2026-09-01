@@ -4312,7 +4312,8 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     if secret_result:
         print(f"  {'Secrets:' if state.secret_updates else 'Dotenv:':<15}{secret_result['path']}")
         if secret_result.get("backup_path"):
-            print(f"  Backup:        {secret_result['backup_path']}")
+            # Named apart from the configuration backup above it, so two different files never share one label
+            print(f"  {'Dotenv backup:':<15}{secret_result['backup_path']}")
 
     doctor_offered = bool(state.target)
     doctor_exit = None
