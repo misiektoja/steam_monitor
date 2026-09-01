@@ -67,13 +67,13 @@ def run_startup(monkeypatch, argv, config_path, env_path="none", exported_api_ke
     return observed
 
 
-# Verifies a check interval longer than the liveness interval still waits one whole check
-def test_a_long_check_interval_leaves_the_liveness_counter_at_one_check(tmp_path, monkeypatch, restored_globals):
+# Verifies a check interval longer than the liveness interval leaves the configured reminder alone
+def test_a_long_check_interval_keeps_the_configured_liveness_interval(tmp_path, monkeypatch, restored_globals):
     config_path = write_config(tmp_path, "LIVENESS_CHECK_INTERVAL = 43200\n")
 
     run_startup(monkeypatch, ["--check-interval", "86400"], config_path)
 
-    assert monitor.LIVENESS_CHECK_COUNTER == 1
+    assert monitor.LIVENESS_REMINDER_SECONDS == 43200
 
 
 # Verifies an exported secret is applied even when no dotenv file exists, which the documentation promises

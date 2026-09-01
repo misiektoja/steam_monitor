@@ -480,10 +480,8 @@ COMMAND_LINE_SECRET_KEYS = frozenset()
 # The one-shot commands that only write a secret, so the other early-exit flags do not swallow them
 SECRET_ACTION_FLAGS = ("--set-steam-api-key", "--set-smtp-password", "--set-webhook-url")
 
-# Whole checks, so a check interval longer than the liveness interval still waits one check instead of reporting on every check
-LIVENESS_CHECK_COUNTER = max(1, -(-LIVENESS_CHECK_INTERVAL // STEAM_CHECK_INTERVAL)) if LIVENESS_CHECK_INTERVAL else 0
 # Seconds rather than checks, because a failing run usually retries on a different interval than a healthy one
-LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_COUNTER else 0
+LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_INTERVAL > 0 else 0
 
 # The last connectivity failure, so a quiet caller can classify it instead of the check printing it
 LAST_CONNECTIVITY_ERROR = None
@@ -5344,7 +5342,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
     mark_monitoring_started()
 
-    alive_counter = 0
+    alive_since = int(time.time())
     status_ts = 0
     status_ts_old = 0
     status_online_start_ts = 0
@@ -5623,7 +5621,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
     print_cur_ts("\nTimestamp:\t\t\t")
 
-    alive_counter = 0
+    alive_since = int(time.time())
     check_count = 0
     error_email_sent = False
     error_webhook_sent = False
@@ -5779,6 +5777,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         outage_lasted = outage.recovered()
         if outage_lasted is not None:
             print_outage_recovery(steamid, outage_lasted)
+            alive_since = int(time.time())
         transient_retry_used = False
         error_email_sent = False
         error_webhook_sent = False
@@ -6139,7 +6138,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
                     print_cur_ts("Timestamp:\t\t\t")
 
-                    alive_counter = 0
+                    alive_since = int(time.time())
                     last_friend_ids = current_friend_ids
 
         # Games library changed
@@ -6195,7 +6194,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                         send_notification_channels("games", m_subject_games, m_body_games, email_enabled=GAMES_LIBRARY_NOTIFICATION, image_url=current_avatar_url)
 
                     print_cur_ts("Timestamp:\t\t\t")
-                    alive_counter = 0
+                    alive_since = int(time.time())
                     last_games_count = current_games_count
                     last_games_appids = set(current_games_appids)
 
@@ -6217,14 +6216,14 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 send_notification_channels("name", m_subject_name, m_body_name, email_enabled=NAME_CHANGE_NOTIFICATION, image_url=current_avatar_url)
 
             print_cur_ts("Timestamp:\t\t\t")
-            alive_counter = 0
+            alive_since = int(time.time())
 
             # Adopt the new display name for subsequent notifications and output
             username = current_username
             avatar_url = current_avatar_url
 
         if change:
-            alive_counter = 0
+            alive_since = int(time.time())
 
             try:
                 if csv_file_name:
@@ -6235,13 +6234,12 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         status_old = status
         gameid_old = gameid
         gamename_old = gamename
-        alive_counter += 1
 
         debug_print("Completed check", check=f"#{check_count}", user=steamid, status=steam_personastates[status], game=gamename or None)
 
-        if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER:
+        if LIVENESS_REMINDER_SECONDS and int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS:
             print_liveness_banner(f"Monitoring healthy for {steamid}. The user is {steam_personastates[status]} with no status or game change since the last check")
-            alive_counter = 0
+            alive_since = int(time.time())
 
         if status > 0:
             debug_print("Next check", due_in=display_time(STEAM_ACTIVE_CHECK_INTERVAL), reason="user is active")
@@ -6303,7 +6301,7 @@ def validate_secret_action_args(args, parser, action_dest, action_flag, permitte
 
 # Parses configuration and starts the selected Steam Monitor action
 def main():
-    global CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LIVENESS_CHECK_COUNTER, LIVENESS_REMINDER_SECONDS, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, NAME_CHANGE_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME, NTFY_IMAGES, EXPORTED_SECRET_KEYS, TRUNCATE_CHARS, WEBHOOK_ENABLED, DEBUG_MODE, COMMAND_LINE_SECRET_KEYS
+    global CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LIVENESS_REMINDER_SECONDS, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, NAME_CHANGE_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME, NTFY_IMAGES, EXPORTED_SECRET_KEYS, TRUNCATE_CHARS, WEBHOOK_ENABLED, DEBUG_MODE, COMMAND_LINE_SECRET_KEYS
 
     if "--generate-config" in sys.argv and not any(flag in sys.argv for flag in SECRET_ACTION_FLAGS):
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
@@ -6932,8 +6930,7 @@ def main():
 
     if args.check_interval:
         STEAM_CHECK_INTERVAL = args.check_interval
-        LIVENESS_CHECK_COUNTER = max(1, -(-LIVENESS_CHECK_INTERVAL // STEAM_CHECK_INTERVAL)) if LIVENESS_CHECK_INTERVAL else 0
-        LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_COUNTER else 0
+        LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_INTERVAL > 0 else 0
 
     if args.active_interval:
         STEAM_ACTIVE_CHECK_INTERVAL = args.active_interval

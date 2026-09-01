@@ -79,7 +79,7 @@ class FakeSteamWebAPI:
 
 
 # Runs one monitoring cycle with every tracked feature on and the named endpoints failing
-def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True, poll_error=None, stop_after_sleeps=2, error_notifications=False, liveness_counter=0, debug=None, persona_state=0, healthy_after=None):
+def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True, poll_error=None, stop_after_sleeps=2, error_notifications=False, liveness_seconds=0, debug=None, persona_state=0, healthy_after=None):
     monkeypatch.setattr(monitor, "DEBUG_MODE", diagnostics if debug is None else debug)
     monkeypatch.setattr(monitor, "VERBOSE_MODE", diagnostics)
     monkeypatch.setattr(monitor, "STEAM_LEVEL_XP_CHECK", True)
@@ -87,8 +87,7 @@ def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True,
     monkeypatch.setattr(monitor, "GAMES_LIBRARY_CHECK", True)
     monkeypatch.setattr(monitor, "STEAM_CHECK_INTERVAL", 60)
     monkeypatch.setattr(monitor, "STEAM_ACTIVE_CHECK_INTERVAL", 30)
-    monkeypatch.setattr(monitor, "LIVENESS_CHECK_COUNTER", liveness_counter)
-    monkeypatch.setattr(monitor, "LIVENESS_REMINDER_SECONDS", liveness_counter * 60)
+    monkeypatch.setattr(monitor, "LIVENESS_REMINDER_SECONDS", liveness_seconds)
     monkeypatch.setattr(monitor, "ACTIVE_INACTIVE_NOTIFICATION", False)
     monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", error_notifications)
     monkeypatch.setattr(monitor, "STEAM_LEVEL_XP_NOTIFICATION", False)
@@ -308,7 +307,7 @@ def test_a_continuing_outage_prints_one_hint(tmp_path, monkeypatch, capsys):
 
 # Verifies a continuing outage rides the liveness cadence instead of repeating its summary on every cycle
 def test_a_continuing_outage_rides_the_liveness_cadence(tmp_path, monkeypatch, capsys):
-    _api, _sleeps = run_one_cycle(tmp_path, monkeypatch, poll_error=http_error(503), stop_after_sleeps=6, liveness_counter=3)
+    _api, _sleeps = run_one_cycle(tmp_path, monkeypatch, poll_error=http_error(503), stop_after_sleeps=6, liveness_seconds=180)
 
     output = capsys.readouterr().out
     assert output.count("To fix: ") == 1
@@ -403,7 +402,7 @@ def test_a_quiet_cycle_records_the_completed_check_in_debug(tmp_path, monkeypatc
 
 # Verifies the liveness banner says what it is reporting rather than printing a bare timestamp
 def test_the_liveness_banner_explains_itself(tmp_path, monkeypatch, capsys):
-    run_one_cycle(tmp_path, monkeypatch, liveness_counter=1)
+    run_one_cycle(tmp_path, monkeypatch, liveness_seconds=60)
 
     output = capsys.readouterr().out
     assert "Monitoring healthy for 76561197960435530. The user is offline with no status or game change since the last check" in output
@@ -412,16 +411,23 @@ def test_the_liveness_banner_explains_itself(tmp_path, monkeypatch, capsys):
 
 # Verifies the banner explains itself without --verbose too, so a plain run never prints a bare timestamp
 def test_the_liveness_banner_explains_itself_without_diagnostics(tmp_path, monkeypatch, capsys):
-    run_one_cycle(tmp_path, monkeypatch, liveness_counter=1, diagnostics=False)
+    run_one_cycle(tmp_path, monkeypatch, liveness_seconds=60, diagnostics=False)
 
     output = capsys.readouterr().out
     assert "* Monitoring healthy for 76561197960435530. The user is offline with no status or game change since the last check" in output
     assert "Liveness check, timestamp:" in output
 
 
+# Verifies the banner follows the clock, so a target polled on the shorter active interval is not reminded more often
+def test_the_liveness_banner_follows_the_clock_not_the_check_count(tmp_path, monkeypatch, capsys):
+    run_one_cycle(tmp_path, monkeypatch, liveness_seconds=120, stop_after_sleeps=5, persona_state=1)
+
+    assert capsys.readouterr().out.count("Monitoring healthy for") == 1
+
+
 # Verifies an online target still reports the liveness banner, since nothing changed there either
 def test_the_liveness_banner_reports_an_online_target(tmp_path, monkeypatch, capsys):
-    run_one_cycle(tmp_path, monkeypatch, liveness_counter=1, persona_state=1)
+    run_one_cycle(tmp_path, monkeypatch, liveness_seconds=30, persona_state=1)
 
     output = capsys.readouterr().out
     assert "Monitoring healthy for 76561197960435530. The user is online with no status or game change since the last check" in output
