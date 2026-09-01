@@ -709,3 +709,13 @@ def test_a_delivery_announcement_is_painted_for_its_channel(colored, line, part)
 def test_the_delivery_channels_keep_the_shared_colours():
     assert monitor.DEFAULT_COLOR_THEME["email"] == "bright_cyan"
     assert monitor.DEFAULT_COLOR_THEME["webhook"] == "bright_blue"
+
+
+# Verifies the line colouriser leaves a link inside an already styled span alone, so styles never nest
+def test_a_link_inside_a_styled_span_is_not_recoloured(monkeypatch):
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", True)
+    monkeypatch.setattr(monitor, "_COLOR_STYLES", {name: monitor._build_ansi_sequence(value) for name, value in monitor.DEFAULT_COLOR_THEME.items() if monitor._build_ansi_sequence(value)})
+    styled = monitor.colorize("info", "Guide: https://example.test/page")
+
+    assert monitor.apply_color_to_text(styled) == styled
+    assert monitor.apply_color_to_text("Guide: https://example.test/page") == f"Guide: {monitor.colorize('link', 'https://example.test/page')}"

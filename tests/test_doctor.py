@@ -542,6 +542,21 @@ def test_a_detail_repeating_the_label_is_not_printed_twice(monkeypatch, doctor_g
     assert rendered.count("WEBHOOK_URL must contain a complete HTTPS link") == 1
 
 
+# Verifies a link in a detail line takes the link colour while a styled action line keeps its own colour
+def test_a_link_in_a_detail_line_is_coloured_as_a_link(monkeypatch, doctor_globals):
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", True)
+    monkeypatch.setattr(monitor, "_COLOR_STYLES", {name: monitor._build_ansi_sequence(value) for name, value in monitor.DEFAULT_COLOR_THEME.items() if monitor._build_ansi_sequence(value)})
+    advice = monitor.make_recovery_advice("auth.api_key_invalid", "The key did not validate", monitor.recovery_fix_with_guide("Copy a fresh key from https://steamcommunity.com/dev/apikey", monitor.DOCTOR_GUIDE_URL), False, "")
+    report = monitor.DoctorReport()
+    report.checks = [monitor.make_doctor_check("Connectivity", "PASS", "The connectivity endpoint is reachable", "Endpoint: https://api.steampowered.com/"), monitor.make_doctor_check("Authentication", "FAIL", advice.summary, "", advice)]
+
+    rendered = monitor.render_doctor_sections(report)
+    fix_line = next(line for line in rendered.splitlines() if "To fix:" in line)
+
+    assert f"  Endpoint: {monitor.colorize('link', 'https://api.steampowered.com/')}" in rendered
+    assert fix_line == f"  {monitor.colorize('info', 'To fix: Copy a fresh key from https://steamcommunity.com/dev/apikey')}"
+    assert f"  {monitor.colorize('info', f'Guide: {monitor.DOCTOR_GUIDE_URL}')}" in rendered
+
 # Verifies every rendered result marker carries its status colour, not just the section headings
 def test_every_marker_is_coloured_in_the_rendered_report(monkeypatch, doctor_globals):
     monkeypatch.setattr(monitor, "COLOR_ENABLED", True)
