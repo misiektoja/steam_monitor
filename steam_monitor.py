@@ -655,11 +655,17 @@ def render_command(arguments=None, include_paths=True, config_path=None, env_pat
     return " ".join(quote_command_argument(part) for part in parts)
 
 
+# Renders one diagnostic line as an operation followed by comma-separated key=value fields, dropping unset ones
+def format_diagnostic_line(operation, fields):
+    rendered = ", ".join(f"{key}={value}" for key, value in fields.items() if value is not None)
+    return f"{operation}: {rendered}" if rendered else str(operation)
+
+
 # Prints one timestamped and sanitized diagnostic line only when debug mode is enabled
-def print_debug(message):
+def debug_print(operation, **fields):
     if DEBUG_MODE:
         # Sanitized here rather than at each call site, since one caller interpolating a secret is enough to leak it
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] {sanitize_error_text(message)}")
+        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] {sanitize_error_text(format_diagnostic_line(operation, fields))}")
 
 
 # Returns whether the full startup summary should be shown, which debug mode also implies
@@ -668,14 +674,14 @@ def full_startup_summary_enabled():
 
 
 # Prints one sanitized operational detail only when verbose mode is enabled
-def print_verbose(message):
+def verbose_print(message):
     if VERBOSE_MODE:
         print(f"* {sanitize_error_text(message)}")
 
 
 # Records a swallowed exception in debug output so a silently degraded feature can still be diagnosed
-def print_debug_exception(context, exc):
-    print_debug(f"{context} failed with {type(exc).__name__}: {exc}")
+def debug_swallowed_exception(context, exc):
+    debug_print(context, outcome="failed", error=f"{type(exc).__name__}: {exc}")
 
 
 # Strips terminal control sequences and other C0/C1 characters from third-party text before it reaches a console or a log
@@ -758,7 +764,7 @@ def steam_web_api_client(api_key=None):
     try:
         client.session.verify = VERIFY_SSL
     except AttributeError as exc:
-        print_debug(f"TLS verification could not be applied to the Steam Web API session: {exc}")
+        debug_print("TLS verification", target="Steam Web API session", outcome="failed", error=f"{type(exc).__name__}: {exc}")
     client.load_interfaces(client.fetch_interfaces())
     return client
 
@@ -1213,15 +1219,15 @@ def check_internet(url=None, timeout=None, quiet=False):
     # Resolved at call time so a config file can change these, which binding them as default arguments prevented
     selected_url = CHECK_INTERNET_URL if url is None else url
     selected_timeout = CHECK_INTERNET_TIMEOUT if timeout is None else timeout
-    print_debug(f"Checking connectivity against {selected_url} with a {selected_timeout}s timeout")
+    debug_print("Connectivity check", url=selected_url, timeout=f"{selected_timeout}s", verify_ssl=VERIFY_SSL)
     try:
         _ = req.get(selected_url, timeout=selected_timeout, verify=VERIFY_SSL)
-        print_debug(f"Connectivity check against {selected_url} -> OK")
+        debug_print("Connectivity check", url=selected_url, outcome="OK")
         return True
     except req.RequestException as e:
         # Quiet callers render the failure themselves, which doctor needs so nothing lands on its progress line
         global LAST_CONNECTIVITY_ERROR
-        print_debug(f"Connectivity check against {selected_url} -> failed: {type(e).__name__}: {e}")
+        debug_print("Connectivity check", url=selected_url, outcome="failed", error=f"{type(e).__name__}: {e}")
         if not quiet:
             print_recovery_error(e, context="runtime")
         LAST_CONNECTIVITY_ERROR = e
@@ -1563,7 +1569,7 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
         print("Error sending email - SMTP settings are incorrect (body and body_html cannot be empty at the same time)")
         return 1
 
-    print_debug(f"Connecting to SMTP {SMTP_HOST}:{SMTP_PORT} as {SMTP_USER} (STARTTLS: {bool(use_ssl)}, timeout: {smtp_timeout}s)")
+    debug_print("SMTP delivery", host=SMTP_HOST, port=SMTP_PORT, user=SMTP_USER, starttls=bool(use_ssl), timeout=f"{smtp_timeout}s")
     try:
         smtpObj = smtp_connect_and_login(use_ssl, smtp_timeout=smtp_timeout)
         email_msg = MIMEMultipart('alternative')
@@ -1585,10 +1591,10 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
         smtpObj.quit()
     except Exception as e:
         print(f"Error sending email: {sanitize_error_text(e)}")
-        print_debug_exception("Sending email", e)
+        debug_swallowed_exception("Sending email", e)
         return 1
-    print_debug(f"SMTP {SMTP_HOST}:{SMTP_PORT} -> OK, message accepted for {RECEIVER_EMAIL}")
-    print_verbose(f"Email delivered to {RECEIVER_EMAIL}")
+    debug_print("SMTP delivery", host=SMTP_HOST, port=SMTP_PORT, recipient=RECEIVER_EMAIL, outcome="OK")
+    verbose_print(f"Email delivered to {RECEIVER_EMAIL}")
     return 0
 
 
@@ -2472,7 +2478,7 @@ def build_ntfy_image(image_url=""):
         finally:
             resized_img.close()
     except Exception as exc:
-        print_debug_exception("Preparing ntfy image", exc)
+        debug_swallowed_exception("Preparing ntfy image", exc)
         return None
 
 
@@ -2521,7 +2527,7 @@ def send_webhook(title, description, notification_type="status", force=False, sl
     except ValueError as exc:
         print_webhook_error(str(exc))
         return 1
-    print_debug(f"Sending {notification_type} webhook through {provider} to {webhook_destination_host()}")
+    debug_print("Webhook delivery", event=notification_type, channel=provider, host=webhook_destination_host())
     sleep_func = time.sleep if sleeper is None else sleeper
     ntfy_title, ntfy_message = build_ntfy_webhook_message(str(webhook_values["title"]), str(webhook_values["description"])) if provider == "ntfy" else ("", "")
     ntfy_image = build_ntfy_image(normalized_image_url) if provider == "ntfy" and NTFY_IMAGES and normalized_image_url else None
@@ -2532,7 +2538,7 @@ def send_webhook(title, description, notification_type="status", force=False, sl
     if provider == "ntfy" and ntfy_tags.strip():
         ntfy_params["tags"] = ntfy_tags.strip()
     for attempt in range(WEBHOOK_MAX_ATTEMPTS):
-        print_debug(f"Webhook attempt {attempt + 1}/{WEBHOOK_MAX_ATTEMPTS}" + (" with an image attachment" if use_ntfy_image else ""))
+        debug_print("Webhook delivery", channel=provider, attempt=f"{attempt + 1}/{WEBHOOK_MAX_ATTEMPTS}", image="attached" if use_ntfy_image else None)
         try:
             if provider == "ntfy":
                 if use_ntfy_image:
@@ -2546,14 +2552,14 @@ def send_webhook(title, description, notification_type="status", force=False, sl
             else:
                 response = post_webhook_request(json=discord_payload, headers=request_headers)
             if 200 <= response.status_code <= 299:
-                print_verbose(f"Webhook delivered through {provider} (HTTP {response.status_code})")
+                verbose_print(f"Webhook delivered through {provider} (HTTP {response.status_code})")
                 return 0
             retryable = response.status_code == 429 or 500 <= response.status_code <= 599
-            print_debug(f"Webhook returned HTTP {response.status_code} (retryable: {retryable})")
+            debug_print("Webhook delivery", channel=provider, status=response.status_code, retryable=retryable)
             if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
                 use_ntfy_image = False
                 delay = webhook_retry_after_seconds(response) if response.status_code == 429 else WEBHOOK_FALLBACK_RETRY_SECONDS if response.status_code >= 500 else 0.0
-                print_debug(f"Retrying without the image attachment after {delay}s")
+                debug_print("Webhook delivery", channel=provider, image="dropped", retry_in=f"{delay}s")
                 if delay:
                     sleep_func(delay)
                 continue
@@ -2561,13 +2567,13 @@ def send_webhook(title, description, notification_type="status", force=False, sl
                 print_webhook_error(f"the service returned HTTP {response.status_code}")
                 return 1
             delay = webhook_retry_after_seconds(response) if response.status_code == 429 else WEBHOOK_FALLBACK_RETRY_SECONDS
-            print_debug(f"Retrying the webhook in {delay}s")
+            debug_print("Webhook delivery", channel=provider, retry_in=f"{delay}s")
             sleep_func(delay)
         except req.RequestException as exc:
-            print_debug_exception("Webhook request", exc)
+            debug_swallowed_exception("Webhook request", exc)
             if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
                 use_ntfy_image = False
-                print_debug("Retrying without the image attachment")
+                debug_print("Webhook delivery", channel=provider, image="dropped", retry_in=f"{WEBHOOK_FALLBACK_RETRY_SECONDS}s")
                 sleep_func(WEBHOOK_FALLBACK_RETRY_SECONDS)
                 continue
             if attempt == WEBHOOK_MAX_ATTEMPTS - 1:
@@ -2587,11 +2593,11 @@ def send_notification_channels(notification_type, subject, body, body_html="", e
     if email_attempted:
         print(f"Sending email notification to {RECEIVER_EMAIL}")
         email_delivered = send_email(subject, body, body_html, SMTP_SSL) == 0
-        print_debug(f"Email channel for the {notification_type} alert {'succeeded' if email_delivered else 'failed'}")
+        debug_print("Email channel", event=notification_type, outcome="OK" if email_delivered else "failed")
     if webhook_attempted:
         print("Sending webhook notification")
         webhook_delivered = send_webhook(subject, body, notification_type, force=True, image_url=image_url, ntfy_priority=ntfy_priority, ntfy_tags=ntfy_tags) == 0
-        print_debug(f"Webhook channel for the {notification_type} alert {'succeeded' if webhook_delivered else 'failed'}")
+        debug_print("Webhook channel", event=notification_type, outcome="OK" if webhook_delivered else "failed")
     # Delivery, not the attempt, so a channel that failed is retried while one that succeeded is not resent
     return email_delivered, webhook_delivered
 
@@ -4299,8 +4305,7 @@ def load_config_file(config_path, namespace=None, report_errors=True):
         parsed_values = parse_config_content(content, str(config_path), retired_settings)
         selected_namespace.update(parsed_values)
         if report_errors:
-            print_debug(f"Applied {len(parsed_values)} setting(s) from '{config_path}'")
-            print_verbose(f"Loaded {len(parsed_values)} settings from configuration file {config_path}")
+            debug_print("Configuration applied", path=config_path, settings=len(parsed_values))
         if retired_settings and report_errors:
             print(f"* Note: {describe_retired_settings(retired_settings, chr(39) + str(config_path) + chr(39))}")
         return True
@@ -4480,7 +4485,7 @@ def fetch_persona_name_history(steamid, timeout=15):
         resp.raise_for_status()
         data = resp.json()
     except Exception as exc:
-        print_debug_exception("Fetching the persona name history", exc)
+        debug_swallowed_exception("Fetching the persona name history", exc)
         return []
 
     if not isinstance(data, list):
@@ -4522,11 +4527,11 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
     print(f"* Fetching details for Steam user with ID '{steamid_coloured}'...\n")
 
     try:
-        print_debug(f"Opening the Steam Web API with key {mask_secret(STEAM_API_KEY)} for {steamid}")
+        debug_print("Opening the Steam Web API", steamid=steamid, key=mask_secret(STEAM_API_KEY))
         s_api = steam_web_api_client()
         s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
         s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
-        print_debug(f"Opening the Steam Web API for {steamid} -> OK (profile and recent games received)")
+        debug_print("Opening the Steam Web API", steamid=steamid, received="profile and recent games", outcome="OK")
     except Exception as e:
         print_recovery_error(e, context="runtime")
         sys.exit(1)
@@ -4566,7 +4571,7 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
                     else:
                         status_ts_old = last_status_ts
             except Exception as exc:
-                print_debug_exception(f"Reading the last status file '{steam_last_status_file}'", exc)
+                debug_swallowed_exception(f"Reading the last status file '{steam_last_status_file}'", exc)
 
         if status_ts_old == status_ts_old_bck and lastlogoff:
             status_ts_old = lastlogoff
@@ -4579,7 +4584,7 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
         player_obj = s_user["response"]["players"][0]
         print_country_region(player_obj)
     except Exception as exc:
-        print_debug_exception("Displaying the country and region", exc)
+        debug_swallowed_exception("Displaying the country and region", exc)
 
     print(f"\nStatus:\t\t\t\t{str(steam_personastates[status]).upper()}")
     print(f"Profile visibility:\t\t{steam_visibilitystates[visibilitystate]}")
@@ -4596,7 +4601,7 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
         print(f"\nSteam level:\t\t\t{s_level['response'].get('player_level', 'n/a')}")
         s_level_displayed = True
     except Exception as exc:
-        print_debug_exception("Fetching the Steam level (IPlayerService.GetSteamLevel)", exc)
+        debug_swallowed_exception("Fetching the Steam level (IPlayerService.GetSteamLevel)", exc)
 
     try:
         badges = s_api.call('IPlayerService.GetBadges', steamid=steamid)
@@ -4612,7 +4617,7 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
         print(f"XP to next level:\t\t{xp_to_level}")
         print(f"XP in current level:\t\t{xp_current_level}")
     except Exception as exc:
-        print_debug_exception("Fetching badges and XP (IPlayerService.GetBadges)", exc)
+        debug_swallowed_exception("Fetching badges and XP (IPlayerService.GetBadges)", exc)
 
     try:
         bans = s_api.call('ISteamUser.GetPlayerBans', steamids=str(steamid))
@@ -4625,7 +4630,7 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
             print(f"Economy ban:\t\t\t{econ_ban_map.get(econ_ban, econ_ban)}")
             print(f"Days since last ban:\t\t{b.get('DaysSinceLastBan')}")
     except Exception as exc:
-        print_debug_exception("Fetching ban status (ISteamUser.GetPlayerBans)", exc)
+        debug_swallowed_exception("Fetching ban status (ISteamUser.GetPlayerBans)", exc)
 
     if show_name_history:
         display_persona_name_history(steamid)
@@ -4667,7 +4672,7 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
                     else:
                         print(f"- {persona} [{sid}]{since_str}")
     except Exception as exc:
-        print_debug_exception("Fetching the friends list (ISteamUser.GetFriendList)", exc)
+        debug_swallowed_exception("Fetching the friends list (ISteamUser.GetFriendList)", exc)
 
     if status == 0 and status_ts_old != status_ts_old_bck:
         last_status_dt_str = datetime.fromtimestamp(status_ts_old).strftime("%d %b %Y, %H:%M:%S")
@@ -4685,7 +4690,7 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
                 hours = int(g.get('playtime_forever', 0) / 60)
                 print(f"{i} {sanitize_untrusted_text(g.get('name'))} - {hours}h")
     except Exception as exc:
-        print_debug_exception("Fetching owned games (IPlayerService.GetOwnedGames)", exc)
+        debug_swallowed_exception("Fetching owned games (IPlayerService.GetOwnedGames)", exc)
 
     if gameid:
         print(f"\nUser is currently in-game:\t{gamename}")
@@ -4742,11 +4747,11 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         print_recovery_error(e, context="file")
 
     try:
-        print_debug(f"Opening the Steam Web API with key {mask_secret(STEAM_API_KEY)} for {steamid}")
+        debug_print("Opening the Steam Web API", steamid=steamid, key=mask_secret(STEAM_API_KEY))
         s_api = steam_web_api_client()
         s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
         s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
-        print_debug(f"Opening the Steam Web API for {steamid} -> OK (profile and recent games received)")
+        debug_print("Opening the Steam Web API", steamid=steamid, received="profile and recent games", outcome="OK")
     except Exception as e:
         print_recovery_error(e, context="runtime")
         sys.exit(1)
@@ -4783,7 +4788,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
     if os.path.isfile(steam_last_status_file):
         try:
-            print_debug(f"Reading the last status file '{steam_last_status_file}'")
+            debug_print("Reading the last status file", path=steam_last_status_file)
             with open(steam_last_status_file, 'r', encoding="utf-8") as f:
                 last_status_read = json.load(f)
         except Exception as e:
@@ -4817,7 +4822,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
     if GAMES_LIBRARY_CHECK and os.path.isfile(steam_games_file):
         try:
-            print_debug(f"Reading the games library file '{steam_games_file}'")
+            debug_print("Reading the games library file", path=steam_games_file)
             with open(steam_games_file, 'r', encoding="utf-8") as f:
                 games_data = json.load(f)
             if isinstance(games_data, dict):
@@ -4825,7 +4830,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 appids_list = games_data.get("appids")
                 if appids_list is not None:
                     last_games_appids = set(appids_list)
-            print_debug(f"Reading the games library file '{steam_games_file}' -> OK ({last_games_count} games)")
+            debug_print("Reading the games library file", path=steam_games_file, games=last_games_count, outcome="OK")
         except Exception as e:
             print(f"* Cannot load games library from '{steam_games_file}': {e}")
 
@@ -4843,10 +4848,10 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             last_status_to_save.append(None)
         try:
             write_json_atomic(steam_last_status_file, last_status_to_save)
-            print_debug(f"Saved the last status to '{steam_last_status_file}'")
+            debug_print("Saved the last status", path=steam_last_status_file, outcome="OK")
         except Exception as e:
             print(f"* Cannot save last status to '{steam_last_status_file}' file: {e}")
-            print_debug_exception(f"Saving the last status to '{steam_last_status_file}'", e)
+            debug_swallowed_exception(f"Saving the last status to '{steam_last_status_file}'", e)
 
     try:
         if csv_file_name and (status != last_status):
@@ -4862,7 +4867,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         player_obj = s_user["response"]["players"][0]
         print_country_region(player_obj)
     except Exception as exc:
-        print_debug_exception("Displaying the country and region", exc)
+        debug_swallowed_exception("Displaying the country and region", exc)
 
     print(f"\nStatus:\t\t\t\t{str(steam_personastates[status]).upper()}")
     print(f"Profile visibility:\t\t{steam_visibilitystates[visibilitystate]}")
@@ -4882,7 +4887,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             s_level_displayed = True
         except Exception as exc:
             s_level_displayed = False
-            print_debug_exception("Fetching the Steam level (IPlayerService.GetSteamLevel)", exc)
+            debug_swallowed_exception("Fetching the Steam level (IPlayerService.GetSteamLevel)", exc)
 
         try:
             badges = s_api.call('IPlayerService.GetBadges', steamid=steamid)
@@ -4899,7 +4904,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             print(f"XP to next level:\t\t{xp_to_level}")
             print(f"XP in current level:\t\t{xp_current_level}")
         except Exception as exc:
-            print_debug_exception("Fetching badges and XP (IPlayerService.GetBadges)", exc)
+            debug_swallowed_exception("Fetching badges and XP (IPlayerService.GetBadges)", exc)
 
     # Optional friends snapshot at monitoring start
     if FRIENDS_CHECK:
@@ -4911,7 +4916,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         except Exception as exc:
             # Gracefully indicate that friends data is not accessible (privacy or API limitations)
             print(f"\nFriends:\t\t\tN/A")
-            print_debug_exception("Fetching the friends list (ISteamUser.GetFriendList)", exc)
+            debug_swallowed_exception("Fetching the friends list (ISteamUser.GetFriendList)", exc)
 
     # Optional games library snapshot at monitoring start
     if GAMES_LIBRARY_CHECK:
@@ -4934,7 +4939,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             last_games_appids = set(current_appids)
             try:
                 write_json_atomic(steam_games_file, {"game_count": current_count, "appids": current_appids})
-                print_debug(f"Saved the games library to '{steam_games_file}'")
+                debug_print("Saved the games library", path=steam_games_file, outcome="OK")
             except Exception as e:
                 print_recovery_error(e, context="file", detail=f"Cannot save games library to '{steam_games_file}'")
         except Exception as e:
@@ -4956,10 +4961,10 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             last_status_to_save.append(None)
         try:
             write_json_atomic(steam_last_status_file, last_status_to_save)
-            print_debug(f"Saved the last status to '{steam_last_status_file}'")
+            debug_print("Saved the last status", path=steam_last_status_file, outcome="OK")
         except Exception as e:
             print(f"* Cannot save last status to '{steam_last_status_file}' file: {e}")
-            print_debug_exception(f"Saving the last status to '{steam_last_status_file}'", e)
+            debug_swallowed_exception(f"Saving the last status to '{steam_last_status_file}'", e)
 
     if status_ts_old != status_ts_old_bck:
         if status == 0:
@@ -5006,7 +5011,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     recovery_hint_tracker = RecoveryHintTracker()
     transient_retry_used = False
 
-    print_debug(f"First check in {display_time(sleep_interval)}")
+    debug_print("First check", due_in=display_time(sleep_interval))
     time.sleep(sleep_interval)
 
     # Main loop
@@ -5020,7 +5025,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         current_username = None
         current_avatar_url = avatar_url
         try:
-            print_debug(f"Polling Steam for {steamid} (ISteamUser.GetPlayerSummaries, IPlayerService.GetRecentlyPlayedGames)")
+            debug_print("Polling Steam", steamid=steamid, endpoints="ISteamUser.GetPlayerSummaries+IPlayerService.GetRecentlyPlayedGames")
             s_api = steam_web_api_client()
             s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
             s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
@@ -5029,7 +5034,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             gamename = sanitize_untrusted_text(s_user["response"]["players"][0].get("gameextrainfo", ""))
             current_username = sanitize_untrusted_text(s_user["response"]["players"][0].get("personaname"))
             current_avatar_url = s_user["response"]["players"][0].get("avatarfull", "") or avatar_url
-            print_debug(f"Polling Steam for {steamid} -> OK (personastate {status}" + (f", playing '{gamename}'" if gamename else "") + ")")
+            debug_print("Polling Steam", steamid=steamid, personastate=status, game=gamename or None, outcome="OK")
 
             # Fetch Steam level and total XP if tracking is enabled
             if STEAM_LEVEL_XP_CHECK:
@@ -5038,14 +5043,14 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     current_steam_level = s_level.get('response', {}).get('player_level')
                 except Exception as exc:
                     current_steam_level = None
-                    print_debug_exception("Fetching Steam level (IPlayerService.GetSteamLevel)", exc)
+                    debug_swallowed_exception("Fetching Steam level (IPlayerService.GetSteamLevel)", exc)
 
                 try:
                     badges = s_api.call('IPlayerService.GetBadges', steamid=steamid)
                     current_player_xp = badges.get('response', {}).get('player_xp')
                 except Exception as exc:
                     current_player_xp = None
-                    print_debug_exception("Fetching total XP (IPlayerService.GetBadges)", exc)
+                    debug_swallowed_exception("Fetching total XP (IPlayerService.GetBadges)", exc)
 
             # Fetch friends list when tracking is enabled
             if FRIENDS_CHECK:
@@ -5055,7 +5060,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     current_friend_ids = {f.get('steamid') for f in friend_entries if f.get('steamid')}
                 except Exception as exc:
                     current_friend_ids = None
-                    print_debug_exception("Fetching the friends list (ISteamUser.GetFriendList)", exc)
+                    debug_swallowed_exception("Fetching the friends list (ISteamUser.GetFriendList)", exc)
 
             # Fetch games library (minimal: count + appids only) when tracking is enabled
             if GAMES_LIBRARY_CHECK:
@@ -5076,7 +5081,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 except Exception as exc:
                     current_games_count = None
                     current_games_appids = None
-                    print_debug_exception("Fetching the games library (IPlayerService.GetOwnedGames)", exc)
+                    debug_swallowed_exception("Fetching the games library (IPlayerService.GetOwnedGames)", exc)
         except Exception as e:
 
             if status > 0:
@@ -5094,7 +5099,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 # Rate limits carry their own wait, so they skip the retry path rather than burning an attempt
                 retry_after = steam_retry_after_seconds(response, sleep_interval) if response is not None else sleep_interval
                 print_monitor_recovery(e, "runtime", recovery_hint_tracker, "* ")
-                print_verbose(f"Waiting {display_time(retry_after)} before retrying")
+                verbose_print(f"Waiting {display_time(retry_after)} before retrying")
                 print_cur_ts("Timestamp:\t\t\t")
                 time.sleep(retry_after)
                 continue
@@ -5103,7 +5108,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 if advice.retryable and not transient_retry_used:
                     # One short retry absorbs a blip without waiting a whole polling interval
                     transient_retry_used = True
-                    print_verbose(f"Retrying once in {display_time(TRANSIENT_RETRY_SECONDS)}")
+                    verbose_print(f"Retrying once in {display_time(TRANSIENT_RETRY_SECONDS)}")
                     print_cur_ts("Timestamp:\t\t\t")
                     time.sleep(TRANSIENT_RETRY_SECONDS)
                     continue
@@ -5133,11 +5138,11 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
         # A tracked feature that returned nothing cannot raise its alert, which is invisible without this line
         if STEAM_LEVEL_XP_CHECK and (current_steam_level is None or current_player_xp is None):
-            print_verbose("Steam level or total XP was unavailable this cycle, so level and XP alerts cannot fire")
+            verbose_print("Steam level or total XP was unavailable this cycle, so level and XP alerts cannot fire")
         if FRIENDS_CHECK and current_friend_ids is None:
-            print_verbose("The friends list was unavailable this cycle, so friends alerts cannot fire")
+            verbose_print("The friends list was unavailable this cycle, so friends alerts cannot fire")
         if GAMES_LIBRARY_CHECK and current_games_count is None:
-            print_verbose("The games library was unavailable this cycle, so games library alerts cannot fire")
+            verbose_print("The games library was unavailable this cycle, so games library alerts cannot fire")
 
         change = False
         act_inact_flag = False
@@ -5412,7 +5417,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                                 players = resp.get('response', {}).get('players', [])
                                 summaries.extend(players)
                             except Exception as exc:
-                                print_debug_exception("Fetching friend details (ISteamUser.GetPlayerSummaries)", exc)
+                                debug_swallowed_exception("Fetching friend details (ISteamUser.GetPlayerSummaries)", exc)
                                 continue
                         return summaries
 
@@ -5436,7 +5441,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                             else:
                                 added_details.append(f"- {persona or sid} [{sid}]")
                     except Exception as exc:
-                        print_debug_exception("Building the added friends detail list", exc)
+                        debug_swallowed_exception("Building the added friends detail list", exc)
 
                     try:
                         removed_players = _fetch_friend_summaries(removed_ids)
@@ -5455,7 +5460,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                             else:
                                 removed_details.append(f"- {persona or sid} [{sid}]")
                     except Exception as exc:
-                        print_debug_exception("Building the removed friends detail list", exc)
+                        debug_swallowed_exception("Building the removed friends detail list", exc)
 
                     if added_details:
                         print("New friends added:")
@@ -5580,18 +5585,18 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         gamename_old = gamename
         alive_counter += 1
 
-        print_verbose(f"Monitoring check #{check_count} completed for {steamid}")
+        verbose_print(f"Monitoring check #{check_count} completed for {steamid}")
 
         if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER and status == 0:
-            print_verbose(f"Monitoring healthy for {steamid}. The user is still offline with no status or game change")
+            verbose_print(f"Monitoring healthy for {steamid}. The user is still offline with no status or game change")
             print_cur_ts("Liveness check, timestamp:\t")
             alive_counter = 0
 
         if status > 0:
-            print_debug(f"Next check in {display_time(STEAM_ACTIVE_CHECK_INTERVAL)} (user is active)")
+            debug_print("Next check", due_in=display_time(STEAM_ACTIVE_CHECK_INTERVAL), reason="user is active")
             time.sleep(STEAM_ACTIVE_CHECK_INTERVAL)
         else:
-            print_debug(f"Next check in {display_time(STEAM_CHECK_INTERVAL)} (user is offline)")
+            debug_print("Next check", due_in=display_time(STEAM_CHECK_INTERVAL), reason="user is offline")
             time.sleep(STEAM_CHECK_INTERVAL)
 
 
@@ -6129,12 +6134,11 @@ def main():
         sys.exit(1)
 
     if cfg_path:
-        print_debug(f"Loading configuration file '{cfg_path}'")
+        debug_print("Loading configuration file", path=cfg_path)
         if not load_config_file(cfg_path):
             sys.exit(1)
     else:
-        print_debug("No configuration file found, using built-in defaults")
-        print_verbose("No configuration file found, so built-in defaults are in use")
+        debug_print("No configuration file found, using built-in defaults")
 
     # Reapplied because the config file may carry VERBOSE_MODE or DEBUG_MODE values that must not beat an explicit flag
     apply_diagnostic_cli_flags(args)
@@ -6190,17 +6194,12 @@ def main():
             if env_path:
                 print(f"* Warning: Cannot load dotenv file '{env_path}' because 'python-dotenv' is not installed\n\nTo install it, run:\n    pip3 install python-dotenv\n\nOnce installed, re-run this tool\n")
 
-    print_verbose(f"Dotenv file in use is {env_path or 'none'}")
-
     # Exported secrets apply on their own, so a dotenv file is an alternative to the environment rather than a precondition
     applied_secrets = load_secrets_from_environment()
     if applied_secrets:
         secret_source_map = secret_sources(env_path)
         for secret, _ in applied_secrets:
-            print_debug(f"Loaded {secret} from {secret_source_map.get(secret, 'environment')} ({mask_secret(globals().get(secret))})")
-        print_verbose("Resolved private settings from " + ", ".join(sorted({secret_source_map.get(secret, "environment") for secret, _ in applied_secrets})))
-    else:
-        print_verbose("No private settings were found in the environment or the dotenv file")
+            debug_print("Secret resolution", name=secret, source=secret_source_map.get(secret, "environment"), value=mask_secret(globals().get(secret)))
 
     if args.steam_api_key:
         STEAM_API_KEY = args.steam_api_key
@@ -6230,7 +6229,7 @@ def main():
 
     if args.send_test_email:
         print("* Sending test email notification ...\n")
-        print_debug(f"Test email will be sent from {SENDER_EMAIL} to {RECEIVER_EMAIL}")
+        debug_print("Test email", sender=SENDER_EMAIL, recipient=RECEIVER_EMAIL)
         if send_email("steam_monitor: test email", "This is test email - your SMTP settings seems to be correct !", "", SMTP_SSL, smtp_timeout=5) == 0:
             print("* Email sent successfully !")
         else:
@@ -6239,7 +6238,7 @@ def main():
 
     if args.send_test_webhook:
         print("* Sending test webhook notification ...\n")
-        print_debug(f"Test webhook will be sent through {normalized_webhook_provider() or 'an unset provider'} to {webhook_destination_host()}")
+        debug_print("Test webhook", channel=normalized_webhook_provider() or "an unset provider", host=webhook_destination_host())
         if send_webhook("Steam Monitor test", "Your webhook alerts are set up correctly.", "status", force=True) == 0:
             print("* Webhook sent successfully !")
         else:

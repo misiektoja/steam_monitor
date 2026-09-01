@@ -73,9 +73,9 @@ def test_diagnostic_printers_stay_silent_when_disabled(capsys, restored_globals)
     monitor.DEBUG_MODE = False
     monitor.VERBOSE_MODE = False
 
-    monitor.print_debug("hidden debug line")
-    monitor.print_verbose("hidden verbose line")
-    monitor.print_debug_exception("hidden context", ValueError("hidden cause"))
+    monitor.debug_print("hidden debug line")
+    monitor.verbose_print("hidden verbose line")
+    monitor.debug_swallowed_exception("hidden context", ValueError("hidden cause"))
 
     assert capsys.readouterr().out == ""
 
@@ -84,8 +84,8 @@ def test_diagnostic_printers_stay_silent_when_disabled(capsys, restored_globals)
 def test_debug_and_verbose_are_independent(capsys, restored_globals):
     monitor.DEBUG_MODE = True
     monitor.VERBOSE_MODE = False
-    monitor.print_verbose("verbose line")
-    monitor.print_debug("debug line")
+    monitor.verbose_print("verbose line")
+    monitor.debug_print("debug line")
 
     output = capsys.readouterr().out
     assert "verbose line" not in output
@@ -93,8 +93,8 @@ def test_debug_and_verbose_are_independent(capsys, restored_globals):
 
     monitor.DEBUG_MODE = False
     monitor.VERBOSE_MODE = True
-    monitor.print_verbose("verbose line")
-    monitor.print_debug("debug line")
+    monitor.verbose_print("verbose line")
+    monitor.debug_print("debug line")
 
     output = capsys.readouterr().out
     assert "verbose line" in output
@@ -118,7 +118,7 @@ def test_the_full_startup_summary_appears_under_either_mode(restored_globals):
 
 # Verifies every debug line carries a timestamp and the shared prefix used by the sibling tools
 def test_debug_lines_are_timestamped(capsys, diagnostics_on):
-    monitor.print_debug("a traced step")
+    monitor.debug_print("a traced step")
 
     output = capsys.readouterr().out
     assert re.match(r"^\[DEBUG \d{2}:\d{2}:\d{2}\] a traced step\n$", output), output
@@ -129,7 +129,7 @@ def test_a_secret_interpolated_into_a_debug_line_is_redacted(capsys, restored_gl
     monitor.DEBUG_MODE = True
     monitor.SMTP_PASSWORD = SECRET_SMTP_PASSWORD
 
-    monitor.print_debug(f"careless caller leaked {SECRET_SMTP_PASSWORD}")
+    monitor.debug_print(f"careless caller leaked {SECRET_SMTP_PASSWORD}")
 
     output = capsys.readouterr().out
     assert SECRET_SMTP_PASSWORD not in output
@@ -141,7 +141,7 @@ def test_a_secret_interpolated_into_a_verbose_line_is_redacted(capsys, restored_
     monitor.VERBOSE_MODE = True
     monitor.WEBHOOK_URL = SECRET_WEBHOOK_URL
 
-    monitor.print_verbose(f"careless caller leaked {SECRET_WEBHOOK_URL}")
+    monitor.verbose_print(f"careless caller leaked {SECRET_WEBHOOK_URL}")
 
     output = capsys.readouterr().out
     assert SECRET_WEBHOOK_URL not in output
@@ -153,10 +153,10 @@ def test_debug_output_is_suppressed_around_a_raw_secret(capsys, restored_globals
     monitor.DEBUG_MODE = True
 
     with monitor.debug_output_suppressed():
-        monitor.print_debug("must not appear")
+        monitor.debug_print("must not appear")
         assert monitor.DEBUG_MODE is False
 
-    monitor.print_debug("must appear again")
+    monitor.debug_print("must appear again")
 
     output = capsys.readouterr().out
     assert "must not appear" not in output
@@ -182,7 +182,7 @@ def test_the_api_key_entry_path_emits_no_debug_output(capsys, monkeypatch, resto
 
     def record_and_reject(api_key, timeout=10):
         observed["debug_during_entry"] = monitor.DEBUG_MODE
-        monitor.print_debug(f"validating {api_key}")
+        monitor.debug_print(f"validating {api_key}")
         return False
 
     with pytest.raises(monitor.SecretConfigurationError):
@@ -201,7 +201,7 @@ def test_the_api_key_entry_path_emits_no_debug_output(capsys, monkeypatch, resto
 
 # Verifies a swallowed exception is named together with the operation it broke
 def test_a_swallowed_exception_names_its_operation(capsys, diagnostics_on):
-    monitor.print_debug_exception("Fetching the Steam level (IPlayerService.GetSteamLevel)", TimeoutError("timed out"))
+    monitor.debug_swallowed_exception("Fetching the Steam level (IPlayerService.GetSteamLevel)", TimeoutError("timed out"))
 
     output = capsys.readouterr().out
     assert "Fetching the Steam level (IPlayerService.GetSteamLevel)" in output
@@ -221,8 +221,8 @@ def test_email_failure_is_explained_in_debug(capsys, monkeypatch, diagnostics_on
     assert monitor.send_email("subject", "body", "", True, smtp_timeout=1) == 1
 
     output = capsys.readouterr().out
-    assert "smtp.example.com:587" in output
-    assert "Sending email failed with OSError" in output
+    assert "host=smtp.example.com, port=587" in output
+    assert "Sending email: outcome=failed, error=OSError" in output
 
 
 # Verifies a delivered email is confirmed rather than only announced before the attempt
@@ -259,10 +259,10 @@ def test_webhook_retries_are_explained_in_debug(capsys, monkeypatch, diagnostics
     assert monitor.send_webhook("title", "body", "status", force=True, sleeper=lambda _seconds: None) == 1
 
     output = capsys.readouterr().out
-    assert "Webhook attempt 1/2" in output
-    assert "Webhook attempt 2/2" in output
-    assert "HTTP 500 (retryable: True)" in output
-    assert "Retrying the webhook in" in output
+    assert "Webhook delivery: channel=discord, attempt=1/2" in output
+    assert "Webhook delivery: channel=discord, attempt=2/2" in output
+    assert "status=500, retryable=True" in output
+    assert "Webhook delivery: channel=discord, retry_in=" in output
 
 
 # Verifies a rejected webhook that cannot be retried says so instead of implying another attempt
@@ -273,8 +273,8 @@ def test_a_non_retryable_webhook_status_is_reported_as_such(capsys, monkeypatch,
     assert monitor.send_webhook("title", "body", "status", force=True, sleeper=lambda _seconds: None) == 1
 
     output = capsys.readouterr().out
-    assert "HTTP 404 (retryable: False)" in output
-    assert "Webhook attempt 2/2" not in output
+    assert "status=404, retryable=False" in output
+    assert "attempt=2/2" not in output
 
 
 # Verifies a delivered webhook is confirmed with the provider that accepted it
@@ -296,7 +296,7 @@ def test_an_unreachable_webhook_service_is_explained(capsys, monkeypatch, diagno
     monkeypatch.setattr(monitor, "post_webhook_request", refuse_request)
 
     assert monitor.send_webhook("title", "body", "status", force=True, sleeper=lambda _seconds: None) == 1
-    assert "Webhook request failed with ConnectTimeout" in capsys.readouterr().out
+    assert "Webhook request: outcome=failed, error=ConnectTimeout" in capsys.readouterr().out
 
 
 # Verifies each channel's outcome is reported separately, which the dispatcher previously discarded
@@ -310,8 +310,8 @@ def test_each_notification_channel_reports_its_own_outcome(capsys, monkeypatch, 
     assert monitor.send_notification_channels("error", "subject", "body", email_enabled=True, webhook_enabled=True) == (False, True)
 
     output = capsys.readouterr().out
-    assert "Email channel for the error alert failed" in output
-    assert "Webhook channel for the error alert succeeded" in output
+    assert "Email channel: event=error, outcome=failed" in output
+    assert "Webhook channel: event=error, outcome=OK" in output
 
 
 # Verifies a persona name history that could not be fetched is distinguishable from a user who never renamed
@@ -322,7 +322,7 @@ def test_a_failed_name_history_fetch_is_named(capsys, monkeypatch, diagnostics_o
     monkeypatch.setattr(monitor.req, "get", refuse_request)
 
     assert monitor.fetch_persona_name_history(76561197960435530) == []
-    assert "Fetching the persona name history failed with HTTPError" in capsys.readouterr().out
+    assert "Fetching the persona name history: outcome=failed, error=HTTPError" in capsys.readouterr().out
 
 
 # Verifies the webhook destination is traced by host alone, never by the private URL
@@ -334,7 +334,7 @@ def test_the_webhook_destination_is_traced_by_host_only(capsys, monkeypatch, dia
 
     output = capsys.readouterr().out
     assert monitor.webhook_destination_host() == "discord.com"
-    assert "to discord.com" in output
+    assert "host=discord.com" in output
     assert "verysecrettokenvalue" not in output
     assert SECRET_WEBHOOK_URL not in output
 
@@ -466,7 +466,7 @@ def test_the_connectivity_check_is_explained(capsys, monkeypatch, diagnostics_on
     assert monitor.check_internet("https://example.invalid/probe", 3) is False
 
     output = capsys.readouterr().out
-    assert "Checking connectivity against https://example.invalid/probe with a 3s timeout" in output
+    assert "Connectivity check: url=https://example.invalid/probe, timeout=3s" in output
     # The failure itself is now reported as structured recovery advice rather than a raw exception
     assert "* Error: Steam could not be reached" in output
     assert "To fix: Check connectivity, DNS and any proxy" in output
@@ -480,8 +480,8 @@ def test_a_successful_connectivity_check_reports_its_outcome(capsys, monkeypatch
     assert monitor.check_internet("https://example.test/probe", 3) is True
 
     output = capsys.readouterr().out
-    assert "Checking connectivity against https://example.test/probe with a 3s timeout" in output
-    assert "Connectivity check against https://example.test/probe -> OK" in output
+    assert "Connectivity check: url=https://example.test/probe, timeout=3s" in output
+    assert "Connectivity check: url=https://example.test/probe, outcome=OK" in output
 
 
 # Verifies a failing connectivity check names the transport failure in debug, which quiet callers otherwise swallow
@@ -494,7 +494,7 @@ def test_a_failing_connectivity_check_reports_its_outcome_even_when_quiet(capsys
     assert monitor.check_internet("https://example.invalid/probe", 3, quiet=True) is False
 
     output = capsys.readouterr().out
-    assert "Connectivity check against https://example.invalid/probe -> failed: ConnectionError" in output
+    assert "Connectivity check: url=https://example.invalid/probe, outcome=failed, error=ConnectionError" in output
     # A quiet caller renders the failure itself, so the structured advice must stay off the progress line
     assert "* Error: Steam could not be reached" not in output
 
@@ -517,19 +517,7 @@ def test_a_delivered_email_reports_its_smtp_outcome_in_debug(capsys, monkeypatch
     assert monitor.send_email("subject", "body", "", True) == 0
 
     output = capsys.readouterr().out
-    assert "Connecting to SMTP smtp.example.com:587" in output
-    assert "SMTP smtp.example.com:587 -> OK, message accepted for receiver@example.com" in output
+    assert "SMTP delivery: host=smtp.example.com, port=587" in output
+    assert "SMTP delivery: host=smtp.example.com, port=587, recipient=receiver@example.com, outcome=OK" in output
     assert SECRET_SMTP_PASSWORD not in output
 
-
-# Verifies the settings actually applied from a config file are counted in verbose
-def test_a_loaded_config_file_reports_its_setting_count_in_verbose(tmp_path, capsys, restored_globals):
-    monitor.VERBOSE_MODE = True
-    monitor.DEBUG_MODE = False
-    setting = sorted(monitor._config_allowed_names())[0]
-    config = tmp_path / "steam_monitor.conf"
-    config.write_text(f"{setting} = 1\n", encoding="utf-8")
-
-    assert monitor.load_config_file(config, namespace={}) is True
-
-    assert f"Loaded 1 settings from configuration file {config}" in capsys.readouterr().out

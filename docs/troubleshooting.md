@@ -46,13 +46,20 @@ During monitoring, a failure that keeps recurring prints its one-line summary ea
 
 Two flags control how much the tool explains about itself.
 
-`--verbose` reports what the tool is doing in plain `* ` lines. At startup it names the configuration file and dotenv file in use, how many settings were loaded and where each secret came from, and it expands the startup summary with the detected install method. During monitoring it prints one line per completed check, so a quiet run still shows the loop is alive, and it explains a liveness banner and any tracked feature that could not fire its alert this cycle:
+`--verbose` reports what the tool is doing in plain `* ` lines. It expands the startup summary, which is where the configuration file, dotenv file, install method and the source of each secret are named. During monitoring it prints one line per completed check, so a quiet run still shows the loop is alive, and it explains a liveness banner and any tracked feature that could not fire its alert this cycle:
 
 ```sh
 steam_monitor <steam_target> --verbose
 ```
 
-`--debug` traces the whole run in timestamped `[DEBUG HH:MM:SS]` lines: the configuration file being loaded, the connectivity endpoint being probed, every Steam Web API call each polling cycle makes, the SMTP host an email is sent through, each webhook attempt with its HTTP status and retry decision, the state files being read and written, and the technical cause of any failure. Every line that announces an outbound call is followed by its result, marked `-> OK` or `-> failed`, so a trace never stops at what was attempted:
+`--debug` traces the whole run in timestamped `[DEBUG HH:MM:SS]` lines. Each line names the operation, then lists its details as comma-separated `key=value` fields, so a long trace stays scannable:
+
+```
+[DEBUG 23:47:21] Polling Steam: steamid=76561197960435530, endpoints=ISteamUser.GetPlayerSummaries+IPlayerService.GetRecentlyPlayedGames
+[DEBUG 23:47:21] Polling Steam: steamid=76561197960435530, personastate=0, outcome=OK
+```
+
+Traced operations include configuration loading, the connectivity probe, every Steam Web API call each polling cycle makes, SMTP delivery, each webhook attempt with its HTTP status and retry decision, and the state files being read and written. Every operation that makes an outbound call reports its result as `outcome=OK` or `outcome=failed` with an `error=` field, so a trace never stops at what was attempted:
 
 ```sh
 steam_monitor <steam_target> --debug

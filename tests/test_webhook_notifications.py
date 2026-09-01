@@ -209,7 +209,7 @@ class WebhookNotificationTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(post.call_args.kwargs["data"], b"Steam body")
         rendered = "\n".join(str(call.args[0]) for call in output.call_args_list if call.args)
-        self.assertIn("Preparing ntfy image failed with Timeout: image download timed out", rendered)
+        self.assertIn("Preparing ntfy image: outcome=failed, error=Timeout: image download timed out", rendered)
 
     # Verifies webhook templates, transformations and dynamic headers share placeholders
     def test_custom_template_transforms_and_headers(self):

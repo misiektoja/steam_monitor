@@ -114,9 +114,9 @@ def test_a_healthy_cycle_names_its_steam_calls(tmp_path, monkeypatch, capsys):
     api, sleeps = run_one_cycle(tmp_path, monkeypatch)
 
     output = capsys.readouterr().out
-    assert "Opening the Steam Web API with key" in output
-    assert "Polling Steam for 76561197960435530" in output
-    assert "Next check in 1 minute (user is offline)" in output
+    assert "Opening the Steam Web API: steamid=76561197960435530, key=" in output
+    assert "Polling Steam: steamid=76561197960435530" in output
+    assert "Next check: due_in=1 minute, reason=user is offline" in output
     assert "IPlayerService.GetOwnedGames" in api.called
     assert sleeps[0] == 60
 
@@ -126,7 +126,7 @@ def test_a_failing_level_lookup_names_its_endpoint(tmp_path, monkeypatch, capsys
     run_one_cycle(tmp_path, monkeypatch, failing_endpoints={"IPlayerService.GetSteamLevel"})
 
     output = capsys.readouterr().out
-    assert "Fetching the Steam level (IPlayerService.GetSteamLevel) failed with RuntimeError" in output
+    assert "Fetching the Steam level (IPlayerService.GetSteamLevel): outcome=failed, error=RuntimeError" in output
     assert "Steam level or total XP was unavailable this cycle" in output
 
 
@@ -135,7 +135,7 @@ def test_a_failing_friends_lookup_names_its_endpoint(tmp_path, monkeypatch, caps
     run_one_cycle(tmp_path, monkeypatch, failing_endpoints={"ISteamUser.GetFriendList"})
 
     output = capsys.readouterr().out
-    assert "Fetching the friends list (ISteamUser.GetFriendList) failed with RuntimeError" in output
+    assert "Fetching the friends list (ISteamUser.GetFriendList): outcome=failed, error=RuntimeError" in output
     assert "The friends list was unavailable this cycle, so friends alerts cannot fire" in output
 
 
@@ -144,7 +144,7 @@ def test_a_failing_games_lookup_names_its_endpoint(tmp_path, monkeypatch, capsys
     run_one_cycle(tmp_path, monkeypatch, failing_endpoints={"IPlayerService.GetOwnedGames"})
 
     output = capsys.readouterr().out
-    assert "Fetching the games library (IPlayerService.GetOwnedGames) failed with RuntimeError" in output
+    assert "Fetching the games library (IPlayerService.GetOwnedGames): outcome=failed, error=RuntimeError" in output
     assert "The games library was unavailable this cycle, so games library alerts cannot fire" in output
 
 
@@ -153,7 +153,7 @@ def test_a_failing_badges_lookup_names_its_endpoint(tmp_path, monkeypatch, capsy
     run_one_cycle(tmp_path, monkeypatch, failing_endpoints={"IPlayerService.GetBadges"})
 
     output = capsys.readouterr().out
-    assert "Fetching total XP (IPlayerService.GetBadges) failed with RuntimeError" in output
+    assert "Fetching total XP (IPlayerService.GetBadges): outcome=failed, error=RuntimeError" in output
     assert "Steam level or total XP was unavailable this cycle" in output
 
 
@@ -172,7 +172,7 @@ def test_a_degraded_cycle_stays_quiet_without_diagnostics(tmp_path, monkeypatch,
     output = capsys.readouterr().out
     assert "[DEBUG" not in output
     assert "was unavailable this cycle" not in output
-    assert "Polling Steam for" not in output
+    assert "Polling Steam:" not in output
 
 
 # Returns an HTTP error carrying the given status, the way requests raises one
@@ -275,8 +275,8 @@ def test_a_healthy_cycle_reports_its_poll_outcome(tmp_path, monkeypatch, capsys)
     run_one_cycle(tmp_path, monkeypatch)
 
     output = capsys.readouterr().out
-    assert "Polling Steam for 76561197960435530 (ISteamUser.GetPlayerSummaries" in output
-    assert "Polling Steam for 76561197960435530 -> OK (personastate 0)" in output
+    assert "Polling Steam: steamid=76561197960435530, endpoints=ISteamUser.GetPlayerSummaries" in output
+    assert "Polling Steam: steamid=76561197960435530, personastate=0, outcome=OK" in output
 
 
 # Verifies verbose confirms the loop is alive on a quiet cycle, which previously produced no output at all
@@ -304,4 +304,4 @@ def test_a_quiet_cycle_stays_silent_without_diagnostics(tmp_path, monkeypatch, c
 
     output = capsys.readouterr().out
     assert "Monitoring check #" not in output
-    assert "-> OK" not in output
+    assert "outcome=OK" not in output
