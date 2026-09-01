@@ -662,10 +662,11 @@ def format_diagnostic_line(operation, fields):
 
 
 # Prints one timestamped and sanitized diagnostic line only when debug mode is enabled
-def debug_print(operation, **fields):
+def debug_print(_operation, **fields):
     if DEBUG_MODE:
         # Sanitized here rather than at each call site, since one caller interpolating a secret is enough to leak it
-        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] {sanitize_error_text(format_diagnostic_line(operation, fields))}")
+        message = format_diagnostic_line(_operation, fields)
+        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] {sanitize_error_text(message)}")
 
 
 # Returns whether the full startup summary should be shown, which debug mode also implies
@@ -4306,6 +4307,7 @@ def load_config_file(config_path, namespace=None, report_errors=True):
         selected_namespace.update(parsed_values)
         if report_errors:
             debug_print("Configuration applied", path=config_path, settings=len(parsed_values))
+            verbose_print(f"Loaded {len(parsed_values)} settings from the configuration file")
         if retired_settings and report_errors:
             print(f"* Note: {describe_retired_settings(retired_settings, chr(39) + str(config_path) + chr(39))}")
         return True
