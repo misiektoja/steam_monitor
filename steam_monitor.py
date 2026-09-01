@@ -480,7 +480,8 @@ COMMAND_LINE_SECRET_KEYS = frozenset()
 # The one-shot commands that only write a secret, so the other early-exit flags do not swallow them
 SECRET_ACTION_FLAGS = ("--set-steam-api-key", "--set-smtp-password", "--set-webhook-url")
 
-LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / STEAM_CHECK_INTERVAL
+# Whole checks, so a check interval longer than the liveness interval still waits one check instead of reporting on every check
+LIVENESS_CHECK_COUNTER = max(1, -(-LIVENESS_CHECK_INTERVAL // STEAM_CHECK_INTERVAL)) if LIVENESS_CHECK_INTERVAL else 0
 
 # The last connectivity failure, so a quiet caller can classify it instead of the check printing it
 LAST_CONNECTIVITY_ERROR = None
@@ -6156,8 +6157,8 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
         debug_print("Completed check", check=f"#{check_count}", user=steamid, status=steam_personastates[status], game=gamename or None)
 
-        if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER and status == 0:
-            verbose_print(f"Monitoring healthy for {steamid}. The user is still offline with no status or game change")
+        if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER:
+            verbose_print(f"Monitoring healthy for {steamid}. The user is {steam_personastates[status]} with no status or game change since the last check")
             print_cur_ts("Liveness check, timestamp:\t")
             alive_counter = 0
 
@@ -6850,7 +6851,7 @@ def main():
 
     if args.check_interval:
         STEAM_CHECK_INTERVAL = args.check_interval
-        LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / STEAM_CHECK_INTERVAL
+        LIVENESS_CHECK_COUNTER = max(1, -(-LIVENESS_CHECK_INTERVAL // STEAM_CHECK_INTERVAL)) if LIVENESS_CHECK_INTERVAL else 0
 
     if args.active_interval:
         STEAM_ACTIVE_CHECK_INTERVAL = args.active_interval
