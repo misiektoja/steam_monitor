@@ -301,6 +301,7 @@ def test_no_page_promises_tooling_that_does_not_exist():
     ("Requirements", "installation.md"),
     ("Doctor Preflight", "troubleshooting.md"),
     ("Verbose and Debug Output", "troubleshooting.md"),
+    ("Terminal Colours", "usage.md"),
     ("Coloring Log Output with GRC", "usage.md"),
     ("Storing Secrets", "configuration.md"),
     ("Guided Setup", "setup-and-first-run.md"),
@@ -309,6 +310,13 @@ def test_sections_sit_on_the_page_a_reader_expects(section, page):
     located = [path.name for path in sorted(DOCS_DIR.glob("*.md")) if f"## {section}" in "\n".join(prose_lines(path))]
 
     assert located == [page], f"'{section}' is on {located}, expected {page}"
+
+
+# A theme key nobody documented cannot be set, since the table is the only place the names are listed
+def test_the_theme_table_lists_every_key_with_its_default():
+    documented = dict(re.findall(r"^\| `([a-z_]+)` \| (?:`([^`]*)`|\*\(empty\)\*) \|", (DOCS_DIR / "usage.md").read_text(encoding="utf-8"), re.M))
+
+    assert documented == {key: value for key, value in monitor.DEFAULT_COLOR_THEME.items()}
 
 
 # A guide that lists the test files goes stale the moment one is added and nothing else notices

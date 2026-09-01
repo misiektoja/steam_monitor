@@ -1363,6 +1363,20 @@ class Logger(object):
         self.terminal.flush()
         self.logfile.flush()
 
+    # Writes text the log file should keep but the terminal has already shown, or does not need
+    def log_only(self, message):
+        expanded_message = message.expandtabs(8)
+        if self.strip_ansi:
+            expanded_message = ANSI_ESCAPE_RE.sub("", expanded_message)
+        self.logfile.write(normalize_log_separators(expanded_message))
+        self.logfile.flush()
+
+    # Writes text meant for the reader at the terminal, which the log file has its own version of
+    def terminal_only(self, message):
+        terminal_message = truncate_string_per_line(message, TRUNCATE_CHARS) if TRUNCATE_CHARS else message
+        self.terminal.write(apply_color_to_text(terminal_message))
+        self.terminal.flush()
+
     def flush(self):
         self.terminal.flush()
         self.logfile.flush()
@@ -1378,6 +1392,14 @@ class ColorStream(object):
         terminal_message = truncate_string_per_line(message, TRUNCATE_CHARS) if TRUNCATE_CHARS else message
         self.terminal.write(apply_color_to_text(terminal_message))
         self.terminal.flush()
+
+    # Writes one message to the terminal while matching the Logger interface
+    def terminal_only(self, message):
+        self.write(message)
+
+    # Discards log-only output, since this stream is used exactly when there is no log file
+    def log_only(self, message):
+        return
 
     def flush(self):
         self.terminal.flush()
@@ -4275,18 +4297,32 @@ StartupSummaryRow = namedtuple("StartupSummaryRow", ["label", "value", "concise"
 StartupSummaryRow.__new__.__defaults__ = (False, True, True)
 
 
-# Prints the startup summary, showing only the concise rows unless the full view was asked for
-def emit_startup_summary(rows, show_full=False, printer=None):
-    write = print if printer is None else printer
+# Formats one summary row with an aligned value column, wrapping only the rollup that grows long
+def format_startup_summary_row(row):
+    prefix = f"* {(row.label + ':'):<30}"
+    if row.label in ("Notifications (email)", "Notifications (webhook)"):
+        return textwrap.fill(str(row.value), width=100, initial_indent=prefix, subsequent_indent=" " * len(prefix), break_long_words=False, break_on_hyphens=False) + "\n"
+    return f"{prefix}{row.value}\n"
+
+
+# Prints the summary, showing the concise rows unless the full view was asked for. The log file always keeps
+# the complete set, so a bug report made from a log carries every effective setting whatever the terminal showed
+def emit_startup_summary(rows, show_full=False, stream=None):
+    destination = sys.stdout if stream is None else stream
+    # A stream that does not split its output has no log file to hold the full view, so those writes go nowhere
+    write_log = getattr(destination, "log_only", lambda line: None)
+    write_terminal = getattr(destination, "terminal_only", None)
+    if write_terminal is None:
+        write_terminal = destination.write
     for row in rows:
-        if not (row.full if show_full else row.concise):
-            continue
-        prefix = f"* {row.label + ':':<30}"
-        if row.label in ("Notifications (email)", "Notifications (webhook)"):
-            # Only the rollups grow long enough to need wrapping into the value column
-            write(textwrap.fill(str(row.value), width=100, initial_indent=prefix, subsequent_indent=" " * len(prefix), break_long_words=False, break_on_hyphens=False))
-        else:
-            write(f"{prefix}{row.value}")
+        line = format_startup_summary_row(row)
+        if row.full and row.log:
+            write_log(line)
+        if row.full if show_full else row.concise:
+            write_terminal(line)
+    write_log("\n")
+    write_terminal("\n")
+    destination.flush()
 
 
 # Builds every startup summary row, deciding per row whether it belongs in the concise view, the full view and the log
@@ -6884,11 +6920,12 @@ def main():
     if NTFY_IMAGES and not NTFY_IMAGES_AVAILABLE:
         NTFY_IMAGES = False
         if WEBHOOK_ENABLED and normalized_webhook_provider() == "ntfy":
-            print(f"\n* Warning: ntfy artwork is enabled, but the optional 'Pillow' package is not installed\n\nTo attach artwork, run:\n    {ntfy_images_install_command()}\n\nOnce installed, re-run this tool. To stop this warning, set NTFY_IMAGES to False\n\nSending ntfy alerts as text only...")
+            print(f"* Warning: ntfy artwork is enabled, but the optional 'Pillow' package is not installed\n\nTo attach artwork, run:\n    {ntfy_images_install_command()}\n\nOnce installed, re-run this tool. To stop this warning, set NTFY_IMAGES to False\n\nSending ntfy alerts as text only...\n")
 
     # The line coloriser colours the ID, so the printed text stays plain and the separator matches its width
     out = f"Monitoring user with Steam64 ID {s_id}"
-    print(f"\n{out}")
+    # The summary block already ended with one blank line, so this heading starts at the cursor
+    print(out)
     print("─" * len(out))
 
     # We define signal handlers only for Linux, Unix & MacOS since Windows has limited number of signals supported

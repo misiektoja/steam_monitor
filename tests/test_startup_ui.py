@@ -246,11 +246,55 @@ def summary_globals(monkeypatch):
         setattr(monitor, name, value)
 
 
-# Collects the summary the given view would print
+# Collects what the terminal and the log file were each given, the way the real Logger splits them
+class RoutedStream:
+    def __init__(self):
+        self.terminal = []
+        self.log = []
+
+    # Records text meant only for the reader at the terminal
+    def terminal_only(self, message):
+        self.terminal.append(message)
+
+    # Records text meant only for the log file
+    def log_only(self, message):
+        self.log.append(message)
+
+    # Present because every stream the tool writes to has one
+    def flush(self):
+        pass
+
+    # Returns what the terminal was shown
+    def terminal_text(self):
+        return "".join(self.terminal)
+
+    # Returns what the log file kept
+    def log_text(self):
+        return "".join(self.log)
+
+
+# Collects the summary the given view would print at the terminal
 def rendered_summary(rows, show_full):
-    lines = []
-    monitor.emit_startup_summary(rows, show_full=show_full, printer=lines.append)
-    return "\n".join(lines)
+    stream = RoutedStream()
+    monitor.emit_startup_summary(rows, show_full=show_full, stream=stream)
+    return stream.terminal_text()
+
+
+# Verifies the log file keeps the complete summary even when the terminal was shown the concise view
+def test_the_log_file_keeps_the_full_summary_whatever_the_terminal_showed(summary_globals):
+    rows = [
+        monitor.StartupSummaryRow("Always", "a", concise=True),
+        monitor.StartupSummaryRow("Verbose only", "b"),
+        monitor.StartupSummaryRow("Concise only", "c", concise=True, full=False, log=False),
+    ]
+    stream = RoutedStream()
+
+    monitor.emit_startup_summary(rows, show_full=False, stream=stream)
+
+    assert "Verbose only" not in stream.terminal_text()
+    assert "Verbose only" in stream.log_text()
+    # The orientation row has a better place in the full view, so the log keeps its own version instead
+    assert "Concise only" not in stream.log_text()
 
 
 # Verifies each row is routed independently rather than the whole block being shown or hidden together

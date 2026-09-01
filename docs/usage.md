@@ -289,13 +289,65 @@ pkill -USR1 -f "steam_monitor <steam_target>"
 
 As Windows supports limited number of signals, this functionality is available only on Linux/Unix/macOS.
 
+## Terminal Colours
+
+Terminal output is coloured by default. `COLORED_OUTPUT` and `COLOR_THEME` apply to monitoring output and to the `--setup` and `--doctor` screens. `--no-color` turns colour off for all of them.
+
+Turn it off for one run:
+
+```sh
+steam_monitor <steam_target> --no-color
+```
+
+Turn it off permanently in the config file:
+
+```python
+COLORED_OUTPUT = False
+```
+
+On Windows, install [colorama](https://pypi.org/project/colorama/) for colours in the older Command Prompt. Windows Terminal needs nothing extra.
+
+Each part of the output has a logical name. `COLOR_THEME` in the config file overrides only the names it lists. Combine attributes with spaces or `+`, for example `"bright_cyan bold"` or `"red underline"`. Valid colours are `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white` and their `bright_` variants, plus the `bold`, `dim`, `underline` and `blink` attributes. An empty string leaves that part uncoloured.
+
+Generated configuration files ship this block commented out, so the built-in defaults apply and a later change to them reaches you. A configuration file written before v2.0 sets every colour explicitly and therefore keeps the old ones: delete its `COLOR_THEME` block to follow the current defaults or edit the values you want to keep. Such a file still loads unchanged. The old `steam_id` key is still read as `id`.
+
+```python
+COLOR_THEME = {
+    "game": "bright_magenta bold",
+    "duration": "cyan",
+}
+```
+
+| Theme key | Default | What it colours |
+| --- | --- | --- |
+| `header` | `bright_cyan` | Report and wizard headings, plus the ASCII banner |
+| `section` | `bright_white` | Section names and every command the tool tells you to run |
+| `username` | `bright_cyan underline` | The monitored account name and the detected install method |
+| `id` | `bright_magenta` | The Steam64 ID |
+| `status_online` | `green` | An online presence |
+| `status_offline` | `red` | An offline presence |
+| `status_away` | `yellow` | An away presence |
+| `status_snooze` | `magenta` | A snooze presence |
+| `status_other` | `white` | A presence value the tool does not recognise |
+| `game` | `bright_yellow` | Game titles |
+| `duration` | `green` | Time spans such as `3 hours, 21 minutes` |
+| `timestamp_label` | *(empty)* | The `Timestamp:` label, left uncoloured by default |
+| `timestamp_value` | `cyan` | The timestamp itself |
+| `info` | `cyan` | `To fix:` lines, notes, prompts and `[SKIP]` rows |
+| `warning` | `yellow` | `* Warning:` lines and `[WARN]` rows |
+| `error` | `red` | `* Error:` lines and `[FAIL]` rows |
+| `signal` | `yellow` | `* Signal ... received` lines |
+| `email` | `bright_cyan` | Lines reporting an email being sent |
+| `webhook` | `bright_blue` | Lines reporting a webhook being sent |
+| `date` | `magenta` | Single dates and times |
+| `date_range` | `magenta` | Date and time ranges |
+| `boolean_true` | `green` | `True`, `Enabled`, `On` and `[PASS]` rows |
+| `boolean_false` | `red` | `False`, `Disabled` and `Off` |
+| `link` | `blue underline` | URLs |
+
 ## Coloring Log Output with GRC
 
-The tool has native **color output** support for terminal since v1.5 (see `COLORED_OUTPUT` and `COLOR_THEME` config options), but you can also use [GRC](https://github.com/garabik/grc) to color logs.
-
-Both settings apply to monitoring output and to the `--setup` and `--doctor` screens. `--no-color` turns colour off for all of them.
-
-Names are `bright_cyan underline`, identifiers such as the Steam64 ID are `bright_magenta` and links are `blue underline`. Generated configuration files ship the `COLOR_THEME` block commented out, so these defaults apply and a later change to them reaches you. A configuration file written before v2.0 sets every colour explicitly and therefore keeps the old ones: delete its `COLOR_THEME` block to follow the defaults, or edit the values you want to keep.
+The tool colours the terminal itself, but you can also use [GRC](https://github.com/garabik/grc) to colour logs.
 
 Add to your GRC config (`~/.grc/grc.conf`):
 
