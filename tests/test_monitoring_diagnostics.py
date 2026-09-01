@@ -71,15 +71,15 @@ class FakeSteamWebAPI:
 
 
 # Runs one monitoring cycle with every tracked feature on and the named endpoints failing
-def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True, poll_error=None, stop_after_sleeps=2, error_notifications=False):
-    monkeypatch.setattr(monitor, "DEBUG_MODE", diagnostics)
+def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True, poll_error=None, stop_after_sleeps=2, error_notifications=False, liveness_counter=0, debug=None):
+    monkeypatch.setattr(monitor, "DEBUG_MODE", diagnostics if debug is None else debug)
     monkeypatch.setattr(monitor, "VERBOSE_MODE", diagnostics)
     monkeypatch.setattr(monitor, "STEAM_LEVEL_XP_CHECK", True)
     monkeypatch.setattr(monitor, "FRIENDS_CHECK", True)
     monkeypatch.setattr(monitor, "GAMES_LIBRARY_CHECK", True)
     monkeypatch.setattr(monitor, "STEAM_CHECK_INTERVAL", 60)
     monkeypatch.setattr(monitor, "STEAM_ACTIVE_CHECK_INTERVAL", 30)
-    monkeypatch.setattr(monitor, "LIVENESS_CHECK_COUNTER", 0)
+    monkeypatch.setattr(monitor, "LIVENESS_CHECK_COUNTER", liveness_counter)
     monkeypatch.setattr(monitor, "ACTIVE_INACTIVE_NOTIFICATION", False)
     monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", error_notifications)
     monkeypatch.setattr(monitor, "STEAM_LEVEL_XP_NOTIFICATION", False)
@@ -268,3 +268,40 @@ def test_a_continuing_outage_retries_only_failed_notification_channels(tmp_path,
     run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=http_error(503), stop_after_sleeps=4, error_notifications=True)
 
     assert deliveries == [(True, True), (False, True)]
+
+
+# Verifies a healthy poll reports the state it read, not only the call it was about to make
+def test_a_healthy_cycle_reports_its_poll_outcome(tmp_path, monkeypatch, capsys):
+    run_one_cycle(tmp_path, monkeypatch)
+
+    output = capsys.readouterr().out
+    assert "Polling Steam for 76561197960435530 (ISteamUser.GetPlayerSummaries" in output
+    assert "Polling Steam for 76561197960435530 -> OK (personastate 0)" in output
+
+
+# Verifies verbose confirms the loop is alive on a quiet cycle, which previously produced no output at all
+def test_a_quiet_cycle_confirms_itself_in_verbose(tmp_path, monkeypatch, capsys):
+    run_one_cycle(tmp_path, monkeypatch, debug=False)
+
+    output = capsys.readouterr().out
+    assert "Monitoring check #1 completed for 76561197960435530" in output
+    # Verbose must stand on its own, since this is the mode that previously produced nothing on a healthy run
+    assert "[DEBUG" not in output
+
+
+# Verifies the liveness banner says what it is reporting rather than printing a bare timestamp
+def test_the_liveness_banner_explains_itself_in_verbose(tmp_path, monkeypatch, capsys):
+    run_one_cycle(tmp_path, monkeypatch, liveness_counter=1)
+
+    output = capsys.readouterr().out
+    assert "Monitoring healthy for 76561197960435530. The user is still offline with no status or game change" in output
+    assert "Liveness check, timestamp:" in output
+
+
+# Verifies a cycle stays silent about its progress when neither diagnostic mode is on
+def test_a_quiet_cycle_stays_silent_without_diagnostics(tmp_path, monkeypatch, capsys):
+    run_one_cycle(tmp_path, monkeypatch, diagnostics=False)
+
+    output = capsys.readouterr().out
+    assert "Monitoring check #" not in output
+    assert "-> OK" not in output

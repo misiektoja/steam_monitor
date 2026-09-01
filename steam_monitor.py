@@ -1216,10 +1216,12 @@ def check_internet(url=None, timeout=None, quiet=False):
     print_debug(f"Checking connectivity against {selected_url} with a {selected_timeout}s timeout")
     try:
         _ = req.get(selected_url, timeout=selected_timeout, verify=VERIFY_SSL)
+        print_debug(f"Connectivity check against {selected_url} -> OK")
         return True
     except req.RequestException as e:
         # Quiet callers render the failure themselves, which doctor needs so nothing lands on its progress line
         global LAST_CONNECTIVITY_ERROR
+        print_debug(f"Connectivity check against {selected_url} -> failed: {type(e).__name__}: {e}")
         if not quiet:
             print_recovery_error(e, context="runtime")
         LAST_CONNECTIVITY_ERROR = e
@@ -1585,6 +1587,7 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
         print(f"Error sending email: {sanitize_error_text(e)}")
         print_debug_exception("Sending email", e)
         return 1
+    print_debug(f"SMTP {SMTP_HOST}:{SMTP_PORT} -> OK, message accepted for {RECEIVER_EMAIL}")
     print_verbose(f"Email delivered to {RECEIVER_EMAIL}")
     return 0
 
@@ -4297,6 +4300,7 @@ def load_config_file(config_path, namespace=None, report_errors=True):
         selected_namespace.update(parsed_values)
         if report_errors:
             print_debug(f"Applied {len(parsed_values)} setting(s) from '{config_path}'")
+            print_verbose(f"Loaded {len(parsed_values)} settings from configuration file {config_path}")
         if retired_settings and report_errors:
             print(f"* Note: {describe_retired_settings(retired_settings, chr(39) + str(config_path) + chr(39))}")
         return True
@@ -4522,6 +4526,7 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
         s_api = steam_web_api_client()
         s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
         s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
+        print_debug(f"Opening the Steam Web API for {steamid} -> OK (profile and recent games received)")
     except Exception as e:
         print_recovery_error(e, context="runtime")
         sys.exit(1)
@@ -4741,6 +4746,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         s_api = steam_web_api_client()
         s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
         s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
+        print_debug(f"Opening the Steam Web API for {steamid} -> OK (profile and recent games received)")
     except Exception as e:
         print_recovery_error(e, context="runtime")
         sys.exit(1)
@@ -4819,6 +4825,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 appids_list = games_data.get("appids")
                 if appids_list is not None:
                     last_games_appids = set(appids_list)
+            print_debug(f"Reading the games library file '{steam_games_file}' -> OK ({last_games_count} games)")
         except Exception as e:
             print(f"* Cannot load games library from '{steam_games_file}': {e}")
 
@@ -4984,6 +4991,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     print_cur_ts("\nTimestamp:\t\t\t")
 
     alive_counter = 0
+    check_count = 0
     error_email_sent = False
     error_webhook_sent = False
     error_delivery_code = None
@@ -5003,6 +5011,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
     # Main loop
     while True:
+        check_count += 1
         current_steam_level = None
         current_player_xp = None
         current_friend_ids = None
@@ -5020,6 +5029,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             gamename = sanitize_untrusted_text(s_user["response"]["players"][0].get("gameextrainfo", ""))
             current_username = sanitize_untrusted_text(s_user["response"]["players"][0].get("personaname"))
             current_avatar_url = s_user["response"]["players"][0].get("avatarfull", "") or avatar_url
+            print_debug(f"Polling Steam for {steamid} -> OK (personastate {status}" + (f", playing '{gamename}'" if gamename else "") + ")")
 
             # Fetch Steam level and total XP if tracking is enabled
             if STEAM_LEVEL_XP_CHECK:
@@ -5570,7 +5580,10 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         gamename_old = gamename
         alive_counter += 1
 
+        print_verbose(f"Monitoring check #{check_count} completed for {steamid}")
+
         if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER and status == 0:
+            print_verbose(f"Monitoring healthy for {steamid}. The user is still offline with no status or game change")
             print_cur_ts("Liveness check, timestamp:\t")
             alive_counter = 0
 
@@ -6121,6 +6134,7 @@ def main():
             sys.exit(1)
     else:
         print_debug("No configuration file found, using built-in defaults")
+        print_verbose("No configuration file found, so built-in defaults are in use")
 
     # Reapplied because the config file may carry VERBOSE_MODE or DEBUG_MODE values that must not beat an explicit flag
     apply_diagnostic_cli_flags(args)
@@ -6176,12 +6190,17 @@ def main():
             if env_path:
                 print(f"* Warning: Cannot load dotenv file '{env_path}' because 'python-dotenv' is not installed\n\nTo install it, run:\n    pip3 install python-dotenv\n\nOnce installed, re-run this tool\n")
 
+    print_verbose(f"Dotenv file in use is {env_path or 'none'}")
+
     # Exported secrets apply on their own, so a dotenv file is an alternative to the environment rather than a precondition
     applied_secrets = load_secrets_from_environment()
     if applied_secrets:
         secret_source_map = secret_sources(env_path)
         for secret, _ in applied_secrets:
             print_debug(f"Loaded {secret} from {secret_source_map.get(secret, 'environment')} ({mask_secret(globals().get(secret))})")
+        print_verbose("Resolved private settings from " + ", ".join(sorted({secret_source_map.get(secret, "environment") for secret, _ in applied_secrets})))
+    else:
+        print_verbose("No private settings were found in the environment or the dotenv file")
 
     if args.steam_api_key:
         STEAM_API_KEY = args.steam_api_key

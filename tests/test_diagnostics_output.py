@@ -471,3 +471,65 @@ def test_the_connectivity_check_is_explained(capsys, monkeypatch, diagnostics_on
     assert "* Error: Steam could not be reached" in output
     assert "To fix: Check connectivity, DNS and any proxy" in output
     assert "Technical detail: " in output
+
+
+# Verifies a successful connectivity check reports its outcome rather than only its intent
+def test_a_successful_connectivity_check_reports_its_outcome(capsys, monkeypatch, diagnostics_on):
+    monkeypatch.setattr(monitor.req, "get", lambda *_args, **_kwargs: None)
+
+    assert monitor.check_internet("https://example.test/probe", 3) is True
+
+    output = capsys.readouterr().out
+    assert "Checking connectivity against https://example.test/probe with a 3s timeout" in output
+    assert "Connectivity check against https://example.test/probe -> OK" in output
+
+
+# Verifies a failing connectivity check names the transport failure in debug, which quiet callers otherwise swallow
+def test_a_failing_connectivity_check_reports_its_outcome_even_when_quiet(capsys, monkeypatch, diagnostics_on):
+    def refuse_request(*_args, **_kwargs):
+        raise req.exceptions.ConnectionError("name resolution failed")
+
+    monkeypatch.setattr(monitor.req, "get", refuse_request)
+
+    assert monitor.check_internet("https://example.invalid/probe", 3, quiet=True) is False
+
+    output = capsys.readouterr().out
+    assert "Connectivity check against https://example.invalid/probe -> failed: ConnectionError" in output
+    # A quiet caller renders the failure itself, so the structured advice must stay off the progress line
+    assert "* Error: Steam could not be reached" not in output
+
+
+# Verifies a delivered email confirms the SMTP outcome in debug, not only in verbose
+def test_a_delivered_email_reports_its_smtp_outcome_in_debug(capsys, monkeypatch, restored_globals):
+    monitor.DEBUG_MODE = True
+    monitor.VERBOSE_MODE = False
+    configure_smtp()
+
+    class AcceptingSMTP:
+        def sendmail(self, *_args, **_kwargs):
+            return {}
+
+        def quit(self):
+            return None
+
+    monkeypatch.setattr(monitor, "smtp_connect_and_login", lambda *_args, **_kwargs: AcceptingSMTP())
+
+    assert monitor.send_email("subject", "body", "", True) == 0
+
+    output = capsys.readouterr().out
+    assert "Connecting to SMTP smtp.example.com:587" in output
+    assert "SMTP smtp.example.com:587 -> OK, message accepted for receiver@example.com" in output
+    assert SECRET_SMTP_PASSWORD not in output
+
+
+# Verifies the settings actually applied from a config file are counted in verbose
+def test_a_loaded_config_file_reports_its_setting_count_in_verbose(tmp_path, capsys, restored_globals):
+    monitor.VERBOSE_MODE = True
+    monitor.DEBUG_MODE = False
+    setting = sorted(monitor._config_allowed_names())[0]
+    config = tmp_path / "steam_monitor.conf"
+    config.write_text(f"{setting} = 1\n", encoding="utf-8")
+
+    assert monitor.load_config_file(config, namespace={}) is True
+
+    assert f"Loaded 1 settings from configuration file {config}" in capsys.readouterr().out

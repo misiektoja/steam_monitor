@@ -46,13 +46,13 @@ During monitoring, a failure that keeps recurring prints its one-line summary ea
 
 Two flags control how much the tool explains about itself.
 
-`--verbose` adds startup detail, including the detected install method and which secrets came from the dotenv file versus the environment:
+`--verbose` reports what the tool is doing in plain `* ` lines. At startup it names the configuration file and dotenv file in use, how many settings were loaded and where each secret came from, and it expands the startup summary with the detected install method. During monitoring it prints one line per completed check, so a quiet run still shows the loop is alive, and it explains a liveness banner and any tracked feature that could not fire its alert this cycle:
 
 ```sh
 steam_monitor <steam_target> --verbose
 ```
 
-`--debug` traces the whole run in timestamped `[DEBUG HH:MM:SS]` lines: the configuration file being loaded, the connectivity endpoint being probed, every Steam Web API call each polling cycle makes, the SMTP host an email is sent through, each webhook attempt with its HTTP status and retry decision, the state files being read and written, and the technical cause of any failure:
+`--debug` traces the whole run in timestamped `[DEBUG HH:MM:SS]` lines: the configuration file being loaded, the connectivity endpoint being probed, every Steam Web API call each polling cycle makes, the SMTP host an email is sent through, each webhook attempt with its HTTP status and retry decision, the state files being read and written, and the technical cause of any failure. Every line that announces an outbound call is followed by its result, marked `-> OK` or `-> failed`, so a trace never stops at what was attempted:
 
 ```sh
 steam_monitor <steam_target> --debug
@@ -64,6 +64,6 @@ Either mode can also be turned on permanently with the `VERBOSE_MODE` and `DEBUG
 
 If long paths make the startup summary hard to read, `TRUNCATE_CHARS` bounds each value: set it to a number of characters, or to `"Auto"` to fit the summary to the terminal width. Truncated values end with a visible `...` marker. It is off by default.
 
-Debug mode is the fastest way to find out why a tracked feature reports nothing. Steam level, XP, friends list and games library lookups each degrade quietly when Steam refuses them, usually because the profile is private. Debug names the endpoint that failed and verbose adds a line saying the matching alert cannot fire this cycle. Debug also records why ntfy artwork preparation fell back to text.
+Debug mode is the fastest way to find out why a tracked feature reports nothing. Steam level, XP, friends list and games library lookups each degrade quietly when Steam refuses them, usually because the profile is private. Debug names the endpoint that failed and verbose adds a line saying the matching alert cannot fire this cycle. Verbose is the lighter of the two when the question is only whether monitoring is still running. Debug also records why ntfy artwork preparation fell back to text.
 
 Secret values are never printed by either mode. Redaction happens inside both printers rather than at each call site, so a known secret is replaced with `<redacted>` no matter which line interpolates it. The webhook destination is traced by host name alone. Debug output is switched off entirely for the duration of `--set-steam-api-key` and `--set-webhook-url`, so a pasted value cannot reach the console or the log.
