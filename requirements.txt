@@ -4,6 +4,9 @@ python-dateutil
 python-dotenv
 colorama; platform_system == "Windows"
 
+# Optional for display-width-aware terminal truncation (TRUNCATE_CHARS, --truncate)
+# wcwidth
+
 # Optional for ntfy artwork attachments (NTFY_IMAGES)
 # Each Pillow major dropped an older Python, so every supported version pins the newest release that still supports it
 # Pillow>=8.0,<9.0; python_version < "3.7"

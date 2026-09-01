@@ -1,5 +1,6 @@
 """Tests the startup summary row model, its per-row routing, truncation, the grouped help and the cross-tool wording."""
 
+import os
 import re
 import subprocess
 import sys
@@ -212,44 +213,46 @@ def test_the_notification_rollups_name_their_categories(monkeypatch, summary_glo
     assert "Off" in concise
 
 
-# Verifies a value longer than the configured width is cut with a visible marker rather than silently
-def test_an_overlong_value_is_truncated_visibly(monkeypatch, summary_globals):
-    monkeypatch.setattr(monitor, "TRUNCATE_CHARS", 20)
+# Verifies truncation measures what is displayed, so colour codes do not eat into the visible width
+def test_truncation_measures_display_width_not_escape_sequences():
+    pytest.importorskip("wcwidth")
 
-    rendered = rendered_summary([monitor.StartupSummaryRow("Path", "/very/long/path/" + "x" * 100, concise=True)], show_full=False)
+    truncated = monitor.truncate_string_per_line("\x1b[31m0123456789ABCDEF\x1b[0m", 10)
 
-    value = rendered.split(":", 1)[1].strip()
-    assert len(value) == 20
-    assert value.endswith("...")
+    assert re.sub(r"\x1b\[[0-9;]*m", "", truncated) == "0123456789"
 
 
-# Verifies a value that fits is left exactly as it is
-def test_a_short_value_is_not_touched(monkeypatch, summary_globals):
-    monkeypatch.setattr(monitor, "TRUNCATE_CHARS", 40)
+# Verifies a double-width character costs two columns, so a CJK game title does not wrap past the limit
+def test_truncation_counts_double_width_characters():
+    pytest.importorskip("wcwidth")
 
-    assert monitor.truncate_summary_value("short") == "short"
-
-
-# Verifies truncation is off by default, so existing output is unchanged for anyone who did not ask
-def test_truncation_is_off_by_default(summary_globals):
-    assert monitor.startup_summary_value_width() == 0
-    assert monitor.truncate_summary_value("x" * 500) == "x" * 500
+    assert monitor.truncate_string_per_line("原神原神原神", 4) == "原神"
 
 
-# Verifies the auto width is derived from the terminal rather than guessed
-def test_the_auto_width_follows_the_terminal(monkeypatch, summary_globals):
-    monkeypatch.setattr(monitor, "TRUNCATE_CHARS", "Auto")
-    monkeypatch.setattr(monitor.shutil, "get_terminal_size", lambda fallback=(0, 0): type("Size", (), {"columns": 100, "lines": 24})())
+# Verifies each line is measured on its own rather than the whole message being cut at one offset
+def test_truncation_applies_to_every_line():
+    pytest.importorskip("wcwidth")
 
-    assert monitor.startup_summary_value_width() == 68
+    assert monitor.truncate_string_per_line("abcdef\nabcdef", 3) == "abc\nabc"
 
 
-# Verifies an unusable width setting falls back to no truncation instead of raising during startup
-@pytest.mark.parametrize("setting", ["nonsense", None, [], -5])
-def test_an_unusable_width_setting_disables_truncation(monkeypatch, summary_globals, setting):
-    monkeypatch.setattr(monitor, "TRUNCATE_CHARS", setting)
+# Verifies the command line width wins over the configured one
+def test_truncation_width_prefers_the_command_line():
+    assert monitor.resolve_truncate_chars(80, 120, False) == 80
+    assert monitor.resolve_truncate_chars(None, 120, False) == 120
 
-    assert monitor.startup_summary_value_width() == 0
+
+# Verifies truncation is off without a log file, where the trimmed text would be lost for good
+def test_truncation_is_disabled_when_logging_is_disabled():
+    assert monitor.resolve_truncate_chars(120, 120, True) == 0
+
+
+# Verifies the sentinel expands to the detected terminal width and says what it detected
+def test_truncation_sentinel_expands_to_the_terminal_width(monkeypatch, capsys):
+    monkeypatch.setattr(monitor.shutil, "get_terminal_size", lambda: os.terminal_size((132, 40)))
+
+    assert monitor.resolve_truncate_chars(999, 0, False) == 132
+    assert "132 characters" in capsys.readouterr().out
 
 
 # Verifies the notification rollups wrap into the value column rather than running off the terminal
@@ -267,10 +270,10 @@ def test_the_notification_rollups_wrap_into_their_column(summary_globals):
 def test_the_help_examples_are_grouped():
     epilog = monitor.help_examples()
 
-    for group in ("Getting started", "Configuration and secrets", "Notifications", "Information and diagnostics"):
-        assert f"  {group}" in epilog, f"the {group} group is missing"
+    for group in ("Getting started", "Notifications", "Information and diagnostics"):
+        assert f"\n{group}:\n" in epilog, f"the {group} group is missing"
     assert epilog.startswith("Examples:")
-    assert monitor.GUIDE_URL in epilog
+    assert monitor.QUICK_START_GUIDE_URL in epilog
 
 
 # Verifies every example command is written for the detected install rather than hardcoded
@@ -284,7 +287,7 @@ def test_the_help_examples_suit_the_install(monkeypatch):
 
 
 # Verifies the examples reach the commands a newcomer needs first
-@pytest.mark.parametrize("flag", ["--setup", "--doctor", "--generate-config", "--set-steam-api-key", "--send-test-email", "--send-test-webhook"])
+@pytest.mark.parametrize("flag", ["--setup", "--doctor", "--set-steam-api-key", "--send-test-email", "--send-test-webhook", "--debug"])
 def test_the_help_examples_cover_the_first_commands(flag):
     assert flag in monitor.help_examples()
 

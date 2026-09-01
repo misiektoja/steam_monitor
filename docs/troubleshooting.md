@@ -69,7 +69,7 @@ The two modes are independent, so pass both to see everything. Either one on its
 
 Either mode can also be turned on permanently with the `VERBOSE_MODE` and `DEBUG_MODE` configuration settings. A flag on the command line always wins, so `--debug` still applies when the configuration file sets `DEBUG_MODE = False`.
 
-If long paths make the startup summary hard to read, `TRUNCATE_CHARS` bounds each value: set it to a number of characters, or to `"Auto"` to fit the summary to the terminal width. Truncated values end with a visible `...` marker. It is off by default.
+If long paths or game titles wrap and make the output hard to read, set `TRUNCATE_CHARS` or use the `--truncate N` flag to cut each screen line to a maximum width. Use `999` to auto-detect the terminal width. The log file always keeps the full line, so the setting is ignored when logging is disabled with `-d`. It is off by default and needs the optional `wcwidth` library to measure display width, otherwise lines are left untouched.
 
 Debug mode is the fastest way to find out why a tracked feature reports nothing. Steam level, XP, friends list and games library lookups each degrade quietly when Steam refuses them, usually because the profile is private. Debug names the endpoint that failed and verbose adds a line saying the matching alert cannot fire this cycle. Verbose is the lighter of the two when the question is only whether monitoring is still running. Debug also records why ntfy artwork preparation fell back to text.
 

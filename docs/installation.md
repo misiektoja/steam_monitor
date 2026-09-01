@@ -7,6 +7,7 @@ Install from PyPI for the usual case, or download the single script if you would
 * Python 3.6 or higher
 * Libraries: [steam](https://github.com/ValvePython/steam), `requests`, `python-dateutil`, `python-dotenv`
 * Optional: [Pillow](https://pypi.org/project/Pillow/), needed only to attach Steam avatar or game artwork to ntfy alerts
+* Optional: [wcwidth](https://pypi.org/project/wcwidth/), needed only to measure display width for `TRUNCATE_CHARS`
 
 Tested on:
 

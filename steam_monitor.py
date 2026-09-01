@@ -299,10 +299,11 @@ DEBUG_MODE = False
 #   "Off"  - preserve Unicode separators in logs
 ASCII_LOG_SEPARATORS = "Auto"
 
-# Maximum width for a value in the startup summary before it is truncated with a visible marker
-#   0      - never truncate (default)
-#   "Auto" - detect the terminal width and fit the summary to it
-#   <int>  - truncate to that many characters
+# Max characters per line when printing to screen to avoid line wrapping
+# Does not affect log file output
+# Set to 999 to auto-detect terminal width
+# Applies only when DISABLE_LOGGING is False
+# Can also be set via the --truncate flag
 TRUNCATE_CHARS = 0
 
 # Width of horizontal line
@@ -840,6 +841,9 @@ def ntfy_images_install_command():
 # ANSI escape sequence helper used for colouring and stripping colour codes
 ANSI_ESCAPE_RE = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
 
+# Matches only the colour sequences the tool emits, which truncation copies through without spending display width
+SGR_SEQUENCE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
 # Internal flag & style map for colour handling
 COLOR_ENABLED = False
 _COLOR_STYLES = {}
@@ -1168,6 +1172,50 @@ def normalize_log_separators(message):
     return re.sub(r"(?m)^─+$", lambda match: match.group(0).replace("─", "-"), message)
 
 
+# Truncates each line to a display width, expanding tabs and counting double-width characters correctly
+def truncate_string_per_line(message, truncate_width, tabsize=8):
+    try:
+        from wcwidth import wcwidth
+    except ImportError:
+        return message
+    truncated_lines = []
+    for line in message.split("\n"):
+        expanded_line = line.expandtabs(tabsize)
+        current_width = 0
+        truncated = []
+        position = 0
+        while position < len(expanded_line):
+            # A colour sequence is copied through free of charge, so styling never eats into the visible width
+            escape = SGR_SEQUENCE_RE.match(expanded_line, position)
+            if escape:
+                truncated.append(escape.group(0))
+                position = escape.end()
+                continue
+            char = expanded_line[position]
+            char_width = wcwidth(char)
+            if char_width is None or char_width < 0:
+                char_width = 0
+            if current_width + char_width > truncate_width:
+                break
+            truncated.append(char)
+            current_width += char_width
+            position += 1
+        truncated_lines.append("".join(truncated))
+    return "\n".join(truncated_lines)
+
+
+# Resolves CLI and configured truncation settings while expanding the terminal-width sentinel
+def resolve_truncate_chars(cli_value, configured_value, logging_disabled):
+    truncate_chars = configured_value if cli_value is None else cli_value
+    if logging_disabled:
+        return 0
+    if truncate_chars == 999:
+        terminal_size = shutil.get_terminal_size()
+        print(f"The detected terminal screen width is: {terminal_size.columns} characters\n")
+        return terminal_size.columns
+    return truncate_chars
+
+
 # Logger class to output messages to stdout and log file
 class Logger(object):
     def __init__(self, filename, strip_ansi=True):
@@ -1176,8 +1224,8 @@ class Logger(object):
         self.strip_ansi = strip_ansi
 
     def write(self, message):
-        coloured = apply_color_to_text(message)
-        self.terminal.write(coloured)
+        terminal_message = truncate_string_per_line(message, TRUNCATE_CHARS) if TRUNCATE_CHARS else message
+        self.terminal.write(apply_color_to_text(terminal_message))
 
         # Expand tabs for file output (stdout remains untouched)
         expanded_message = message.expandtabs(8)
@@ -1200,8 +1248,8 @@ class ColorStream(object):
         self.terminal = stream
 
     def write(self, message):
-        coloured = apply_color_to_text(message)
-        self.terminal.write(coloured)
+        terminal_message = truncate_string_per_line(message, TRUNCATE_CHARS) if TRUNCATE_CHARS else message
+        self.terminal.write(apply_color_to_text(terminal_message))
         self.terminal.flush()
 
     def flush(self):
@@ -3795,33 +3843,6 @@ StartupSummaryRow = namedtuple("StartupSummaryRow", ["label", "value", "concise"
 StartupSummaryRow.__new__.__defaults__ = (False, True, True)
 
 
-# Returns the width a summary value may occupy, resolving the Auto setting against the real terminal
-def startup_summary_value_width():
-    setting = TRUNCATE_CHARS
-    if isinstance(setting, str):
-        if setting.strip().casefold() != "auto":
-            return 0
-        try:
-            columns = shutil.get_terminal_size(fallback=(0, 0)).columns
-        except OSError:
-            return 0
-        # The label column is a fixed 32 characters, so the value gets whatever is left
-        return max(20, columns - 32) if columns else 0
-    try:
-        return max(0, int(setting))
-    except (TypeError, ValueError):
-        return 0
-
-
-# Truncates one value to the configured width, leaving a visible marker rather than silently cutting it
-def truncate_summary_value(value, width=None):
-    text = str(value)
-    limit = startup_summary_value_width() if width is None else width
-    if not limit or len(text) <= limit:
-        return text
-    return text[:max(1, limit - 3)] + "..."
-
-
 # Prints the startup summary, showing only the concise rows unless the full view was asked for
 def emit_startup_summary(rows, show_full=False, printer=None):
     write = print if printer is None else printer
@@ -3829,10 +3850,7 @@ def emit_startup_summary(rows, show_full=False, printer=None):
         if not (row.full if show_full else row.concise):
             continue
         prefix = f"* {row.label + ':':<30}"
-        width = startup_summary_value_width()
-        if width:
-            write(f"{prefix}{truncate_summary_value(row.value, width)}")
-        elif row.label in ("Notifications (email)", "Notifications (webhook)"):
+        if row.label in ("Notifications (email)", "Notifications (webhook)"):
             # Only the rollups grow long enough to need wrapping into the value column
             write(textwrap.fill(str(row.value), width=100, initial_indent=prefix, subsequent_indent=" " * len(prefix), break_long_words=False, break_on_hyphens=False))
         else:
@@ -3878,40 +3896,42 @@ def build_startup_summary(target=None, config_path=None, env_path=None, log_path
     return rows
 
 
-# Returns the help epilog, grouped by what the reader is trying to do rather than listed as one flat block
+# Renders the --help examples: one heading per task, then a comment and the command it describes
+def render_help_examples(groups, guide_url):
+    blocks = []
+    for title, entries in groups:
+        block = [f"{title}:"]
+        for comment, command in entries:
+            if len(block) > 1:
+                block.append("")
+            block.extend(f"  # {line}" for line in comment.split("\n"))
+            if command:
+                block.append(f"  {command}")
+        blocks.append("\n".join(block))
+    return "Examples:\n\n" + "\n\n".join(blocks) + f"\n\nGuide: {guide_url}\n"
+
+
+# Returns the --help epilog, listing the commands worth knowing rather than every command there is
 def help_examples():
+    prefix = render_command(include_paths=False)
     groups = (
         ("Getting started", (
-            ("Answer a few questions and write a configuration", ["--setup"]),
-            ("Check the setup before relying on it", ["--doctor", "<steam_target>"]),
-            ("Start monitoring", ["<steam_target>"]),
-        )),
-        ("Configuration and secrets", (
-            ("Write a configuration template to edit by hand", ["--generate-config", "steam_monitor.conf"]),
-            ("Save the Steam Web API key through a hidden prompt", ["--set-steam-api-key"]),
-            ("Save a Discord or ntfy webhook URL through a hidden prompt", ["--set-webhook-url"]),
+            ("Guided setup, recommended for the first run", f"{prefix} --setup"),
+            ("Or save the Steam Web API key through a hidden prompt", f"{prefix} --set-steam-api-key"),
+            ("Check the setup before relying on it", f"{prefix} --doctor <steam_target>"),
+            ("Start monitoring", f"{prefix} <steam_target>"),
         )),
         ("Notifications", (
-            ("Email when the user goes online or offline, and on game changes", ["<steam_target>", "-a", "-g"]),
-            ("Send one test email", ["--send-test-email"]),
-            ("Send one test webhook", ["--send-test-webhook"]),
+            ("Email when the user goes online or offline, and on game changes", f"{prefix} <steam_target> -a -g"),
+            ("Send one test email", f"{prefix} --send-test-email"),
+            ("Send one test webhook", f"{prefix} --send-test-webhook"),
         )),
         ("Information and diagnostics", (
-            ("Show detailed profile information and exit", ["-i", "<steam_target>"]),
-            ("Resolve a profile URL to a Steam64 ID", ["-r", "https://steamcommunity.com/id/<name>/"]),
-            ("Trace what the tool is doing", ["<steam_target>", "--debug"]),
+            ("Show detailed profile information and exit", f"{prefix} -i <steam_target>"),
+            ("Trace what the tool is doing", f"{prefix} <steam_target> --debug"),
         )),
     )
-    lines = ["Examples:"]
-    for title, entries in groups:
-        lines.append("")
-        lines.append(f"  {title}")
-        for description, arguments in entries:
-            lines.append(f"    {description}:")
-            lines.append(f"      {render_command(arguments, include_paths=False)}")
-    lines.append("")
-    lines.append(f"Guide: {GUIDE_URL}")
-    return "\n".join(lines)
+    return render_help_examples(groups, QUICK_START_GUIDE_URL)
 
 
 # Initializes the CSV file
@@ -5657,7 +5677,7 @@ def validate_secret_action_args(args, parser, action_dest, action_flag):
 
 # Parses configuration and starts the selected Steam Monitor action
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, NAME_CHANGE_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME, NTFY_IMAGES, EXPORTED_SECRET_KEYS
+    global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, NAME_CHANGE_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME, NTFY_IMAGES, EXPORTED_SECRET_KEYS, TRUNCATE_CHARS
 
     if "--generate-config" in sys.argv and "--set-steam-api-key" not in sys.argv and "--set-webhook-url" not in sys.argv:
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
@@ -5772,6 +5792,13 @@ def main():
         metavar="PATH",
         help="Path to optional dotenv file (auto-search if not set, disable with 'none')",
     )
+    conf.add_argument(
+        "--doctor",
+        dest="doctor",
+        action="store_true",
+        default=None,
+        help="Run read-only preflight checks and report what is ready and what is not",
+    )
 
     # API settings
     creds = parser.add_argument_group("API settings")
@@ -5791,7 +5818,7 @@ def main():
     )
 
     # Notifications
-    notify = parser.add_argument_group("Notifications")
+    notify = parser.add_argument_group("Email notifications")
     notify.add_argument(
         "-a", "--notify-active-inactive",
         dest="notify_active_inactive",
@@ -5963,7 +5990,26 @@ def main():
     )
 
     # User information
-    info = parser.add_argument_group("User information")
+    # Intervals & timers
+    times = parser.add_argument_group("Intervals & timers")
+    times.add_argument(
+        "-c", "--check-interval",
+        dest="check_interval",
+        metavar="SECONDS",
+        type=int,
+        help="Polling interval when user is offline"
+    )
+    times.add_argument(
+        "-k", "--active-interval",
+        dest="active_interval",
+        metavar="SECONDS",
+        type=int,
+        help="Polling interval when user is online"
+    )
+
+    # Features & Output
+    # User information & listing
+    info = parser.add_argument_group("User information & listing")
     info.add_argument(
         "-i", "--info",
         dest="info",
@@ -6002,24 +6048,6 @@ def main():
         help="When used with --achievements, check all owned games instead of only recently played games. "
              "Useful for users who haven't played recently, as their recently played list may be limited."
     )
-    # Intervals & timers
-    times = parser.add_argument_group("Intervals & timers")
-    times.add_argument(
-        "-c", "--check-interval",
-        dest="check_interval",
-        metavar="SECONDS",
-        type=int,
-        help="Polling interval when user is offline"
-    )
-    times.add_argument(
-        "-k", "--active-interval",
-        dest="active_interval",
-        metavar="SECONDS",
-        type=int,
-        help="Polling interval when user is online"
-    )
-
-    # Features & Output
     opts = parser.add_argument_group("Features & output")
     opts.add_argument(
         "--check-level-xp",
@@ -6078,11 +6106,11 @@ def main():
         help="Disable coloured output in the terminal"
     )
     opts.add_argument(
-        "--doctor",
-        dest="doctor",
-        action="store_true",
-        default=None,
-        help="Run read-only preflight checks and report what is ready and what is not"
+        "--truncate",
+        dest="truncate",
+        metavar="N",
+        type=int,
+        help="Max characters per screen line (not log), use 999 to auto-detect terminal width, ignored if -d is set"
     )
     opts.add_argument(
         "--verbose",
@@ -6322,6 +6350,8 @@ def main():
 
     if args.disable_logging is True:
         DISABLE_LOGGING = True
+
+    TRUNCATE_CHARS = resolve_truncate_chars(args.truncate, TRUNCATE_CHARS, DISABLE_LOGGING)
 
     # Re-initialize colour output to pick up any theme changes from config/dotenv
     init_color_output(stdout_bck)
