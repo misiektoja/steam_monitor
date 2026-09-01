@@ -482,6 +482,8 @@ SECRET_ACTION_FLAGS = ("--set-steam-api-key", "--set-smtp-password", "--set-webh
 
 # Whole checks, so a check interval longer than the liveness interval still waits one check instead of reporting on every check
 LIVENESS_CHECK_COUNTER = max(1, -(-LIVENESS_CHECK_INTERVAL // STEAM_CHECK_INTERVAL)) if LIVENESS_CHECK_INTERVAL else 0
+# Seconds rather than checks, because a failing run usually retries on a different interval than a healthy one
+LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_COUNTER else 0
 
 # The last connectivity failure, so a quiet caller can classify it instead of the check printing it
 LAST_CONNECTIVITY_ERROR = None
@@ -2485,22 +2487,23 @@ class OutageReporter:
     def __init__(self):
         self.code = None
         self.since = 0
-        self.checks = 0
+        self.reported_at = 0
 
-    # Records one failed check and returns "full" for a new failure, "degraded" on the liveness cadence,
+    # Records one failed check and returns "full" for a new failure, "degraded" once the liveness interval has passed,
     # "repeat" while the liveness banner is switched off or "" while the same failure is merely continuing
-    def failed(self, advice, liveness_counter):
+    def failed(self, advice, liveness_interval):
+        now = int(time.time())
         if advice.code != self.code:
             self.code = advice.code
-            self.since = int(time.time())
-            self.checks = 0
+            self.since = now
+            self.reported_at = now
             return "full"
-        self.checks += 1
         # With the liveness banner off there is nothing to carry the reminder, so the summary keeps its old cadence
-        if not liveness_counter:
+        if not liveness_interval:
             return "repeat"
-        if self.checks >= liveness_counter:
-            self.checks = 0
+        # Timed rather than counted, because a failing run usually retries on a different interval than a healthy one
+        if now - self.reported_at >= liveness_interval:
+            self.reported_at = now
             return "degraded"
         return ""
 
@@ -2511,7 +2514,7 @@ class OutageReporter:
         lasted = int(time.time()) - self.since
         self.code = None
         self.since = 0
-        self.checks = 0
+        self.reported_at = 0
         return lasted
 
 
@@ -5723,7 +5726,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 error_webhook_sent = False
                 error_delivery_code = advice.code
             # A failure that has not changed is left to the liveness cadence rather than repeated every check
-            outage_outcome = outage.failed(advice, LIVENESS_CHECK_COUNTER)
+            outage_outcome = outage.failed(advice, LIVENESS_REMINDER_SECONDS)
             if advice.code == "steam.rate_limited":
                 # Rate limits carry their own wait, so they skip the retry path rather than burning an attempt
                 retry_after = steam_retry_after_seconds(response, sleep_interval) if response is not None else sleep_interval
@@ -6300,7 +6303,7 @@ def validate_secret_action_args(args, parser, action_dest, action_flag, permitte
 
 # Parses configuration and starts the selected Steam Monitor action
 def main():
-    global CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LIVENESS_CHECK_COUNTER, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, NAME_CHANGE_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME, NTFY_IMAGES, EXPORTED_SECRET_KEYS, TRUNCATE_CHARS, WEBHOOK_ENABLED, DEBUG_MODE, COMMAND_LINE_SECRET_KEYS
+    global CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LIVENESS_CHECK_COUNTER, LIVENESS_REMINDER_SECONDS, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, NAME_CHANGE_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME, NTFY_IMAGES, EXPORTED_SECRET_KEYS, TRUNCATE_CHARS, WEBHOOK_ENABLED, DEBUG_MODE, COMMAND_LINE_SECRET_KEYS
 
     if "--generate-config" in sys.argv and not any(flag in sys.argv for flag in SECRET_ACTION_FLAGS):
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
@@ -6930,6 +6933,7 @@ def main():
     if args.check_interval:
         STEAM_CHECK_INTERVAL = args.check_interval
         LIVENESS_CHECK_COUNTER = max(1, -(-LIVENESS_CHECK_INTERVAL // STEAM_CHECK_INTERVAL)) if LIVENESS_CHECK_INTERVAL else 0
+        LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_COUNTER else 0
 
     if args.active_interval:
         STEAM_ACTIVE_CHECK_INTERVAL = args.active_interval

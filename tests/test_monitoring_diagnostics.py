@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 
 import copy
+import time
+
 import pytest
 
 import steam_monitor as monitor
@@ -86,6 +88,7 @@ def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True,
     monkeypatch.setattr(monitor, "STEAM_CHECK_INTERVAL", 60)
     monkeypatch.setattr(monitor, "STEAM_ACTIVE_CHECK_INTERVAL", 30)
     monkeypatch.setattr(monitor, "LIVENESS_CHECK_COUNTER", liveness_counter)
+    monkeypatch.setattr(monitor, "LIVENESS_REMINDER_SECONDS", liveness_counter * 60)
     monkeypatch.setattr(monitor, "ACTIVE_INACTIVE_NOTIFICATION", False)
     monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", error_notifications)
     monkeypatch.setattr(monitor, "STEAM_LEVEL_XP_NOTIFICATION", False)
@@ -101,9 +104,13 @@ def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True,
     monkeypatch.setattr(monitor, "steam_web_api_client", lambda *args, **kwargs: api)
 
     sleeps = []
+    # A fake clock advanced by each sleep, so the timed liveness reminder is deterministic
+    clock = [float(int(time.time()))]
+    monkeypatch.setattr(monitor.time, "time", lambda: clock[0])
 
     def stop_after_the_first_cycle(seconds):
         sleeps.append(seconds)
+        clock[0] += seconds
         # The first sleep is the one before the loop, the rest end each cycle
         if len(sleeps) >= stop_after_sleeps:
             raise StoppedAfterOneCycle()
@@ -318,18 +325,39 @@ def test_a_cleared_outage_reports_its_recovery(tmp_path, monkeypatch, capsys):
     assert "* Monitoring recovered for 76561197960435530 after " in output
 
 
-# Verifies the reporter reports a new failure in full, stays quiet while it lasts and reports the cadence reminder
-def test_the_outage_reporter_reports_once_then_on_the_cadence():
+# Verifies the reporter reports a new failure in full, stays quiet while it lasts and reminds once the liveness interval passes
+def test_the_outage_reporter_reports_once_then_on_the_cadence(monkeypatch):
+    clock = [1000000.0]
+    monkeypatch.setattr(monitor.time, "time", lambda: clock[0])
     reporter = monitor.OutageReporter()
     advice = monitor.classify_recovery_error(RuntimeError("boom"), context="runtime")
 
-    assert reporter.failed(advice, 3) == "full"
-    assert reporter.failed(advice, 3) == ""
-    assert reporter.failed(advice, 3) == ""
-    assert reporter.failed(advice, 3) == "degraded"
+    assert reporter.failed(advice, 180) == "full"
+    clock[0] += 60
+    assert reporter.failed(advice, 180) == ""
+    clock[0] += 119
+    assert reporter.failed(advice, 180) == ""
+    clock[0] += 1
+    assert reporter.failed(advice, 180) == "degraded"
     assert reporter.failed(advice, 0) == "repeat"
     assert reporter.recovered() is not None
     assert reporter.recovered() is None
+
+
+# Verifies the reminder follows the clock, so a run that retries faster than it polls does not remind more often
+def test_the_outage_reminder_follows_the_clock_not_the_check_count(monkeypatch):
+    clock = [1000000.0]
+    monkeypatch.setattr(monitor.time, "time", lambda: clock[0])
+    reporter = monitor.OutageReporter()
+    advice = monitor.classify_recovery_error(RuntimeError("boom"), context="runtime")
+
+    assert reporter.failed(advice, 900) == "full"
+    outcomes = []
+    for _ in range(60):
+        clock[0] += 15
+        outcomes.append(reporter.failed(advice, 900))
+
+    assert outcomes.count("degraded") == 1
 
 
 # Verifies a delivered error channel stays suppressed while a failed channel retries during the same outage
