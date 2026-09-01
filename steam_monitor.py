@@ -323,39 +323,41 @@ COLORED_OUTPUT = True
 #   "bright_cyan bold", "yellow", "red underline", "bright_magenta bold underline", "red bold blink"
 # Valid colour names: black, red, green, yellow, blue, magenta, cyan, white,
 # and their bright_ variants (bright_red, bright_green, ...).
-COLOR_THEME = {
-    # General sections
-    "header": "bright_cyan",
-    "section": "bright_white",
-    # Identity
-    "username": "bright_cyan underline",
-    "id": "bright_magenta",
-    # Status values
-    "status_online": "green",
-    "status_offline": "red",
-    "status_away": "yellow",
-    "status_snooze": "magenta",
-    "status_other": "white",
-    # Activity / game info
-    "status_change": "yellow",
-    "game": "bright_yellow",
-    "duration": "green",
-    # Misc
-    "timestamp_label": "",
-    "timestamp_value": "cyan",
-    "info": "cyan",
-    "warning": "yellow",
-    "error": "red",
-    "signal": "yellow",
-    # Dates
-    "date": "magenta",
-    "date_range": "magenta",
-    # Boolean values
-    "boolean_true": "green",
-    "boolean_false": "red",
-    # Links
-    "link": "blue underline",
-}
+# The defaults below are what the tool uses while this block stays commented out. Uncomment it to override
+# them and keep only the lines you want to change, so the rest keep following the tool's own defaults.
+# COLOR_THEME = {
+#     # General sections
+#     "header": "bright_cyan",
+#     "section": "bright_white",
+#     # Identity
+#     "username": "bright_cyan underline",
+#     "id": "bright_magenta",
+#     # Status values
+#     "status_online": "green",
+#     "status_offline": "red",
+#     "status_away": "yellow",
+#     "status_snooze": "magenta",
+#     "status_other": "white",
+#     # Activity / game info
+#     "status_change": "yellow",
+#     "game": "bright_yellow",
+#     "duration": "green",
+#     # Misc
+#     "timestamp_label": "",
+#     "timestamp_value": "cyan",
+#     "info": "cyan",
+#     "warning": "yellow",
+#     "error": "red",
+#     "signal": "yellow",
+#     # Dates
+#     "date": "magenta",
+#     "date_range": "magenta",
+#     # Boolean values
+#     "boolean_true": "green",
+#     "boolean_false": "red",
+#     # Links
+#     "link": "blue underline",
+# }
 
 # Value used by signal handlers increasing/decreasing the check for player activity
 # when user is online/away/snooze (STEAM_ACTIVE_CHECK_INTERVAL); in seconds
@@ -944,6 +946,8 @@ _STEAM_USER_LINE_RE = re.compile(
     r"^(Steam user )(.+?)( (?:changed status|started playing|stopped playing|changed game from|now plays).*)$"
 )
 _USER_IN_GAME_RE = re.compile(r"^(User is currently in-game:\s+)(.*)$")
+# The monitored account named inside a sentence, so the ID is coloured without wrapping the whole line
+_MONITORED_ID_RE = re.compile(r"^(Monitoring user with Steam64 ID\s+)(\S+)$")
 # Long date in format returned by get_date_from_ts, e.g. 'Sun 21 Apr 2024, 15:08:45'
 _LONG_DATE_RE = re.compile(r"\b\w{3}\s+\d{1,2}\s+\w{3}\s+\d{4},\s+\d{2}:\d{2}:\d{2}\b")
 # Short range date in parentheses, e.g. '(Sat 22 Nov 16:54 - 17:58)'
@@ -1118,6 +1122,13 @@ def _colorize_line(line, notification_summary=False):
     if m:
         label, name = m.groups()
         colored = f"{label}{colorize('username', name)}"
+        return colored + ("\n" if line.endswith("\n") else "")
+
+    # "Monitoring user with Steam64 ID <id>"
+    m = _MONITORED_ID_RE.match(line.strip("\n"))
+    if m:
+        prefix, steam_id = m.groups()
+        colored = f"{prefix}{colorize('id', steam_id)}"
         return colored + ("\n" if line.endswith("\n") else "")
 
     # Any '<something> URL:' row is a link, checked before the label table so 'Profile URL:' is not read as a name
@@ -4499,11 +4510,14 @@ def find_config_file(cli_path=None):
 # Settings an older version wrote that this version no longer defines, ignored instead of rejected
 RETIRED_CONFIG_SETTINGS = frozenset(())
 
+# Settings the template ships commented out so the built-in default applies, still accepted from a config file
+COMMENTED_CONFIG_SETTINGS = frozenset({"COLOR_THEME"})
+
 
 # Collects the setting names the built-in configuration template defines
 def _config_allowed_names():
     template_tree = ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec")
-    return frozenset(statement.targets[0].id for statement in template_tree.body if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name))
+    return frozenset(statement.targets[0].id for statement in template_tree.body if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name)) | COMMENTED_CONFIG_SETTINGS
 
 
 # Parses allowlisted literal config assignments without executing any file content
@@ -6674,8 +6688,9 @@ def main():
         if WEBHOOK_ENABLED and normalized_webhook_provider() == "ntfy":
             print(f"\n* Warning: ntfy artwork is enabled, but the optional 'Pillow' package is not installed\n\nTo attach artwork, run:\n    {ntfy_images_install_command()}\n\nOnce installed, re-run this tool. To stop this warning, set NTFY_IMAGES to False\n\nSending ntfy alerts as text only...")
 
-    out = f"\nMonitoring user with Steam64 ID {colorize('id', str(s_id))}"
-    print(colorize("header", out))
+    # The line coloriser colours the ID, so the printed text stays plain and the separator matches its width
+    out = f"Monitoring user with Steam64 ID {s_id}"
+    print(f"\n{out}")
     print("─" * len(out))
 
     # We define signal handlers only for Linux, Unix & MacOS since Windows has limited number of signals supported

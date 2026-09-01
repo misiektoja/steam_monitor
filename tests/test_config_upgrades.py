@@ -13,6 +13,37 @@ TEMPLATE_DIR = Path(__file__).resolve().parent / "fixtures" / "config_templates"
 SHIPPED_TEMPLATES = sorted(TEMPLATE_DIR.glob("*.conf"))
 
 
+# Reads a block the template ships commented out, as the parser would see it once uncommented
+def uncomment_block(first_line):
+    lines = monitor.CONFIG_BLOCK.split("\n")
+    start = next(index for index, line in enumerate(lines) if line.startswith(first_line))
+    end = next(index for index in range(start, len(lines)) if lines[index].rstrip() == "# }")
+    return "\n".join(line[2:] if line.startswith("# ") else line[1:] for line in lines[start:end + 1])
+
+
+# Verifies a generated configuration no longer pins the colours, so the tool's own defaults apply
+def test_the_template_leaves_the_theme_to_the_defaults():
+    assert "COLOR_THEME" not in monitor.parse_config_content(monitor.CONFIG_BLOCK, "<built-in-config>")
+    assert "\n# COLOR_THEME = {\n" in monitor.CONFIG_BLOCK
+
+
+# Verifies the commented theme in the template still describes exactly what the tool actually uses
+def test_the_commented_template_theme_matches_the_built_in_theme():
+    values = monitor.parse_config_content(uncomment_block("# COLOR_THEME = {"), "<built-in-config>")
+
+    assert values["COLOR_THEME"] == monitor.DEFAULT_COLOR_THEME
+
+
+# Verifies a configuration that sets the commented-out theme is still accepted, since older files all set it
+def test_a_config_setting_the_theme_is_still_accepted(tmp_path):
+    config = tmp_path / "monitor.conf"
+    config.write_text('COLOR_THEME = { "username": "green" }\nCLEAR_SCREEN = False\n', encoding="utf-8")
+    namespace = {}
+
+    assert monitor.load_config_file(config, namespace=namespace, report_errors=False) is True
+    assert namespace["COLOR_THEME"] == {"username": "green"}
+
+
 # Verifies the fixtures are actually present, so a missing directory cannot silently skip every replay
 def test_the_shipped_templates_are_available():
     assert SHIPPED_TEMPLATES, "no shipped configuration templates to replay"

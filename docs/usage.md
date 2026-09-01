@@ -293,6 +293,8 @@ The tool has native **color output** support for terminal since v1.5 (see `COLOR
 
 Both settings apply to monitoring output and to the `--setup` and `--doctor` screens. `--no-color` turns colour off for all of them.
 
+Names are `bright_cyan underline`, identifiers such as the Steam64 ID are `bright_magenta` and links are `blue underline`. Generated configuration files ship the `COLOR_THEME` block commented out, so these defaults apply and a later change to them reaches you. A configuration file written before v2.0 sets every colour explicitly and therefore keeps the old ones: delete its `COLOR_THEME` block to follow the defaults, or edit the values you want to keep.
+
 Add to your GRC config (`~/.grc/grc.conf`):
 
 ```
