@@ -1311,3 +1311,25 @@ def test_the_webhook_question_defaults_to_the_saved_switch(tmp_path, monkeypatch
     monitor._wizard_collect_webhook_section(state)
 
     assert seen == [("Set up webhook alerts (Discord, ntfy etc.)?", True)]
+
+
+# Verifies the email question defaults to the saved alerts, so a rerun over configured email proposes keeping it
+def test_the_email_question_defaults_to_the_saved_alerts(tmp_path, monkeypatch, wizard_globals):
+    baseline = {name: value for name, value in vars(monitor).items() if name in monitor._config_allowed_names()}
+    state = monitor.WizardSetupState(tmp_path / "steam_monitor.conf", tmp_path / ".env", baseline)
+    seen = []
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=False, **kwargs: seen.append((question, default)) or False)
+
+    state.config_values.update({key: False for key in monitor.WIZARD_EMAIL_NOTIFICATION_KEYS})
+    state.config_values.update({"ERROR_NOTIFICATION": True, "SMTP_HOST": "your_smtp_server_ssl"})
+    monitor._wizard_collect_email_section(state)
+    assert seen == [("Configure email notifications?", False)]
+
+    # A declined answer clears the section, so each case seeds the settings it needs again
+    state.config_values.update({"ERROR_NOTIFICATION": True, "SMTP_HOST": "smtp.example.test"})
+    monitor._wizard_collect_email_section(state)
+    assert seen[-1] == ("Configure email notifications?", True)
+
+    state.config_values.update({"ERROR_NOTIFICATION": False, "SMTP_HOST": "your_smtp_server_ssl", "GAME_CHANGE_NOTIFICATION": True})
+    monitor._wizard_collect_email_section(state)
+    assert seen[-1] == ("Configure email notifications?", True)

@@ -3989,9 +3989,18 @@ def _wizard_email_answer_missing(state, key):
     return True
 
 
+# Reports whether the saved settings already send email, so a rerun proposes keeping the channel it has
+def _wizard_email_enabled(config_values):
+    # The error alert ships switched on, so on its own it counts only once a mail server has been named
+    for key in WIZARD_EMAIL_NOTIFICATION_KEYS:
+        if key != "ERROR_NOTIFICATION" and bool(config_values.get(key)):
+            return True
+    return bool(config_values.get("ERROR_NOTIFICATION")) and doctor_value_is_set(config_values.get("SMTP_HOST"))
+
+
 # Asks whether to send email alerts and collects only the settings that choice needs
 def _wizard_collect_email_section(state, input_func=None, getpass_func=None):
-    if not _wizard_ask_yes_no("Configure email notifications?", default=False, input_func=input_func):
+    if not _wizard_ask_yes_no("Configure email notifications?", default=_wizard_email_enabled(state.config_values), input_func=input_func):
         _wizard_disable_email(state)
         return
     while True:
