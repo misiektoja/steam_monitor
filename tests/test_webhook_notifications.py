@@ -366,7 +366,7 @@ class WebhookNotificationTests(unittest.TestCase):
             steam_monitor.main()
 
         self.assertEqual(exit_info.exception.code, 0)
-        delivery.assert_called_once_with("Steam Monitor test", "Your webhook alerts are set up correctly.", "status", force=True)
+        delivery.assert_called_once_with("steam_monitor: test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.", "status", force=True)
 
     # Verifies long ntfy messages stay below the server attachment boundary with a visible truncation marker
     def test_ntfy_message_stays_below_attachment_boundary(self):
@@ -376,6 +376,19 @@ class WebhookNotificationTests(unittest.TestCase):
         self.assertLessEqual(len(message.encode("utf-8")), steam_monitor.NTFY_MESSAGE_LIMIT_BYTES)
         self.assertLess(len(message.encode("utf-8")), 4096)
         self.assertNotIn("\ufffd", message)
+
+
+    # Verifies both test commands carry the subject, title and body shared with the sibling monitors
+    def test_the_test_messages_use_the_shared_wording(self):
+        email = Mock(return_value=0)
+        webhook = Mock(return_value=0)
+        for flag in ("--send-test-email", "--send-test-webhook"):
+            with patch.object(steam_monitor.sys, "argv", ["steam_monitor.py", flag, "--env-file", "none"]), patch.object(steam_monitor, "check_internet", return_value=True), patch.object(steam_monitor, "send_email", email), patch.object(steam_monitor, "send_webhook", webhook), patch.object(steam_monitor, "clear_screen"), patch.object(steam_monitor.signal, "signal"), self.assertRaises(SystemExit) as exit_info:
+                steam_monitor.main()
+            self.assertEqual(exit_info.exception.code, 0)
+
+        self.assertEqual(email.call_args.args[:2], ("steam_monitor: test email", "This test email was sent by --send-test-email. Your SMTP settings work."))
+        self.assertEqual(webhook.call_args.args[:2], ("steam_monitor: test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work."))
 
 
 if __name__ == "__main__":
