@@ -374,11 +374,20 @@ def test_a_quiet_cycle_records_the_completed_check_in_debug(tmp_path, monkeypatc
 
 
 # Verifies the liveness banner says what it is reporting rather than printing a bare timestamp
-def test_the_liveness_banner_explains_itself_in_verbose(tmp_path, monkeypatch, capsys):
+def test_the_liveness_banner_explains_itself(tmp_path, monkeypatch, capsys):
     run_one_cycle(tmp_path, monkeypatch, liveness_counter=1)
 
     output = capsys.readouterr().out
     assert "Monitoring healthy for 76561197960435530. The user is offline with no status or game change since the last check" in output
+    assert "Liveness check, timestamp:" in output
+
+
+# Verifies the banner explains itself without --verbose too, so a plain run never prints a bare timestamp
+def test_the_liveness_banner_explains_itself_without_diagnostics(tmp_path, monkeypatch, capsys):
+    run_one_cycle(tmp_path, monkeypatch, liveness_counter=1, diagnostics=False)
+
+    output = capsys.readouterr().out
+    assert "* Monitoring healthy for 76561197960435530. The user is offline with no status or game change since the last check" in output
     assert "Liveness check, timestamp:" in output
 
 

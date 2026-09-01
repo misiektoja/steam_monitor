@@ -2515,6 +2515,12 @@ class OutageReporter:
         return lasted
 
 
+# Reports that nothing changed, so a quiet run still says it is alive on the liveness cadence
+def print_liveness_banner(message):
+    print(f"* {sanitize_error_text(message)}")
+    print_cur_ts("Liveness check, timestamp:\t")
+
+
 # Reports a lasting failure on the liveness cadence, so a broken run still says it is alive without repeating itself
 def print_outage_liveness(target, advice, since):
     print(f"* Monitoring degraded for {target}. {advice.summary} since {get_date_from_ts(since)}")
@@ -6231,8 +6237,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         debug_print("Completed check", check=f"#{check_count}", user=steamid, status=steam_personastates[status], game=gamename or None)
 
         if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER:
-            verbose_print(f"Monitoring healthy for {steamid}. The user is {steam_personastates[status]} with no status or game change since the last check")
-            print_cur_ts("Liveness check, timestamp:\t")
+            print_liveness_banner(f"Monitoring healthy for {steamid}. The user is {steam_personastates[status]} with no status or game change since the last check")
             alive_counter = 0
 
         if status > 0:
