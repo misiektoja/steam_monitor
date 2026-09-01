@@ -1228,3 +1228,18 @@ def test_a_rejected_target_answer_offers_a_retry_and_keeps_the_previous_target(t
     assert state.target == str(STEAM64)
     assert any(prompt.startswith("Try entering the Steam profile URL or ID to monitor again?") for prompt in transcript)
     assert any(prompt.startswith("Persist this target") for prompt in transcript)
+
+
+# Verifies declining email clears only the alerts the wizard offers, so alerts enabled by hand survive
+def test_declining_email_keeps_the_alerts_the_wizard_never_offers(tmp_path, wizard_globals):
+    baseline = {name: value for name, value in vars(monitor).items() if name in monitor._config_allowed_names()}
+    state = monitor.WizardSetupState(tmp_path / "steam_monitor.conf", tmp_path / ".env", baseline)
+    for key in ("STEAM_LEVEL_XP_NOTIFICATION", "FRIENDS_NOTIFICATION", "GAMES_LIBRARY_NOTIFICATION", "ACTIVE_INACTIVE_NOTIFICATION", "GAME_CHANGE_NOTIFICATION"):
+        state.config_values[key] = True
+
+    monitor._wizard_disable_email(state)
+
+    for key in ("STEAM_LEVEL_XP_NOTIFICATION", "FRIENDS_NOTIFICATION", "GAMES_LIBRARY_NOTIFICATION"):
+        assert state.config_values[key] is True
+    for key in monitor.WIZARD_EMAIL_NOTIFICATION_KEYS:
+        assert state.config_values[key] is False

@@ -3934,7 +3934,8 @@ def _wizard_collect_auth_section(state, input_func=None, getpass_func=None, vali
 # Switches every email alert off together, so an abandoned answer cannot leave half a mail server configured
 def _wizard_disable_email(state):
     _wizard_clear_section(state, WIZARD_SMTP_CONFIG_KEYS, ("SMTP_PASSWORD",))
-    for key in WIZARD_EMAIL_NOTIFICATION_KEYS + ("STEAM_LEVEL_XP_NOTIFICATION", "FRIENDS_NOTIFICATION", "GAMES_LIBRARY_NOTIFICATION"):
+    # Only the alerts the wizard offers are cleared, so alerts enabled by hand survive a declined email section
+    for key in WIZARD_EMAIL_NOTIFICATION_KEYS:
         state.config_values[key] = False
 
 
