@@ -1048,3 +1048,34 @@ def test_the_connectivity_failure_names_the_network_and_the_setting(monkeypatch)
     assert refused is not None and timed_out is not None
     assert (refused.code, timed_out.code) == ("network.unavailable", "network.timeout")
     assert refused.fix == timed_out.fix == "Check network, DNS, proxy and CHECK_INTERNET_URL settings"
+
+
+# Verifies a report read on its own ends with the command that starts monitoring, carrying this run's files
+def test_the_report_ends_with_the_command_that_starts_monitoring(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", "/etc/steam.conf")
+    monkeypatch.setattr(monitor, "DOTENV_FILE", "/etc/steam.env")
+
+    monitor.print_doctor_next_steps(doctor_exit=0)
+
+    transcript = capsys.readouterr().out
+    assert "Next steps" in transcript
+    assert "Start monitoring:" in transcript
+    assert "--config-file /etc/steam.conf --env-file /etc/steam.env" in transcript
+    assert transcript.rstrip().endswith(monitor.QUICK_START_GUIDE_URL)
+
+
+# Verifies a failing report names the order to work in, rather than inviting a run that cannot succeed yet
+def test_a_failing_report_asks_for_the_failures_first(capsys):
+    monitor.print_doctor_next_steps(doctor_exit=1)
+
+    assert "After Doctor passes, start monitoring:" in capsys.readouterr().out
+
+
+# Verifies a target the command line named is carried, so the printed command watches the account just checked
+def test_a_command_line_target_is_carried_into_the_command(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", "")
+    monkeypatch.setattr(monitor, "DOTENV_FILE", "")
+
+    monitor.print_doctor_next_steps("76561197960435530", doctor_exit=0)
+
+    assert "76561197960435530" in capsys.readouterr().out

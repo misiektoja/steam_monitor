@@ -4267,6 +4267,17 @@ def _wizard_print_command(label, command, suffix=""):
     print(f"    {colorize('section', command)}{colorize('info', suffix) if suffix else ''}\n")
 
 
+# Prints the command that starts monitoring with the files this run checked, so a report read on its own
+# ends with the next action rather than leaving the reader to assemble the command
+def print_doctor_next_steps(target_value=None, doctor_exit=0):
+    print(colorize("header", "\nNext steps\n"))
+    label = "After Doctor passes, start monitoring:" if doctor_exit else "Start monitoring:"
+    _wizard_print_command(label, render_command([str(target_value)] if target_value else []))
+    # No trailing blank line: the command printer already left one and the report must not end on two
+    print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}")
+
+
+
 # Prints the commands a newcomer needs next, instead of an argparse usage error
 def print_welcome_screen(input_func=None, interactive=None):
     terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
@@ -6756,7 +6767,10 @@ def main():
         if args.file_suffix:
             FILE_SUFFIX = args.file_suffix
         doctor_target = args.resolve_community_url or args.steam64_id or TARGET_STEAM_ID
-        sys.exit(run_doctor(target_value=doctor_target, config_path=cfg_path, env_path=env_path))
+        doctor_exit = run_doctor(target_value=doctor_target, config_path=cfg_path, env_path=env_path)
+        # A target the config file already carries is left out, so the command stays as short as the wizard's
+        print_doctor_next_steps(None if doctor_target == TARGET_STEAM_ID else doctor_target, doctor_exit)
+        sys.exit(doctor_exit)
 
     if not check_internet():
         sys.exit(1)
