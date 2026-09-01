@@ -1422,7 +1422,7 @@ def check_internet(url=None, timeout=None, quiet=False):
         global LAST_CONNECTIVITY_ERROR
         debug_print("Connectivity check", url=selected_url, outcome="failed", error=f"{type(e).__name__}: {e}")
         if not quiet:
-            print_recovery_error(e, context="runtime")
+            print_recovery_error(e, context="connectivity")
         LAST_CONNECTIVITY_ERROR = e
         return False
 
