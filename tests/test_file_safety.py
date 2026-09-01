@@ -106,23 +106,16 @@ def test_an_exhausted_backup_name_space_raises(tmp_path):
         monitor.create_timestamped_backup(destination, attempts=0)
 
 
-# Verifies saving a secret backs up the private settings file and names the backup
-def test_saving_a_secret_backs_up_the_previous_dotenv(tmp_path):
+# Verifies replacing a secret leaves no copy of the old one, since a stale credential on disk outlives its usefulness
+def test_saving_a_secret_leaves_no_copy_of_the_previous_dotenv(tmp_path):
     destination = tmp_path / ".env"
     destination.write_text('WEBHOOK_URL="https://ntfy.sh/old-topic"\n', encoding="utf-8")
 
     result = monitor.update_dotenv_file(destination, {"WEBHOOK_URL": "https://ntfy.sh/new-topic"})
 
-    assert result["backup_path"] is not None
-    assert Path(result["backup_path"]).read_text(encoding="utf-8") == 'WEBHOOK_URL="https://ntfy.sh/old-topic"\n'
-    assert "new-topic" in destination.read_text(encoding="utf-8")
-
-
-# Verifies a first-time secret save reports no backup rather than inventing one
-def test_a_first_secret_save_reports_no_backup(tmp_path):
-    result = monitor.update_dotenv_file(tmp_path / ".env", {"WEBHOOK_URL": "https://ntfy.sh/topic"})
-
-    assert result["backup_path"] is None
+    assert "backup_path" not in result
+    assert [entry.name for entry in tmp_path.iterdir()] == [".env"]
+    assert destination.read_text(encoding="utf-8") == 'WEBHOOK_URL="https://ntfy.sh/new-topic"\n'
 
 
 # Verifies terminal control sequences in a remote display name are stripped before output

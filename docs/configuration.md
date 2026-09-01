@@ -130,7 +130,7 @@ NTFY_ACCESS_TOKEN="your_ntfy_access_token"
 
 Prefer `steam_monitor --set-smtp-password` for `SMTP_PASSWORD`: the value is entered through a hidden prompt and the mail server has to accept it before it is saved.
 
-Saving a secret with `--set-steam-api-key`, `--set-smtp-password` or `--set-webhook-url` copies the previous dotenv file to a timestamped `.bak` with owner-only permissions before replacing it, and prints where it went.
+Saving a secret with `--set-steam-api-key`, `--set-smtp-password` or `--set-webhook-url` rewrites the dotenv file atomically with owner-only permissions and keeps no backup, so the replaced secret is not left behind in a `.bak` file.
 
 By default the tool will auto-search for dotenv file named `.env` in current directory and then upward from it.
 

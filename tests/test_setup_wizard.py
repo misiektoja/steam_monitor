@@ -1080,8 +1080,8 @@ def test_the_welcome_guide_link_opens_the_shared_setup_page():
     assert monitor.QUICK_START_GUIDE_URL.endswith("/setup-and-first-run/")
 
 
-# Verifies the dotenv backup carries its own label, since it and the configuration backup both read "Backup:"
-def test_the_dotenv_backup_row_is_named_apart_from_the_config_backup(tmp_path, monkeypatch, capsys, wizard_globals):
+# Verifies setup keeps a copy of the replaced configuration but never of the replaced secrets
+def test_setup_backs_up_the_config_but_not_the_dotenv(tmp_path, monkeypatch, capsys, wizard_globals):
     (tmp_path / "steam_monitor.conf").write_text("STEAM_CHECK_INTERVAL = 60\n", encoding="utf-8")
     (tmp_path / ".env").write_text("SMTP_PASSWORD=old-password\n", encoding="utf-8")
 
@@ -1091,11 +1091,10 @@ def test_the_dotenv_backup_row_is_named_apart_from_the_config_backup(tmp_path, m
     start = next(index for index, line in enumerate(lines) if line.strip() == "Saved files")
     block = list(itertools.takewhile(lambda line: line.startswith("  ") or not line.strip(), lines[start + 1:]))
     # Matched on the label alone, since the temporary directory name can carry the word too
-    labelled = [(line.split(":", 1)[0].strip(), line.split(":", 1)[1].strip()) for line in block if ":" in line]
-    rows = [(label, value) for label, value in labelled if label.casefold().endswith("backup")]
+    labels = [line.split(":", 1)[0].strip() for line in block if ":" in line]
 
-    assert [label for label, _ in rows] == ["Backup", "Dotenv backup"], block
-    assert rows[0][1] != rows[1][1]
+    assert [label for label in labels if label.casefold().endswith("backup")] == ["Backup"], block
+    assert sorted(entry.name for entry in tmp_path.iterdir() if entry.name.startswith(".env")) == [".env"]
 
 
 # Verifies the wizard says it is contacting Steam, since the key check blocks the prompt with no output

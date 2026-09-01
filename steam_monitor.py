@@ -1993,13 +1993,13 @@ def update_dotenv_file(destination, updates):
             os.fsync(temporary_file.fileno())
         if os.name == "posix":
             os.chmod(str(temporary_path), 0o600)
-        backup_path = create_timestamped_backup(destination_path)
+        # No backup is taken here: a copy of the credential being replaced is the one thing not worth keeping
         os.replace(str(temporary_path), str(destination_path))
         temporary_path = None
     finally:
         if temporary_path is not None and temporary_path.exists():
             temporary_path.unlink()
-    return {"path": str(destination_path), "updated_keys": tuple(key for key, _ in update_items), "backup_path": backup_path}
+    return {"path": str(destination_path), "updated_keys": tuple(key for key, _ in update_items)}
 
 
 # Validates a Steam Web API key without exposing it in output
@@ -2043,13 +2043,11 @@ def run_set_steam_api_key(env_file=None, interactive=None, input_func=None, getp
     if not validate(api_key):
         raise SecretConfigurationError("The entered Steam Web API key is invalid or could not be verified. The private settings file was not changed.")
     try:
-        result = update_dotenv_file(destination, {"STEAM_API_KEY": api_key})
+        update_dotenv_file(destination, {"STEAM_API_KEY": api_key})
     except Exception:
         raise SecretConfigurationError(f"Could not save the Steam Web API key in '{destination}'. Check file permissions or choose another path with --env-file.")
     print("* Steam Web API key is valid")
     print(f"* Updated private settings file: {destination}")
-    if result.get("backup_path"):
-        print(f"* Previous private settings file backed up to: {result['backup_path']}")
     print()
     monitor_target = command_targets(None, config_file_target(find_config_file()))[1]
     _wizard_print_command("Check setup again:", render_command(["--doctor"], include_paths=False, env_path=destination))
@@ -2122,13 +2120,11 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
     if not validate_webhook_url(webhook_url):
         raise SecretConfigurationError("That does not look like a complete HTTPS webhook URL. The private settings file was not changed.")
     try:
-        result = update_dotenv_file(destination, {"WEBHOOK_URL": webhook_url})
+        update_dotenv_file(destination, {"WEBHOOK_URL": webhook_url})
     except Exception:
         raise SecretConfigurationError(f"Could not save the webhook URL in '{destination}'. Check file permissions or choose another path with --env-file.")
     print("* Webhook URL looks valid")
     print(f"* Updated private settings file: {destination}")
-    if result.get("backup_path"):
-        print(f"* Previous private settings file backed up to: {result['backup_path']}")
     print()
     _wizard_print_command("Send a test webhook:", render_command(["--send-test-webhook"], include_paths=False, env_path=destination))
     _wizard_print_command("Check setup again:", render_command(["--doctor"], include_paths=False, env_path=destination))
@@ -2190,13 +2186,11 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
     except Exception as exc:
         raise SecretConfigurationError(f"The mail server did not accept the password: {type(exc).__name__}: {sanitize_error_text(exc)}. The private settings file was not changed.") from None
     try:
-        result = update_dotenv_file(destination, {"SMTP_PASSWORD": smtp_password})
+        update_dotenv_file(destination, {"SMTP_PASSWORD": smtp_password})
     except Exception:
         raise SecretConfigurationError(f"Could not save the SMTP password in '{destination}'. Check file permissions or choose another path with --env-file.")
     print(f"* The mail server accepted the password for {signed_in_user}")
     print(f"* Updated private settings file: {destination}")
-    if result.get("backup_path"):
-        print(f"* Previous private settings file backed up to: {result['backup_path']}")
     print()
     _wizard_print_command("Send a test email:", render_command(["--send-test-email"], include_paths=False, env_path=destination))
     _wizard_print_command("Check setup again:", render_command(["--doctor"], include_paths=False, env_path=destination))
@@ -4314,9 +4308,6 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
         print(f"  Backup:        {config_result['backup_path']}")
     if secret_result:
         print(f"  {'Secrets:' if state.secret_updates else 'Dotenv:':<15}{secret_result['path']}")
-        if secret_result.get("backup_path"):
-            # Named apart from the configuration backup above it, so two different files never share one label
-            print(f"  {'Dotenv backup:':<15}{secret_result['backup_path']}")
 
     doctor_offered = bool(state.target)
     doctor_exit = None
