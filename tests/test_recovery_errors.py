@@ -238,6 +238,8 @@ def test_a_missing_target_advises_the_accepted_forms(restored_globals):
     advice = monitor.classify_recovery_error(context="target.missing")
 
     assert advice.code == "target.missing"
+    # The summary follows the shape every sibling uses for a target it was never given
+    assert advice.summary == "No Steam profile was provided"
     assert monitor.STEAM_TARGET_FORMS in advice.fix
     assert "--config-file /tmp/steam_monitor.conf" in advice.fix
     assert "--env-file /tmp/steam_monitor.env" in advice.fix

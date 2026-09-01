@@ -2386,7 +2386,7 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
         return advice("webhook.invalid", safe_detail or "The webhook URL was not changed", f"Copy a complete Discord or ntfy webhook URL then run {flag} again", False, guide)
 
     if context == "target.missing":
-        return advice("target.missing", safe_detail or "No Steam profile is configured", f"Pass the profile to watch as a {STEAM_TARGET_FORMS}: {render_command(['<steam_target>'])}", False, QUICK_START_GUIDE_URL)
+        return advice("target.missing", safe_detail or "No Steam profile was provided", f"Pass the profile to watch as a {STEAM_TARGET_FORMS}: {render_command(['<steam_target>'])}", False, QUICK_START_GUIDE_URL)
 
     if context == "target":
         if any(term in message for term in ("rate limit", "429")) or status == 429:
@@ -6324,7 +6324,7 @@ def apply_webhook_cli_overrides(args, parser):
         configured_provider = normalized_webhook_provider()
         if detected_provider and detected_provider != configured_provider:
             WEBHOOK_PROVIDER = detected_provider
-            print(f"* Warning: Configured webhook provider did not match the URL. Using {detected_provider}.")
+            print(f"* Warning: Configured webhook provider did not match the URL. Using {webhook_provider_display_name(detected_provider)}.")
 
 
 # Rejects unrelated options when a hidden secret-entry action is selected
