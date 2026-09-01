@@ -2347,6 +2347,20 @@ class RecoveryHintTracker:
         self.last_code = None
 
 
+# Tracks which features are currently unavailable, so a lasting outage is reported once instead of every cycle
+class FeatureOutageTracker:
+    # Starts with every feature available, so the first outage of any of them is reported
+    def __init__(self):
+        self.unavailable = {}
+
+    # Takes the features unavailable right now, each with its outage and recovery wording, and returns what changed
+    def transitions(self, current):
+        recovered = [messages[1] for key, messages in self.unavailable.items() if key not in current]
+        started = [messages[0] for key, messages in current.items() if key not in self.unavailable]
+        self.unavailable = dict(current)
+        return recovered + started
+
+
 # Prints one monitoring failure, repeating the fix only when the failure category changes
 def print_monitor_recovery(error, context, tracker, prefix):
     advice = classify_recovery_error(error, context)
@@ -5291,6 +5305,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         sleep_interval = STEAM_CHECK_INTERVAL
 
     recovery_hint_tracker = RecoveryHintTracker()
+    feature_outages = FeatureOutageTracker()
     transient_retry_used = False
 
     debug_print("First check", due_in=display_time(sleep_interval))
@@ -5419,14 +5434,16 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         error_delivery_code = None
 
         # A tracked feature that returned nothing cannot raise its alert, which is invisible without these lines
-        unavailable_features = []
+        unavailable_features = {}
         if STEAM_LEVEL_XP_CHECK and (current_steam_level is None or current_player_xp is None):
-            unavailable_features.append("Steam level or total XP was unavailable this cycle, so level and XP alerts cannot fire")
+            unavailable_features["level_xp"] = ("Steam level or total XP is unavailable, so level and XP alerts cannot fire", "Steam level and total XP are available again, so level and XP alerts can fire")
         if FRIENDS_CHECK and current_friend_ids is None:
-            unavailable_features.append("The friends list was unavailable this cycle, so friends alerts cannot fire")
+            unavailable_features["friends"] = ("The friends list is unavailable, so friends alerts cannot fire", "The friends list is available again, so friends alerts can fire")
         if GAMES_LIBRARY_CHECK and current_games_count is None:
-            unavailable_features.append("The games library was unavailable this cycle, so games library alerts cannot fire")
-        verbose_notice(*unavailable_features)
+            unavailable_features["games_library"] = ("The games library is unavailable, so games library alerts cannot fire", "The games library is available again, so games library alerts can fire")
+        debug_print("Tracked features", unavailable=",".join(unavailable_features) or "none")
+        # An outage that lasts is news once, so only the features that changed since the last cycle are reported
+        verbose_notice(*feature_outages.transitions(unavailable_features))
 
         change = False
         act_inact_flag = False

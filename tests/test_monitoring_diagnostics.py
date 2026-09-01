@@ -127,7 +127,7 @@ def test_a_failing_level_lookup_names_its_endpoint(tmp_path, monkeypatch, capsys
 
     output = capsys.readouterr().out
     assert "Fetching the Steam level (IPlayerService.GetSteamLevel): outcome=failed, error=RuntimeError" in output
-    assert "Steam level or total XP was unavailable this cycle" in output
+    assert "Steam level or total XP is unavailable, so level and XP alerts cannot fire" in output
 
 
 # Verifies a failing friends lookup names the endpoint and says the alert cannot fire
@@ -136,7 +136,7 @@ def test_a_failing_friends_lookup_names_its_endpoint(tmp_path, monkeypatch, caps
 
     output = capsys.readouterr().out
     assert "Fetching the friends list (ISteamUser.GetFriendList): outcome=failed, error=RuntimeError" in output
-    assert "The friends list was unavailable this cycle, so friends alerts cannot fire" in output
+    assert "The friends list is unavailable, so friends alerts cannot fire" in output
 
 
 # Verifies a failing games library lookup names the endpoint and says the alert cannot fire
@@ -145,7 +145,7 @@ def test_a_failing_games_lookup_names_its_endpoint(tmp_path, monkeypatch, capsys
 
     output = capsys.readouterr().out
     assert "Fetching the games library (IPlayerService.GetOwnedGames): outcome=failed, error=RuntimeError" in output
-    assert "The games library was unavailable this cycle, so games library alerts cannot fire" in output
+    assert "The games library is unavailable, so games library alerts cannot fire" in output
 
 
 # Verifies a failing badges lookup is reported, since total XP alerts depend on it alone
@@ -154,7 +154,7 @@ def test_a_failing_badges_lookup_names_its_endpoint(tmp_path, monkeypatch, capsy
 
     output = capsys.readouterr().out
     assert "Fetching total XP (IPlayerService.GetBadges): outcome=failed, error=RuntimeError" in output
-    assert "Steam level or total XP was unavailable this cycle" in output
+    assert "Steam level or total XP is unavailable, so level and XP alerts cannot fire" in output
 
 
 # Verifies a verbose notice closes with the shared timestamp trailer instead of floating between blocks
@@ -162,7 +162,7 @@ def test_a_degraded_cycle_closes_its_verbose_notice_with_a_timestamp(tmp_path, m
     run_one_cycle(tmp_path, monkeypatch, failing_endpoints={"ISteamUser.GetFriendList"}, debug=False)
 
     lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
-    notice = next(index for index, line in enumerate(lines) if "The friends list was unavailable this cycle" in line)
+    notice = next(index for index, line in enumerate(lines) if "The friends list is unavailable" in line)
     assert lines[notice + 1].startswith("Timestamp:")
     assert set(lines[notice + 2]) == {"\u2500"}
 
@@ -172,9 +172,28 @@ def test_a_verbose_notice_stays_bare_on_the_startup_screen(monkeypatch, capsys):
     monkeypatch.setattr(monitor, "VERBOSE_MODE", True)
     monkeypatch.setattr(monitor, "MONITORING_ACTIVE", False)
 
-    monitor.verbose_notice("The friends list was unavailable this cycle, so friends alerts cannot fire")
+    monitor.verbose_notice("The friends list is unavailable, so friends alerts cannot fire")
 
-    assert capsys.readouterr().out == "* The friends list was unavailable this cycle, so friends alerts cannot fire\n"
+    assert capsys.readouterr().out == "* The friends list is unavailable, so friends alerts cannot fire\n"
+
+
+# Verifies a lasting outage is reported on the cycle it starts rather than on every cycle it continues
+def test_a_lasting_outage_is_reported_once(tmp_path, monkeypatch, capsys):
+    run_one_cycle(tmp_path, monkeypatch, failing_endpoints={"ISteamUser.GetFriendList"}, stop_after_sleeps=3)
+
+    output = capsys.readouterr().out
+    assert output.count("The friends list is unavailable, so friends alerts cannot fire") == 1
+
+
+# Verifies the tracker reports each feature once while it is down and once when it comes back
+def test_a_feature_outage_and_its_recovery_are_each_reported_once():
+    tracker = monitor.FeatureOutageTracker()
+    friends_down = {"friends": ("The friends list is unavailable", "The friends list is available again")}
+
+    assert tracker.transitions(friends_down) == ["The friends list is unavailable"]
+    assert tracker.transitions(friends_down) == []
+    assert tracker.transitions({}) == ["The friends list is available again"]
+    assert tracker.transitions({}) == []
 
 
 # Verifies a working tracked feature produces no degradation warning
@@ -182,7 +201,7 @@ def test_a_healthy_cycle_reports_no_degradation(tmp_path, monkeypatch, capsys):
     run_one_cycle(tmp_path, monkeypatch)
 
     output = capsys.readouterr().out
-    assert "was unavailable this cycle" not in output
+    assert "is unavailable, so" not in output
 
 
 # Verifies the same degraded cycle prints nothing extra when neither diagnostic mode is on
@@ -191,7 +210,7 @@ def test_a_degraded_cycle_stays_quiet_without_diagnostics(tmp_path, monkeypatch,
 
     output = capsys.readouterr().out
     assert "[DEBUG" not in output
-    assert "was unavailable this cycle" not in output
+    assert "is unavailable, so" not in output
     assert "Polling Steam:" not in output
 
 
