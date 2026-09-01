@@ -684,6 +684,15 @@ def verbose_print(message):
         print(f"* {sanitize_error_text(message)}")
 
 
+# Prints verbose-only notices as one block, so a standalone line is not left without the timestamp trailer
+def verbose_notice(*messages):
+    if not VERBOSE_MODE or not messages:
+        return
+    for message in messages:
+        verbose_print(message)
+    print_cur_ts("Timestamp:\t\t\t")
+
+
 # Records a swallowed exception in debug output so a silently degraded feature can still be diagnosed
 def debug_swallowed_exception(context, exc):
     debug_print(context, outcome="failed", error=f"{type(exc).__name__}: {exc}")
@@ -5295,13 +5304,15 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         error_webhook_sent = False
         error_delivery_code = None
 
-        # A tracked feature that returned nothing cannot raise its alert, which is invisible without this line
+        # A tracked feature that returned nothing cannot raise its alert, which is invisible without these lines
+        unavailable_features = []
         if STEAM_LEVEL_XP_CHECK and (current_steam_level is None or current_player_xp is None):
-            verbose_print("Steam level or total XP was unavailable this cycle, so level and XP alerts cannot fire")
+            unavailable_features.append("Steam level or total XP was unavailable this cycle, so level and XP alerts cannot fire")
         if FRIENDS_CHECK and current_friend_ids is None:
-            verbose_print("The friends list was unavailable this cycle, so friends alerts cannot fire")
+            unavailable_features.append("The friends list was unavailable this cycle, so friends alerts cannot fire")
         if GAMES_LIBRARY_CHECK and current_games_count is None:
-            verbose_print("The games library was unavailable this cycle, so games library alerts cannot fire")
+            unavailable_features.append("The games library was unavailable this cycle, so games library alerts cannot fire")
+        verbose_notice(*unavailable_features)
 
         change = False
         act_inact_flag = False
@@ -5744,7 +5755,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         gamename_old = gamename
         alive_counter += 1
 
-        verbose_print(f"Monitoring check #{check_count} completed for {steamid}")
+        debug_print("Completed check", check=f"#{check_count}", user=steamid, status=steam_personastates[status], game=gamename or None)
 
         if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER and status == 0:
             verbose_print(f"Monitoring healthy for {steamid}. The user is still offline with no status or game change")

@@ -157,6 +157,16 @@ def test_a_failing_badges_lookup_names_its_endpoint(tmp_path, monkeypatch, capsy
     assert "Steam level or total XP was unavailable this cycle" in output
 
 
+# Verifies a verbose notice closes with the shared timestamp trailer instead of floating between blocks
+def test_a_degraded_cycle_closes_its_verbose_notice_with_a_timestamp(tmp_path, monkeypatch, capsys):
+    run_one_cycle(tmp_path, monkeypatch, failing_endpoints={"ISteamUser.GetFriendList"}, debug=False)
+
+    lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
+    notice = next(index for index, line in enumerate(lines) if "The friends list was unavailable this cycle" in line)
+    assert lines[notice + 1].startswith("Timestamp:")
+    assert set(lines[notice + 2]) == {"\u2500"}
+
+
 # Verifies a working tracked feature produces no degradation warning
 def test_a_healthy_cycle_reports_no_degradation(tmp_path, monkeypatch, capsys):
     run_one_cycle(tmp_path, monkeypatch)
@@ -279,14 +289,21 @@ def test_a_healthy_cycle_reports_its_poll_outcome(tmp_path, monkeypatch, capsys)
     assert "Polling Steam: steamid=76561197960435530, personastate=0, outcome=OK" in output
 
 
-# Verifies verbose confirms the loop is alive on a quiet cycle, which previously produced no output at all
-def test_a_quiet_cycle_confirms_itself_in_verbose(tmp_path, monkeypatch, capsys):
+# Verifies a quiet cycle leaves verbose silent, since one line per check buries the events worth reading
+def test_a_quiet_cycle_stays_silent_in_verbose(tmp_path, monkeypatch, capsys):
     run_one_cycle(tmp_path, monkeypatch, debug=False)
 
     output = capsys.readouterr().out
-    assert "Monitoring check #1 completed for 76561197960435530" in output
-    # Verbose must stand on its own, since this is the mode that previously produced nothing on a healthy run
+    assert "Completed check" not in output
     assert "[DEBUG" not in output
+
+
+# Verifies the completed check is still recorded for anyone who asked for the full trace
+def test_a_quiet_cycle_records_the_completed_check_in_debug(tmp_path, monkeypatch, capsys):
+    run_one_cycle(tmp_path, monkeypatch)
+
+    output = capsys.readouterr().out
+    assert "Completed check: check=#1, user=76561197960435530" in output
 
 
 # Verifies the liveness banner says what it is reporting rather than printing a bare timestamp
@@ -303,5 +320,5 @@ def test_a_quiet_cycle_stays_silent_without_diagnostics(tmp_path, monkeypatch, c
     run_one_cycle(tmp_path, monkeypatch, diagnostics=False)
 
     output = capsys.readouterr().out
-    assert "Monitoring check #" not in output
+    assert "Completed check" not in output
     assert "outcome=OK" not in output
