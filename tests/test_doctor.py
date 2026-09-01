@@ -1111,3 +1111,15 @@ def test_a_delivery_prompt_interrupt_ends_the_run(monkeypatch):
         monitor._doctor_ask_yes_no("Send one test")
 
     assert raised.value.code == 0
+
+
+# Verifies every unusable timing or count setting is named in one row, so a fix does not need one run per setting
+def test_invalid_numeric_settings_are_reported_in_one_row(monkeypatch):
+    monkeypatch.setattr(monitor, "STEAM_CHECK_INTERVAL", 0)
+    monkeypatch.setattr(monitor, "LIVENESS_CHECK_INTERVAL", -1)
+    monkeypatch.setattr(monitor, "SMTP_PORT", 70000)
+
+    rows = [item for item in monitor.doctor_check_configuration() if item.label == "One or more numeric settings are invalid"]
+
+    assert [item.status for item in rows] == ["FAIL"]
+    assert all(name in rows[0].detail for name in ("STEAM_CHECK_INTERVAL", "LIVENESS_CHECK_INTERVAL", "SMTP_PORT"))
