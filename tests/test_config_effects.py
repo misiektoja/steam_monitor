@@ -260,3 +260,36 @@ def test_legacy_resolve_url_option_remains_supported(tmp_path, monkeypatch, rest
     observed = run_startup(monkeypatch, ["-r", profile_url], config, target=None)
 
     assert observed["monitored_steam_id"] == resolved
+
+
+# Verifies an unedited webhook destination switches the channel off instead of being treated as configured
+def test_a_placeholder_webhook_url_switches_the_channel_off(tmp_path, monkeypatch, restored_globals):
+    monkeypatch.delenv("WEBHOOK_URL", raising=False)
+    config = write_config(tmp_path, 'WEBHOOK_ENABLED = True\nWEBHOOK_URL = "your_webhook_url"\n')
+
+    run_startup(monkeypatch, [], config)
+
+    assert monitor.WEBHOOK_ENABLED is False
+
+
+# Verifies a real destination still leaves the webhook channel on
+def test_a_configured_webhook_url_keeps_the_channel_on(tmp_path, monkeypatch, restored_globals):
+    monkeypatch.delenv("WEBHOOK_URL", raising=False)
+    config = write_config(tmp_path, 'WEBHOOK_ENABLED = True\nWEBHOOK_URL = "https://ntfy.sh/some-topic"\n')
+
+    run_startup(monkeypatch, [], config)
+
+    assert monitor.WEBHOOK_ENABLED is True
+
+
+# Verifies an unedited placeholder is never reported as a loaded secret, whichever layer supplied it
+def test_placeholder_secrets_are_not_reported_as_loaded(tmp_path, monkeypatch, restored_globals):
+    monkeypatch.delenv("WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("SMTP_PASSWORD", raising=False)
+    config = write_config(tmp_path, 'WEBHOOK_URL = "your_webhook_url"\nSMTP_PASSWORD = "your_smtp_password"\n')
+
+    run_startup(monkeypatch, [], config)
+
+    from_file, from_environment, from_settings = monitor.doctor_secret_sources(None)
+    assert "WEBHOOK_URL" not in from_file + from_environment + from_settings
+    assert "SMTP_PASSWORD" not in from_file + from_environment + from_settings

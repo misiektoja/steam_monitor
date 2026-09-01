@@ -72,6 +72,8 @@ WEBHOOK_NAME_CHANGE_NOTIFICATION = False
 WEBHOOK_ERROR_NOTIFICATION = True
 ```
 
+A `WEBHOOK_URL` left unset, or left at its `your_webhook_url` placeholder, switches webhook alerts off at startup instead of failing at the first alert. `--verbose` reports why.
+
 For Discord, copy the URL from **Edit Channel -> Integrations -> Webhooks**. For ntfy, use a complete private topic URL such as `https://ntfy.sh/your-private-topic`. Protected ntfy topics can use `NTFY_ACCESS_TOKEN` from an environment variable or dotenv file.
 
 Verify delivery without starting monitoring:
