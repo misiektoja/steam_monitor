@@ -6,6 +6,7 @@
   <img src="https://img.shields.io/github/stars/misiektoja/steam_monitor?style=flat-square&color=magenta" alt="GitHub Stars" />
   <img src="https://img.shields.io/badge/python-3.6+-blueviolet?style=flat-square" alt="Python Versions" />
   <img src="https://img.shields.io/github/license/misiektoja/steam_monitor?style=flat-square&color=blue" alt="License" />
+  <a href="https://scorecard.dev/viewer/?uri=github.com/misiektoja/steam_monitor"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.scorecard.dev%2Fprojects%2Fgithub.com%2Fmisiektoja%2Fsteam_monitor&query=%24.score&label=openssf%20scorecard&style=flat-square" alt="OpenSSF Scorecard" /></a>
   <img src="https://img.shields.io/github/last-commit/misiektoja/steam_monitor?style=flat-square&color=green" alt="Last Commit" />
   <img src="https://img.shields.io/badge/maintenance-active-brightgreen?style=flat-square" alt="Maintenance" />
 </p>
