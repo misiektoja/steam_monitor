@@ -41,7 +41,7 @@ class SecretInputTests(unittest.TestCase):
                 config_path.write_text(saved + "\n", encoding="utf-8")
                 destination = Path(self.tempdir.name) / f"secrets{len(saved)}.env"
                 printed = []
-                with patch("steam_monitor.find_config_file", return_value=str(config_path)), patch("builtins.print", side_effect=lambda *args, **kwargs: printed.append(" ".join(str(item) for item in args))):
+                with patch("steam_monitor.find_config_file", return_value=str(config_path)), patch("builtins.print", side_effect=lambda *args, printed=printed, **kwargs: printed.append(" ".join(str(item) for item in args))):
                     steam_monitor.run_set_steam_api_key(env_file=str(destination), interactive=True, getpass_func=lambda prompt: "A" * 32, validator=lambda key: True)
 
                 output = "\n".join(printed)
