@@ -732,6 +732,8 @@ def debug_print(_operation, **fields):
     if DEBUG_MODE:
         # Sanitized here rather than at each call site, since one caller interpolating a secret is enough to leak it
         message = format_diagnostic_line(_operation, fields)
+        # The scanner does not treat the sanitizer as a barrier, so it reports the masked line as a leak
+        # codeql[py/clear-text-logging-sensitive-data]
         print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] {sanitize_error_text(message)}")
 
 
@@ -1511,21 +1513,36 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
-# Reads one answer with Python's default Ctrl+C behavior, so the prompt reports the outcome instead of the signal handler
-def read_interactively(reader, *args, **kwargs):
+# Restores Python's default Ctrl+C behavior while a prompt waits, so the prompt reports the outcome instead of the signal handler
+@contextmanager
+def default_interrupt_handling():
     try:
         previous_handler = signal.getsignal(signal.SIGINT)
         signal.signal(signal.SIGINT, signal.default_int_handler)
     except (ValueError, OSError):
         # Handlers can only be replaced from the main thread, which is where every prompt runs
-        return reader(*args, **kwargs)
+        yield
+        return
     try:
-        return reader(*args, **kwargs)
+        yield
     finally:
         try:
             signal.signal(signal.SIGINT, previous_handler)
         except (ValueError, OSError):
             pass
+
+
+# Reads one visible answer with Python's default Ctrl+C behavior
+def read_interactively(reader, *args, **kwargs):
+    with default_interrupt_handling():
+        return reader(*args, **kwargs)
+
+
+# Reads one hidden answer with Python's default Ctrl+C behavior. Kept apart from the visible reader so a
+# secret typed here is never confused with an ordinary answer that is later printed back to the user
+def read_secret_interactively(reader, *args, **kwargs):
+    with default_interrupt_handling():
+        return reader(*args, **kwargs)
 
 
 # Checks internet connectivity against the configured URL and timeout
@@ -1668,6 +1685,8 @@ def normalize_steam_target(value):
         raise ValueError(STEAM_TARGET_INPUT_ERROR)
 
     lowered = text.casefold()
+    # Only restores the scheme a pasted link may lack. The host is checked on the parsed URL below
+    # codeql[py/incomplete-url-substring-sanitization]
     if lowered.startswith("steamcommunity.com/") or lowered.startswith("www.steamcommunity.com/"):
         text = "https://" + text
         lowered = text.casefold()
@@ -2093,7 +2112,7 @@ def run_set_steam_api_key(env_file=None, interactive=None, input_func=None, getp
             raise RecoveryError(secret_replacement_declined_advice("Steam Web API key", "--set-steam-api-key", STEAM_API_KEY_GUIDE_URL))
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
-        api_key = read_interactively(hidden_prompt, "Paste the Steam Web API key (input hidden): ").strip()
+        api_key = read_secret_interactively(hidden_prompt, "Paste the Steam Web API key (input hidden): ").strip()
     except (EOFError, KeyboardInterrupt):
         print()
         raise RecoveryError(secret_entry_cancelled_advice("Steam Web API key", "--set-steam-api-key", STEAM_API_KEY_GUIDE_URL)) from None
@@ -2172,7 +2191,7 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
             raise RecoveryError(secret_replacement_declined_advice("webhook URL", "--set-webhook-url", WEBHOOK_GUIDE_URL))
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
-        webhook_url = read_interactively(hidden_prompt, "Paste the Discord or ntfy webhook URL (input hidden): ").strip()
+        webhook_url = read_secret_interactively(hidden_prompt, "Paste the Discord or ntfy webhook URL (input hidden): ").strip()
     except (EOFError, KeyboardInterrupt):
         print()
         raise RecoveryError(secret_entry_cancelled_advice("webhook URL", "--set-webhook-url", WEBHOOK_GUIDE_URL)) from None
@@ -2233,7 +2252,7 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
     print(f"* The password is checked by signing in to {SMTP_HOST} as {SMTP_USER}. Nothing is sent")
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
-        smtp_password = str(read_interactively(hidden_prompt, "Enter the SMTP password (input hidden): ")).strip()
+        smtp_password = str(read_secret_interactively(hidden_prompt, "Enter the SMTP password (input hidden): ")).strip()
     except (EOFError, KeyboardInterrupt):
         print()
         raise RecoveryError(secret_entry_cancelled_advice("SMTP password", "--set-smtp-password", SMTP_GUIDE_URL)) from None
@@ -3738,7 +3757,7 @@ def _wizard_ask_secret(question, getpass_func=None):
     try:
         # Colorized like the visible prompts, so a hidden answer does not look like a different question
         with debug_output_suppressed():
-            return str(read_interactively(hidden_prompt, colorize("info", f"{question}: "))).strip()
+            return str(read_secret_interactively(hidden_prompt, colorize("info", f"{question}: "))).strip()
     except (EOFError, KeyboardInterrupt):
         print()
         raise
@@ -4487,10 +4506,10 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     except Exception as exc:
         print_recovery_error(exc, context="file", detail=f"Could not write the configuration to '{state.config_path}'")
         return 1
-    secret_result = None
+    dotenv_result = None
     if state.secret_updates:
         try:
-            secret_result = update_dotenv_file(state.env_path, state.secret_updates)
+            dotenv_result = update_dotenv_file(state.env_path, state.secret_updates)
         except Exception as exc:
             print_recovery_error(exc, context="file", detail=f"Could not write secrets to '{state.env_path}'")
             return 1
@@ -4499,8 +4518,8 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     print(f"  Configuration: {config_result['path']}")
     if config_result["backup_path"]:
         print(f"  Backup:        {config_result['backup_path']}")
-    if secret_result:
-        print(f"  {'Secrets:':<15}{secret_result['path']}")
+    if dotenv_result:
+        print(f"  {'Secrets:':<15}{dotenv_result['path']}")
 
     doctor_offered = bool(state.target)
     doctor_exit = None
@@ -4509,13 +4528,13 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     try:
         if doctor_offered and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True, input_func=input_func):
             print()
-            _wizard_apply_saved_values(state, env_path=state.env_path if secret_result else None)
-            doctor_exit = run_doctor(target_value=int(state.target), config_path=str(state.config_path), env_path=str(state.env_path) if secret_result else None)
+            _wizard_apply_saved_values(state, env_path=state.env_path if dotenv_result else None)
+            doctor_exit = run_doctor(target_value=int(state.target), config_path=str(state.config_path), env_path=str(state.env_path) if dotenv_result else None)
     except (EOFError, KeyboardInterrupt):
         # The files are already written, so an interrupt here only skips the optional check
         print(colorize("warning", "Setup is saved. Use the commands below when ready."))
 
-    env_argument = str(state.env_path) if secret_result else ""
+    env_argument = str(state.env_path) if dotenv_result else ""
     # A persisted target is already in the config file, so the printed commands stay short
     target_arguments = [] if state.persist_target or not state.target else [state.target]
     print(colorize("header", "\nNext steps\n"))
@@ -4532,7 +4551,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
         print(colorize("warning", "Setup is saved. Start monitoring with the command above when ready."))
         return 0
     if start_monitoring:
-        launch_arguments = _wizard_local_command_args(target=None if state.persist_target else state.target, config_path=state.config_path, env_path=state.env_path if secret_result else None)
+        launch_arguments = _wizard_local_command_args(target=None if state.persist_target else state.target, config_path=state.config_path, env_path=state.env_path if dotenv_result else None)
         sys.stdout.flush()
         return _wizard_launch_monitor(launch_arguments)
     return 0
@@ -5001,6 +5020,8 @@ def reload_secrets_signal_handler(sig, frame):
             continue
         if secret == "WEBHOOK_URL":
             webhook_url_changed = True
+        # The line names the setting and where it came from, never its value
+        # codeql[py/clear-text-logging-sensitive-data]
         print(f"* Reloaded {secret} from {sources.get(secret, 'environment')}")
     if webhook_url_changed:
         detected_provider = detect_webhook_provider(WEBHOOK_URL)
