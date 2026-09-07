@@ -996,6 +996,24 @@ def test_prompts_restore_the_default_interrupt_handler():
         signal.signal(signal.SIGINT, previous_handler)
 
 
+# Verifies a hidden prompt takes the same Ctrl+C path as a visible one while staying a separate reader
+def test_hidden_prompts_restore_the_default_interrupt_handler():
+    observed = {}
+
+    def answer(_prompt):
+        observed["during"] = signal.getsignal(signal.SIGINT)
+        return "value"
+
+    previous_handler = signal.signal(signal.SIGINT, monitor.signal_handler)
+    try:
+        assert monitor.read_secret_interactively(answer, "Prompt: ") == "value"
+        assert observed["during"] is signal.default_int_handler
+        assert signal.getsignal(signal.SIGINT) is monitor.signal_handler
+    finally:
+        signal.signal(signal.SIGINT, previous_handler)
+    assert monitor.read_secret_interactively is not monitor.read_interactively
+
+
 # Verifies a destination that cannot be written is refused before the first question is asked
 def test_an_unwritable_destination_is_refused_before_any_question(tmp_path, capsys):
     def refuse_every_question(prompt=""):
