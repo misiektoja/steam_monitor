@@ -7001,7 +7001,7 @@ def main():
     # Applied here so config-load failures and startup checks can already print diagnostics
     apply_diagnostic_cli_flags(args)
 
-    selected_secret_actions = [flag for flag, selected in zip(SECRET_ACTION_FLAGS, (args.set_steam_api_key, args.set_smtp_password, args.set_webhook_url), strict=True) if selected]
+    selected_secret_actions = [flag for flag, selected in zip(SECRET_ACTION_FLAGS, (args.set_steam_api_key, args.set_smtp_password, args.set_webhook_url)) if selected]
     if len(selected_secret_actions) > 1:
         parser.error(f"{selected_secret_actions[0]} cannot be combined with {selected_secret_actions[1]}")
 
