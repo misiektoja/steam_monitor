@@ -3733,6 +3733,11 @@ def _wizard_ask_choice(question, options, default_index=0, input_func=None):
         print(f"  Enter a number between 1 and {len(options)}.")
 
 
+# Trims the parenthetical hint from a question, so the retry offer that repeats it stays one readable line
+def _wizard_retry_label(question):
+    return question.split(" (")[0].strip()
+
+
 # Asks until the user provides a positive whole number or accepts the default
 def _wizard_ask_positive_int(question, default, maximum=None, input_func=None):
     while True:
@@ -3747,6 +3752,10 @@ def _wizard_ask_positive_int(question, default, maximum=None, input_func=None):
         if parsed > 0 and (maximum is None or parsed <= maximum):
             return parsed
         print(f"  Enter a whole number from 1 through {maximum}." if maximum is not None else "  Enter a positive whole number.")
+        # A value the helper cannot use is a rejected entry, so it gets the same way out an empty one gets
+        if not _wizard_offer_retry(_wizard_retry_label(question), input_func=input_func):
+            print(f"  Keeping {default}.")
+            return int(default)
 
 
 # Renders a wizard duration as raw seconds plus a readable form, so the stored config value stays visible
@@ -3773,6 +3782,9 @@ def _wizard_ask_duration(question, default, input_func=None):
         if seconds is not None:
             return seconds
         print("  Enter a positive duration such as 120, 2m, 1.5h, 1h 30m or 1d.")
+        if not _wizard_offer_retry(_wizard_retry_label(question), input_func=input_func):
+            print(f"  Keeping {_wizard_format_duration(default)}.")
+            return default
 
 
 # Asks one secret through a hidden prompt with debug output off, so it never reaches the screen, the shell history or the debug stream

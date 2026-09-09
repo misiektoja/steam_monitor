@@ -403,7 +403,7 @@ def test_a_bare_ntfy_topic_becomes_a_full_url(tmp_path, monkeypatch, wizard_glob
 
 # Verifies a rejected duration is asked again instead of being stored as something else
 def test_a_rejected_duration_is_asked_again(tmp_path, monkeypatch, wizard_globals, capsys):
-    answers = [str(STEAM64), "y", "banana", "5m", "45s", "n", "n", "y", "", "", "1", "n", "n"]
+    answers = [str(STEAM64), "y", "banana", "y", "5m", "45s", "n", "n", "y", "", "", "1", "n", "n"]
 
     assert run_wizard(tmp_path, monkeypatch, answers) == 0
 
@@ -1200,7 +1200,7 @@ def test_the_dotenv_destination_cannot_be_the_configuration_file(tmp_path, capsy
 
 # Verifies the port question rejects a number no TCP port can be, instead of saving it for the doctor to reject
 def test_the_smtp_port_question_rejects_a_number_above_the_port_range(capsys):
-    answers = iter(["70000", "2525"])
+    answers = iter(["70000", "y", "2525"])
 
     chosen = monitor._wizard_ask_positive_int("SMTP port", 587, maximum=65535, input_func=lambda _prompt: next(answers))
 
@@ -1210,7 +1210,7 @@ def test_the_smtp_port_question_rejects_a_number_above_the_port_range(capsys):
 
 # Verifies declining the retry offer keeps the saved value rather than asking the same question forever
 def test_declining_the_retry_offer_keeps_the_saved_number(capsys):
-    answers = iter(["", "n"])
+    answers = iter(["70000", "n"])
 
     assert monitor._wizard_ask_positive_int("SMTP port", 587, maximum=65535, input_func=lambda _prompt: next(answers)) == 587
 
@@ -1406,3 +1406,18 @@ def test_the_email_question_defaults_to_the_saved_alerts(tmp_path, monkeypatch, 
     state.config_values.update({"ERROR_NOTIFICATION": False, "SMTP_HOST": "your_smtp_server_ssl", "GAME_CHANGE_NOTIFICATION": True})
     monitor._wizard_collect_email_section(state)
     assert seen[-1] == ("Configure email notifications?", True)
+
+
+# Verifies declining the retry offer after a value the wizard cannot use keeps the default rather than asking again
+def test_a_rejected_duration_keeps_the_default(capsys):
+    prompts = []
+    answers = iter(["later", "n"])
+
+    def script(prompt):
+        prompts.append(prompt)
+        return next(answers)
+
+    assert monitor._wizard_ask_duration("Steam polling interval while offline (seconds or use s/m/h/d)", 60, input_func=script) == 60
+    assert "Keeping 60s - 1m." in capsys.readouterr().out
+    # The hint the question carries belongs in the prompt, not in the offer that repeats it
+    assert any("Try entering the Steam polling interval while offline again? [Y/n]: " in prompt for prompt in prompts), prompts
