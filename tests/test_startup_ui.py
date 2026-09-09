@@ -308,7 +308,7 @@ def test_the_log_file_keeps_the_full_summary_whatever_the_terminal_showed(summar
     rows = [
         monitor.StartupSummaryRow("Always", "a", concise=True),
         monitor.StartupSummaryRow("Verbose only", "b"),
-        monitor.StartupSummaryRow("Concise only", "c", concise=True, full=False, log=False),
+        monitor.StartupSummaryRow("Concise only", "c", concise=True, full=False),
     ]
     stream = RoutedStream()
 
@@ -464,7 +464,7 @@ def test_rows_are_verbose_only_by_default():
     row = monitor.StartupSummaryRow("Label", "value")
 
     assert row.concise is False
-    assert row.full is True and row.log is True
+    assert row.full is True
 
 
 # Verifies a feature row reaches the concise view only when that feature is switched on
