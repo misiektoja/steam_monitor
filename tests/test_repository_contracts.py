@@ -55,6 +55,14 @@ class TestGovernanceDocuments:
         for requirement in re.findall(r'"([A-Za-z0-9_.-]+)', declared.group(1)):
             assert requirement.casefold() in notices, requirement
 
+    # Manual and packaged installs need the same runtime libraries, so both dependency lists must agree
+    def test_runtime_dependency_declarations_agree(self):
+        declared = re.search(r"^dependencies = \[(.*?)^\]", read_asset("pyproject.toml"), re.S | re.M)
+        assert declared is not None
+        packaged = {name.casefold().replace("_", "-") for name in re.findall(r'"([A-Za-z0-9_.-]+)', declared.group(1))}
+        manual = {re.split(r"[<>=!;\[ ]", line, maxsplit=1)[0].casefold().replace("_", "-") for line in read_asset("requirements.txt").splitlines() if line.strip() and not line.lstrip().startswith("#")}
+        assert manual == packaged
+
     # Artwork support must stay optional, or every install carries an image library it may never use
     def test_artwork_support_ships_as_an_optional_extra(self):
         pyproject = read_asset("pyproject.toml")
