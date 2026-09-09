@@ -736,15 +736,25 @@ def capture_doctor_pty(config_path, env="none", extra_arguments=()):
     return b"".join(chunks).decode("utf-8", errors="replace"), process.returncode
 
 
+# Replays one physical line's carriage returns, so a write hides only the columns it actually covers
+def replay_overwrites(line):
+    rendered = ""
+    for segment in line.split("\r"):
+        rendered = segment + rendered[len(segment):]
+    return rendered
+
+
 # Collapses a raw terminal transcript the way a terminal would, so transient progress is not read as content
 def clean_transcript(raw):
     without_colour = re.sub(r"\x1B\[[0-9;]*[A-Za-z]", "", raw)
     lines = []
     for line in without_colour.split("\n"):
-        # Drop the CR of a CRLF line ending first, then keep only what survives the last overwrite
+        # Drop the CR of a CRLF line ending first, then replay what is left over the same line. A macOS pty
+        # can emit a stray CR before a newline, which a terminal ignores but a last-segment-wins rule would
+        # read as an erased line
         if line.endswith("\r"):
             line = line[:-1]
-        lines.append(line.split("\r")[-1])
+        lines.append(replay_overwrites(line).rstrip())
     return lines
 
 
@@ -788,6 +798,18 @@ def test_the_doctor_transcript_holds_the_output_contract(tmp_path):
     assert text.count("Summary") == 1
     assert f"Guide: {monitor.DOCTOR_GUIDE_URL}" in text
     assert exit_code in (0, 1)
+
+
+# Verifies a carriage return with nothing written after it leaves the line alone, which used to drop a heading
+def test_a_trailing_carriage_return_keeps_the_line():
+    assert clean_transcript("Target\r\r\n[WARN] No profile\r\n") == ["Target", "[WARN] No profile", ""]
+
+
+# Verifies a shorter write hides only the columns it covers, so the tail of the erased text still counts
+def test_an_overwrite_replaces_only_the_columns_it_covers():
+    assert replay_overwrites("* Checking configuration ...\rDoctor") == "Doctor" + "* Checking configuration ..."[6:]
+    # A progress line erased by exactly its own width leaves nothing behind
+    assert replay_overwrites("\r* Checking environment ...\r" + " " * 26 + "\r").strip() == ""
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="pty is not available on Windows")
