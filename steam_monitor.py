@@ -2052,10 +2052,13 @@ def update_dotenv_file(destination, updates):
             continue
         if key in seen_keys:
             continue
-        output_lines.append(f"{key}={_format_dotenv_value(values_by_key[key])}")
         seen_keys.add(key)
+        # A secret cleared by its owner is removed rather than emptied, so a disabled value cannot linger here
+        if not values_by_key[key]:
+            continue
+        output_lines.append(f"{key}={_format_dotenv_value(values_by_key[key])}")
     for key, value in update_items:
-        if key not in seen_keys:
+        if key not in seen_keys and value:
             output_lines.append(f"{key}={_format_dotenv_value(value)}")
             seen_keys.add(key)
 
@@ -2209,6 +2212,16 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
     return str(destination)
 
 
+# The settings a sign-in needs before a password can be checked against the mail server
+MAIL_SIGN_IN_SETTINGS = ("SMTP_HOST", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL")
+MAIL_SETTINGS_INCOMPLETE_MESSAGE = "The mail server settings are incomplete. Set SMTP_HOST, SMTP_USER, SENDER_EMAIL and RECEIVER_EMAIL first, or run --setup."
+
+
+# Returns whether every setting a mail sign-in needs holds a real value
+def mail_sign_in_settings_complete():
+    return all(doctor_value_is_set(globals().get(name)) for name in MAIL_SIGN_IN_SETTINGS)
+
+
 # Signs in to the configured mail server with one entered password, so nothing is saved that cannot deliver
 def smtp_sign_in(password, timeout=15):
     global SMTP_PASSWORD
@@ -2216,8 +2229,8 @@ def smtp_sign_in(password, timeout=15):
     candidate = str(password or "")
     if not candidate or candidate == "your_smtp_password":
         raise SecretConfigurationError("No SMTP password was entered. The private settings file was not changed.")
-    if not all(doctor_value_is_set(value) for value in (SMTP_HOST, SMTP_USER, SENDER_EMAIL, RECEIVER_EMAIL)):
-        raise SecretConfigurationError("The mail server settings are incomplete. Set SMTP_HOST, SMTP_USER, SENDER_EMAIL and RECEIVER_EMAIL first, or run --setup.")
+    if not mail_sign_in_settings_complete():
+        raise SecretConfigurationError(MAIL_SETTINGS_INCOMPLETE_MESSAGE)
     previous_password = SMTP_PASSWORD
     SMTP_PASSWORD = candidate
     smtp_object = None
@@ -2240,6 +2253,9 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
     terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
     if not terminal_is_interactive:
         raise SecretConfigurationError("--set-smtp-password requires an interactive terminal. Run it in a terminal window so the password stays hidden while you type it.")
+    # Checked before the prompts, so nobody types a password only to be told the mail server was never configured
+    if not mail_sign_in_settings_complete():
+        raise SecretConfigurationError(MAIL_SETTINGS_INCOMPLETE_MESSAGE)
     prompt = input if input_func is None else input_func
     if _dotenv_contains_key(destination, "SMTP_PASSWORD"):
         try:
@@ -2374,7 +2390,7 @@ RECOVERY_CODES = frozenset({
     "target.missing", "target.invalid", "target.not_found", "target.not_visible",
     "smtp.invalid", "smtp.authentication", "smtp.connection",
     "webhook.invalid", "webhook.rejected", "webhook.rate_limited", "webhook.connection",
-    "file.unreadable", "file.unwritable",
+    "file.unreadable", "file.unwritable", "file.exists",
     "unknown",
 })
 
@@ -2497,6 +2513,8 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
     if context == "file":
         if any(term in message for term in ("cannot load", "unreadable", "not valid utf-8", "no such file")):
             return advice("file.unreadable", safe_detail or "A file the tool keeps could not be read", "Check the path and its permissions, or delete the file so it is recreated", False)
+    if context == "file.exists":
+        return advice("file.exists", safe_detail or "The destination file already exists", f"Re-run with --force to replace it after a timestamped backup, or write to a different path with '{render_command(['--generate-config', '<new-file>'], include_paths=False)}'", False, CONFIG_GUIDE_URL)
         return advice("file.unwritable", safe_detail or "A file the tool keeps could not be written", "Check that the directory exists and is writable, or choose another path", False)
 
     # Runtime, which is the monitoring loop and every Steam Web API call it makes
@@ -4155,8 +4173,10 @@ def _wizard_collect_webhook_section(state, input_func=None, getpass_func=None):
             if validate_webhook_url(webhook_url):
                 state.secret_updates["WEBHOOK_URL"] = webhook_url
                 break
-            # Nothing can be delivered without a destination, so giving up has to stay reachable from the prompt
-            if not webhook_url:
+            # Nothing can be delivered without a destination, so giving up has to stay reachable from the prompt.
+            # The branch is chosen by what was typed rather than by the normalized value, since a rejected ntfy
+            # topic normalizes to an empty string and would otherwise be reported as nothing entered
+            if not answer.strip():
                 if not _wizard_offer_retry("webhook URL", "Webhook alerts stay off until one is set", input_func=input_func):
                     _wizard_disable_webhook(state)
                     return
@@ -4435,6 +4455,30 @@ def write_config_file(destination, content):
         if temporary_path is not None and temporary_path.exists():
             temporary_path.unlink()
     return {"path": str(destination_path), "backup_path": backup_path}
+
+
+# Asks before replacing a config file that already exists, so a generated template cannot land silently
+def confirm_generated_config_replacement(destination, force=False, interactive=None, input_func=input):
+    destination_path = Path(destination).expanduser()
+    if not destination_path.exists() or force:
+        return True
+    terminal_is_interactive = bool(sys.stdin.isatty()) if interactive is None else bool(interactive)
+    if not terminal_is_interactive:
+        raise FileExistsError(f"Config file '{destination_path}' already exists and there is no terminal to confirm replacing it")
+    try:
+        answer = str(read_interactively(input_func, f"Config file '{destination_path}' exists. Replace it and keep a timestamped backup? [y/N]: ")).strip().casefold()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        answer = ""
+    return answer in ("y", "yes")
+
+
+# Writes one generated config atomically, backing up whatever was there first
+def write_generated_config(output_file, content, force=False, interactive=None, input_func=input):
+    destination = Path(output_file).expanduser()
+    if not confirm_generated_config_replacement(destination, force, interactive, input_func):
+        return None, False
+    return write_config_file(destination, content)["backup_path"], True
 
 
 # Prints where setup will write and which install method the printed commands are written for
@@ -6535,6 +6579,19 @@ def apply_webhook_cli_overrides(args, parser):
             print(f"* Warning: Configured webhook provider did not match the URL. Using {webhook_provider_display_name(detected_provider)}.")
 
 
+# Names one argument the way the user would have typed it, so a refused combination points at a real option
+def argument_display_name(parser, dest, argv=None):
+    typed = set(sys.argv[1:] if argv is None else argv)
+    # argparse exposes no public listing of its arguments, so the actions it holds are read directly
+    for action in getattr(parser, "_actions", ()):
+        if action.dest != dest:
+            continue
+        if not action.option_strings:
+            return str(action.metavar or dest.upper())
+        return next((option for option in action.option_strings if option in typed), action.option_strings[0])
+    return f"--{dest.replace('_', '-')}"
+
+
 # Rejects unrelated options when a hidden secret-entry action is selected
 def validate_secret_action_args(args, parser, action_dest, action_flag, permitted_extra=()):
     permitted = {action_dest, "env_file", "no_color", *permitted_extra}
@@ -6542,7 +6599,7 @@ def validate_secret_action_args(args, parser, action_dest, action_flag, permitte
     for name, value in vars(args).items():
         if name in permitted or value is None or value is False:
             continue
-        conflicts.append("--" + name.replace("_", "-"))
+        conflicts.append(argument_display_name(parser, name))
     if conflicts:
         parser.error(f"{action_flag} cannot be combined with " + ", ".join(conflicts))
 
@@ -6559,19 +6616,22 @@ def main():
             if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith("-"):
                 # Write directly to file (bypasses PowerShell UTF-16 encoding issue on Windows)
                 output_file = sys.argv[idx + 1]
-                try:
-                    backup_path = create_timestamped_backup(output_file)
-                except OSError as exc:
-                    print(f"* Error: Could not back up the existing config file '{output_file}': {exc}")
+                backup_path, written = write_generated_config(output_file, config_content, force="--force" in sys.argv)
+                if not written:
+                    print("Config was not replaced. The existing file is unchanged")
                     sys.exit(1)
-                with open(output_file, "w", encoding="utf-8") as f:
-                    f.write(config_content)
                 print(f"Config written to: {output_file}")
                 if backup_path:
                     print(f"Previous config backed up to: {backup_path}")
                 sys.exit(0)
         except (ValueError, IndexError):
             pass
+        except FileExistsError as exc:
+            print_recovery_error(exc, context="file.exists", detail=str(exc))
+            sys.exit(1)
+        except OSError as exc:
+            print_recovery_error(exc, context="file.unwritable", detail=f"The config file could not be written: {exc}")
+            sys.exit(1)
         # No filename provided - write to stdout using buffer to ensure UTF-8
         sys.stdout.buffer.write(config_content.encode("utf-8"))
         sys.stdout.buffer.flush()
@@ -6668,6 +6728,12 @@ def main():
         const=True,
         metavar="FILENAME",
         help="Print default config template and exit (on Windows PowerShell, specify a filename to avoid redirect encoding issues)",
+    )
+    conf.add_argument(
+        "--force",
+        dest="force",
+        action="store_true",
+        help="Let --generate-config replace an existing file, after a timestamped backup",
     )
     conf.add_argument(
         "--env-file",
@@ -7185,7 +7251,9 @@ def main():
 
     if args.check_interval:
         STEAM_CHECK_INTERVAL = args.check_interval
-        LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_INTERVAL > 0 else 0
+
+    # The interval can come from a config file, so the reminder is settled once every layer has been applied
+    LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_INTERVAL > 0 else 0
 
     if args.active_interval:
         STEAM_ACTIVE_CHECK_INTERVAL = args.active_interval
