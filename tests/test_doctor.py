@@ -1018,6 +1018,26 @@ def test_a_failed_delivery_test_reaches_the_summary(monkeypatch, doctor_globals)
     assert "1 check(s) failed, 0 warning(s)." in monitor.render_doctor_summary(report.checks)
 
 
+# Verifies a failed delivery test fails the whole run, so the exit code and the last sentence agree
+def test_a_failed_delivery_test_changes_the_exit_code(monkeypatch, doctor_globals, capsys):
+    configure_email(monkeypatch)
+    monkeypatch.setattr(monitor, "smtp_connect_and_login", lambda *_args, **_kwargs: SimpleNamespace(quit=lambda: None))
+    monkeypatch.setattr(monitor, "check_internet", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(monitor, "steam_web_api_client", lambda *_args, **_kwargs: FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 3}]))
+    monkeypatch.setattr(monitor.sys.stdin, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(monitor.sys.stdout, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr("builtins.input", lambda _prompt: "y")
+    monkeypatch.setattr(monitor, "send_email", lambda *_a, **_k: 1)
+
+    code = monitor.run_doctor(target_value=76561197960435530)
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "[FAIL] Doctor test email delivery failed" in output
+    assert "1 check(s) failed" in output
+    assert "All checks passed" not in output
+
+
 # Verifies every doctor entry point renders its summary after the delivery tests, so the sentence and the exit code describe one run
 def test_the_summary_is_rendered_after_the_delivery_tests():
     import ast
