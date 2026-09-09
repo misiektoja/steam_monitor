@@ -6023,6 +6023,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 error_delivery_code = advice.code
             # A failure that has not changed is left to the liveness cadence rather than repeated every check
             outage_outcome = outage.failed(advice, LIVENESS_REMINDER_SECONDS)
+            delivery_reported = False
             if advice.code == "steam.rate_limited":
                 # Rate limits carry their own wait, so they skip the retry path rather than burning an attempt
                 retry_after = steam_retry_after_seconds(response, sleep_interval) if response is not None else sleep_interval
@@ -6063,8 +6064,11 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     email_delivered, webhook_delivered = send_notification_channels("error", m_subject, m_body, email_enabled=ERROR_NOTIFICATION and not error_email_sent, webhook_enabled=webhook_event_enabled("error") and not error_webhook_sent, image_url=current_avatar_url, ntfy_priority=5, ntfy_tags="warning")
                     error_email_sent = error_email_sent or email_delivered
                     error_webhook_sent = error_webhook_sent or webhook_delivered
+                    # A retry can reach the screen on a check the outage reporter keeps quiet, and a delivery line
+                    # with nothing under it reads as a run that stopped there
+                    delivery_reported = True
 
-            if outage_outcome in ("full", "repeat"):
+            if outage_outcome in ("full", "repeat") or delivery_reported:
                 print_cur_ts("Timestamp:\t\t\t")
 
             time.sleep(sleep_interval)

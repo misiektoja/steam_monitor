@@ -374,6 +374,20 @@ def test_a_continuing_outage_retries_only_failed_notification_channels(tmp_path,
     assert deliveries == [(True, True), (False, True)]
 
 
+# Verifies a retry that reaches the screen on a quiet cycle still ends with a timestamp
+def test_a_delivery_retry_on_a_quiet_cycle_ends_with_a_timestamp(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "webhook_event_enabled", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(monitor, "send_email", lambda *_args, **_kwargs: 1)
+    run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=http_error(503), stop_after_sleeps=4, error_notifications=True, liveness_seconds=180)
+
+    lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
+    deliveries = [index for index, line in enumerate(lines) if line.startswith("Sending email notification")]
+
+    assert len(deliveries) > 1, lines
+    for index in deliveries:
+        assert any(line.startswith("Timestamp:") for line in lines[index + 1:index + 3]), lines[index:index + 3]
+
+
 # Verifies a healthy poll reports the state it read, not only the call it was about to make
 def test_a_healthy_cycle_reports_its_poll_outcome(tmp_path, monkeypatch, capsys):
     run_one_cycle(tmp_path, monkeypatch)
