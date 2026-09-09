@@ -164,6 +164,16 @@ def test_required_and_optional_dependencies_are_separated(monkeypatch):
     assert all("install it with" in check.advice.fix.casefold() for check in optional)
 
 
+# Verifies the library the width cap needs is reported, since without it TRUNCATE_CHARS silently stops truncating
+def test_the_truncation_library_is_reported(monkeypatch):
+    installed = [check for check in monitor.doctor_check_environment() if "wcwidth" in check.label]
+    missing = [check for check in monitor.doctor_check_environment(spec_finder=lambda name: None if name == "wcwidth" else object()) if "wcwidth" in check.label]
+
+    assert [(check.status, check.detail) for check in installed] == [("PASS", "Used only to measure display width for screen truncation")]
+    assert [(check.status, check.detail) for check in missing] == [("WARN", "Screen truncation is disabled and lines are printed in full. Every other feature is unaffected")]
+    assert "pip3 install wcwidth" in missing[0].advice.fix
+
+
 # Verifies a warning about a library that cannot affect this machine is not shown at all
 @pytest.mark.parametrize("system, reported", [("Windows", True), ("Linux", False), ("Darwin", False)])
 def test_a_platform_specific_dependency_is_only_reported_where_it_applies(monkeypatch, system, reported):

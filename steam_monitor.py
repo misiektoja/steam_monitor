@@ -3185,6 +3185,12 @@ def doctor_check_environment(version_info=None, spec_finder=None):
         advice = make_recovery_advice("dependency.missing", "Optional dependency Pillow is not installed", recovery_fix_with_guide(f"Install it with: {ntfy_images_install_command()}", INSTALL_GUIDE_URL), False)
         checks.append(make_doctor_check("Environment", "WARN", advice.summary, "ntfy alerts are delivered as text without artwork. Every other feature is unaffected", advice))
 
+    if module_present("wcwidth"):
+        checks.append(make_doctor_check("Environment", "PASS", "Optional dependency wcwidth is installed", "Used only to measure display width for screen truncation"))
+    else:
+        advice = make_recovery_advice("dependency.missing", "Optional dependency wcwidth is not installed", recovery_fix_with_guide("Install it with: pip3 install wcwidth", INSTALL_GUIDE_URL), False)
+        checks.append(make_doctor_check("Environment", "WARN", advice.summary, "Screen truncation is disabled and lines are printed in full. Every other feature is unaffected", advice))
+
     # A warning about a library that cannot affect this machine is noise, so the row is skipped off Windows
     if platform.system() == "Windows":
         if module_present("colorama"):
