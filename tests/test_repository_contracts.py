@@ -47,12 +47,18 @@ class TestGovernanceDocuments:
         for concept in ("pip install -e", "python -m pytest", "ruff check", "RELEASE_NOTES.md", "SECURITY.md", "GPL-3.0-or-later", "dev"):
             assert concept in contributing, concept
 
-    # Every declared runtime dependency must carry a license attribution
-    def test_third_party_notices_list_every_runtime_dependency(self):
+    # Every declared dependency must carry a license attribution, including the ones only an extra installs
+    def test_third_party_notices_cover_every_declared_dependency(self):
+        pyproject = read_asset("pyproject.toml")
         notices = read_asset("THIRD_PARTY_NOTICES.md").casefold()
-        declared = re.search(r"^dependencies = \[(.*?)^\]", read_asset("pyproject.toml"), re.S | re.M)
-        assert declared is not None
-        for requirement in re.findall(r'"([A-Za-z0-9_.-]+)', declared.group(1)):
+        runtime = re.search(r"^dependencies = \[(.*?)^\]", pyproject, re.S | re.M)
+        extras = re.search(r"^\[project\.optional-dependencies\](.*?)^\[", pyproject, re.S | re.M)
+        assert runtime is not None and extras is not None
+        declared = {re.split(r"[<>=!;\[ ]", entry.strip(), maxsplit=1)[0] for entry in re.findall(r'"([^"]+)"', runtime.group(1) + extras.group(1))}
+        # Build backends are covered as a group rather than named one by one
+        declared -= {"build", "setuptools", "wheel"}
+
+        for requirement in sorted(declared):
             assert requirement.casefold() in notices, requirement
 
     # Manual and packaged installs need the same runtime libraries, so both dependency lists must agree
