@@ -6667,7 +6667,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="steam_monitor",
-        description=(f"Monitor a Steam user's playing status and send customizable email or webhook alerts [ {PROJECT_URL} ]"),
+        description=(f"Monitor a Steam user's playing status and send customizable email or webhook alerts [ {PROJECT_URL}/ ]"),
         epilog=help_examples(),
         formatter_class=argparse.RawTextHelpFormatter, **argparse_color_kwargs()
     )

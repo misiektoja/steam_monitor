@@ -65,6 +65,13 @@ def test_every_example_command_has_a_comment(help_screen):
             assert lines[index - 1].startswith("  #"), f"the example '{line.strip()}' has no comment above it"
 
 
+# Verifies the one-line description carries the repository link in the form the sibling monitors print
+def test_the_description_links_the_repository(help_screen):
+    header = help_screen.split("positional arguments:", 1)[0]
+
+    assert f"[ {monitor.PROJECT_URL}/ ]" in header
+
+
 # Verifies the help screen shows exactly one startup banner
 def test_help_shows_one_startup_banner(help_screen):
     assert help_screen.count(" .---------------.") == 1
