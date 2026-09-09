@@ -1041,7 +1041,7 @@ _STYLE_CODES = {
 }
 
 # Pre-compiled regexes used for line-level colourisation
-_TIMESTAMP_LINE_RE = re.compile(r"^(Timestamp:\s+)(.*)$")
+_TIMESTAMP_LINE_RE = re.compile(r"^(Timestamp:\s+|Liveness check, timestamp:\s+)(.*)$")
 _STATUS_LINE_RE = re.compile(r"^(Status:\s+)([A-Za-z ]+)$")
 _DISPLAY_NAME_RE = re.compile(r"^(Display name:\s+)(.*)$")
 # 'Steam user <display name> ...' where name can contain spaces

@@ -133,6 +133,11 @@ def colored(monkeypatch):
     return styles
 
 
+# Verifies the liveness banner timestamp carries the timestamp colour instead of the generic date colour
+def test_liveness_check_timestamp_uses_timestamp_style(colored):
+    assert monitor._colorize_line("Liveness check, timestamp:\tWed 26 Aug 2026, 20:23:03") == f"Liveness check, timestamp:\t{colored['timestamp_value']}Wed 26 Aug 2026, 20:23:03{monitor.ANSI_RESET}"
+
+
 # Verifies the startup banner uses only its explicitly selected colours
 def test_startup_banner_uses_only_its_own_colours(colored, capsys):
     monitor.print_startup_banner()
