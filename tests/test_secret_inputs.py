@@ -12,6 +12,11 @@ LOCAL_TEST_DIR = Path(__file__).resolve().parents[1] / "local"
 LOCAL_TEST_DIR.mkdir(parents=True, exist_ok=True)
 
 
+# Patches in a mail server complete enough for a sign-in, which --set-smtp-password now requires up front
+def configured_mail():
+    return patch.multiple(steam_monitor, SMTP_HOST="smtp.example.test", SMTP_USER="monitor@example.test", SENDER_EMAIL="monitor@example.test", RECEIVER_EMAIL="owner@example.test")
+
+
 class SecretInputTests(unittest.TestCase):
     # Creates one temporary test directory inside the project local directory
     def setUp(self):
@@ -159,7 +164,7 @@ class SecretInputTests(unittest.TestCase):
     def test_smtp_password_is_signed_in_before_it_is_saved(self):
         password = "app-password-value"
         sign_in = Mock(return_value="monitor@example.test")
-        with patch("builtins.print") as output:
+        with configured_mail(), patch("builtins.print") as output:
             result = steam_monitor.run_set_smtp_password(env_file=str(self.destination), interactive=True, getpass_func=lambda prompt: password, sign_in=sign_in)
 
         self.assertEqual(result, str(self.destination.resolve()))
@@ -169,11 +174,43 @@ class SecretInputTests(unittest.TestCase):
         self.assertNotIn(password, rendered)
         self.assertIn("The mail server accepted the password for monitor@example.test", rendered)
 
+    # Verifies incomplete mail settings are refused before a password is typed
+    def test_incomplete_mail_settings_are_refused_before_the_prompt(self):
+        hidden = Mock(side_effect=AssertionError("the password prompt was reached"))
+        with patch.multiple(steam_monitor, SMTP_HOST="", SMTP_USER="", SENDER_EMAIL="", RECEIVER_EMAIL=""):
+            with self.assertRaisesRegex(steam_monitor.SecretConfigurationError, "mail server settings are incomplete"):
+                steam_monitor.run_set_smtp_password(env_file=str(self.destination), interactive=True, getpass_func=hidden, sign_in=Mock(side_effect=AssertionError("signed in")))
+
+        self.assertFalse(self.destination.exists())
+
+    # Verifies a placeholder host counts as unset, so the sign-in is never attempted against it
+    def test_a_placeholder_mail_host_is_refused_before_the_prompt(self):
+        hidden = Mock(side_effect=AssertionError("the password prompt was reached"))
+        with patch.multiple(steam_monitor, SMTP_HOST="your_smtp_server_ssl", SMTP_USER="your_smtp_username", SENDER_EMAIL="your_sender_email", RECEIVER_EMAIL="your_receiver_email"):
+            with self.assertRaisesRegex(steam_monitor.SecretConfigurationError, "mail server settings are incomplete"):
+                steam_monitor.run_set_smtp_password(env_file=str(self.destination), interactive=True, getpass_func=hidden)
+
+    # Verifies a secret switched off is removed from the dotenv file rather than left as an empty value
+    def test_a_cleared_secret_is_removed_rather_than_emptied(self):
+        self.destination.write_text('KEEP=value\nNTFY_ACCESS_TOKEN="tk_saved"\n', encoding="utf-8")
+
+        steam_monitor.update_dotenv_file(self.destination, {"NTFY_ACCESS_TOKEN": ""})
+
+        self.assertEqual(self.destination.read_text(encoding="utf-8"), "KEEP=value\n")
+
+    # Verifies clearing a secret that was never saved does not add an empty line for it
+    def test_clearing_an_absent_secret_writes_nothing(self):
+        self.destination.write_text("KEEP=value\n", encoding="utf-8")
+
+        steam_monitor.update_dotenv_file(self.destination, {"NTFY_ACCESS_TOKEN": ""})
+
+        self.assertEqual(self.destination.read_text(encoding="utf-8"), "KEEP=value\n")
+
     # Verifies a password the mail server rejects leaves private settings unchanged
     def test_refused_smtp_password_is_not_saved(self):
         self.destination.write_text("KEEP=value\n", encoding="utf-8")
         refuse = Mock(side_effect=steam_monitor.smtplib.SMTPAuthenticationError(535, b"authentication failed"))
-        with self.assertRaisesRegex(steam_monitor.SecretConfigurationError, "did not accept the password"):
+        with configured_mail(), self.assertRaisesRegex(steam_monitor.SecretConfigurationError, "did not accept the password"):
             steam_monitor.run_set_smtp_password(env_file=str(self.destination), interactive=True, getpass_func=lambda prompt: "wrong", sign_in=refuse)
 
         self.assertEqual(self.destination.read_text(encoding="utf-8"), "KEEP=value\n")
@@ -204,7 +241,7 @@ class SecretInputTests(unittest.TestCase):
         def interrupt(prompt=""):
             raise KeyboardInterrupt
 
-        with self.assertRaises(steam_monitor.RecoveryError) as raised:
+        with configured_mail(), self.assertRaises(steam_monitor.RecoveryError) as raised:
             steam_monitor.run_set_smtp_password(env_file=str(self.destination), interactive=True, getpass_func=interrupt, sign_in=Mock(side_effect=AssertionError("signed in")))
 
         advice = raised.exception.advice
@@ -217,7 +254,7 @@ class SecretInputTests(unittest.TestCase):
     def test_a_declined_replacement_reports_the_kept_value(self):
         self.destination.write_text('SMTP_PASSWORD="original"\n', encoding="utf-8")
 
-        with self.assertRaises(steam_monitor.RecoveryError) as raised:
+        with configured_mail(), self.assertRaises(steam_monitor.RecoveryError) as raised:
             steam_monitor.run_set_smtp_password(env_file=str(self.destination), interactive=True, input_func=lambda prompt: "n", getpass_func=Mock(side_effect=AssertionError("hidden prompt used")))
 
         advice = raised.exception.advice

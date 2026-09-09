@@ -76,6 +76,24 @@ def test_a_long_check_interval_keeps_the_configured_liveness_interval(tmp_path, 
     assert monitor.LIVENESS_REMINDER_SECONDS == 43200
 
 
+# Verifies a configured reminder interval reaches the loop without --check-interval, which the summary always showed
+def test_a_configured_liveness_interval_reaches_the_loop_on_its_own(tmp_path, monkeypatch, restored_globals):
+    config_path = write_config(tmp_path, "LIVENESS_CHECK_INTERVAL = 900\n")
+
+    run_startup(monkeypatch, [], config_path)
+
+    assert monitor.LIVENESS_REMINDER_SECONDS == 900
+
+
+# Verifies switching the reminder off in a config file reaches the loop too
+def test_a_disabled_liveness_reminder_reaches_the_loop(tmp_path, monkeypatch, restored_globals):
+    config_path = write_config(tmp_path, "LIVENESS_CHECK_INTERVAL = 0\n")
+
+    run_startup(monkeypatch, [], config_path)
+
+    assert monitor.LIVENESS_REMINDER_SECONDS == 0
+
+
 # Verifies an exported secret is applied even when no dotenv file exists, which the documentation promises
 def test_exported_secret_applies_without_a_dotenv_file(monkeypatch):
     monkeypatch.setenv("STEAM_API_KEY", "exported-key")

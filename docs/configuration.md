@@ -18,7 +18,17 @@ steam_monitor --generate-config steam_monitor.conf
 
 Edit the `steam_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
 
-Passing a filename that already exists copies the previous file to a timestamped `.bak` beside it before writing, and prints where it went, so regenerating the template never loses your edits.
+### Replacing an Existing Config
+
+Passing a filename never replaces an existing file silently. On a terminal the tool asks first. Outside one, in a script or a container, it stops and names `--force`:
+
+```sh
+steam_monitor --generate-config steam_monitor.conf --force
+```
+
+Either way the previous file is copied to `steam_monitor.conf.<timestamp>.bak` before the new template is written, and the backup path is printed. Both files are readable only by their owner.
+
+Shell redirection works differently: `> steam_monitor.conf` truncates the file before the tool starts, so nothing can back it up. Pass the filename when the destination already exists.
 
 ## Target Profile
 
@@ -128,9 +138,9 @@ WEBHOOK_URL="https://discord.com/api/webhooks/..."
 NTFY_ACCESS_TOKEN="your_ntfy_access_token"
 ```
 
-Prefer `steam_monitor --set-smtp-password` for `SMTP_PASSWORD`: the value is entered through a hidden prompt and the mail server has to accept it before it is saved.
+Prefer `steam_monitor --set-smtp-password` for `SMTP_PASSWORD`: the value is entered through a hidden prompt and the mail server has to accept it before it is saved. Incomplete mail settings are reported before anything is typed, so a password is never entered against a server that was never configured.
 
-Saving a secret with `--set-steam-api-key`, `--set-smtp-password` or `--set-webhook-url` rewrites the dotenv file atomically with owner-only permissions and keeps no backup, so the replaced secret is not left behind in a `.bak` file.
+Saving a secret with `--set-steam-api-key`, `--set-smtp-password` or `--set-webhook-url` rewrites the dotenv file atomically with owner-only permissions and keeps no backup, so the replaced secret is not left behind in a `.bak` file. A secret you switch off, such as the ntfy access token in the setup wizard, has its line removed rather than left as an empty value.
 
 By default the tool will auto-search for dotenv file named `.env` in current directory and then upward from it.
 

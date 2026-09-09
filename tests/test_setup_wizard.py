@@ -1339,6 +1339,53 @@ def test_the_webhook_question_defaults_to_the_saved_switch(tmp_path, monkeypatch
     assert seen == [("Set up webhook alerts (Discord, ntfy etc.)?", True)]
 
 
+# Replays scripted answers to the wizard and records the questions it asked
+class ScriptedAnswers:
+    def __init__(self, answers):
+        self.answers = list(answers)
+        self.prompts = []
+
+    def __call__(self, prompt=""):
+        self.prompts.append(str(prompt))
+        assert self.answers, f"the wizard asked more than the script answers: {prompt!r}"
+        return self.answers.pop(0)
+
+
+# Verifies an ntfy topic the wizard cannot use is explained rather than reported as nothing entered
+def test_a_rejected_ntfy_topic_is_explained(tmp_path, capsys, wizard_globals):
+    baseline = {name: value for name, value in vars(monitor).items() if name in monitor._config_allowed_names()}
+    state = monitor.WizardSetupState(tmp_path / "steam_monitor.conf", tmp_path / ".env", baseline)
+    answers = ScriptedAnswers(["y", "2", "n"])
+
+    monitor._wizard_collect_webhook_section(state, input_func=answers, getpass_func=ScriptedAnswers(["not a topic!!"]))
+
+    assert "Enter a complete HTTPS ntfy topic URL or a topic name containing up to 64 letters, numbers, dashes or underscores." in capsys.readouterr().out
+    # The give-up question belongs to an empty answer, not to one the normalizer refused
+    assert not any("Continue without the webhook URL?" in prompt for prompt in answers.prompts)
+
+
+# Verifies an empty answer still reaches the question that switches the channel off
+def test_no_ntfy_topic_at_all_still_offers_to_give_up(tmp_path, wizard_globals):
+    baseline = {name: value for name, value in vars(monitor).items() if name in monitor._config_allowed_names()}
+    state = monitor.WizardSetupState(tmp_path / "steam_monitor.conf", tmp_path / ".env", baseline)
+    answers = ScriptedAnswers(["y", "2", "y"])
+
+    monitor._wizard_collect_webhook_section(state, input_func=answers, getpass_func=ScriptedAnswers(["   "]))
+
+    assert any("Continue without the webhook URL? Webhook alerts stay off until one is set" in prompt for prompt in answers.prompts)
+    assert state.config_values["WEBHOOK_ENABLED"] is False
+
+
+# Verifies a bare ntfy.sh topic name typed into the wizard is saved as a complete URL
+def test_a_bare_ntfy_topic_name_is_saved_as_a_url(tmp_path, wizard_globals):
+    baseline = {name: value for name, value in vars(monitor).items() if name in monitor._config_allowed_names()}
+    state = monitor.WizardSetupState(tmp_path / "steam_monitor.conf", tmp_path / ".env", baseline)
+
+    monitor._wizard_collect_webhook_section(state, input_func=ScriptedAnswers(["y", "2", "n", "n", "1"]), getpass_func=ScriptedAnswers(["my-private-topic"]))
+
+    assert state.secret_updates["WEBHOOK_URL"] == "https://ntfy.sh/my-private-topic"
+
+
 # Verifies the email question defaults to the saved alerts, so a rerun over configured email proposes keeping it
 def test_the_email_question_defaults_to_the_saved_alerts(tmp_path, monkeypatch, wizard_globals):
     baseline = {name: value for name, value in vars(monitor).items() if name in monitor._config_allowed_names()}

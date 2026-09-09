@@ -210,3 +210,77 @@ def test_the_minimum_python_version_is_declared_once():
     assert f'requires-python = ">={monitor.MINIMUM_PYTHON_VERSION_TEXT}"' in pyproject
     assert f"Programming Language :: Python :: {monitor.MINIMUM_PYTHON_VERSION_TEXT}" in pyproject
     assert monitor.MINIMUM_PYTHON_VERSION_TEXT == ".".join(str(part) for part in monitor.MINIMUM_PYTHON_VERSION)
+
+
+# Verifies a generated config over an existing file is refused outside a terminal, so a script cannot replace one silently
+def test_generated_config_refuses_to_replace_without_a_terminal(tmp_path):
+    destination = tmp_path / "steam_monitor.conf"
+    destination.write_text("OLD = 1\n", encoding="utf-8")
+
+    with pytest.raises(FileExistsError):
+        monitor.write_generated_config(destination, "NEW = 2\n", interactive=False)
+
+    assert destination.read_text(encoding="utf-8") == "OLD = 1\n"
+
+
+# Verifies declining the question leaves the file alone and says nothing was written
+def test_a_declined_replacement_keeps_the_existing_config(tmp_path):
+    destination = tmp_path / "steam_monitor.conf"
+    destination.write_text("OLD = 1\n", encoding="utf-8")
+
+    backup_path, written = monitor.write_generated_config(destination, "NEW = 2\n", interactive=True, input_func=lambda prompt: "n")
+
+    assert (backup_path, written) == (None, False)
+    assert destination.read_text(encoding="utf-8") == "OLD = 1\n"
+
+
+# Verifies accepting the question replaces the file and keeps the previous one under a timestamp
+def test_an_accepted_replacement_backs_the_previous_file_up(tmp_path):
+    destination = tmp_path / "steam_monitor.conf"
+    destination.write_text("OLD = 1\n", encoding="utf-8")
+
+    backup_path, written = monitor.write_generated_config(destination, "NEW = 2\n", interactive=True, input_func=lambda prompt: "y")
+
+    assert written is True
+    assert destination.read_text(encoding="utf-8") == "NEW = 2\n"
+    assert Path(backup_path).read_text(encoding="utf-8") == "OLD = 1\n"
+
+
+# Verifies --force replaces without asking, since a script has no one to answer
+def test_force_replaces_without_asking(tmp_path):
+    destination = tmp_path / "steam_monitor.conf"
+    destination.write_text("OLD = 1\n", encoding="utf-8")
+
+    backup_path, written = monitor.write_generated_config(destination, "NEW = 2\n", force=True, interactive=False, input_func=lambda prompt: (_ for _ in ()).throw(AssertionError("asked")))
+
+    assert written is True
+    assert destination.read_text(encoding="utf-8") == "NEW = 2\n"
+    assert Path(backup_path).read_text(encoding="utf-8") == "OLD = 1\n"
+
+
+# Verifies a new path needs no question and takes no backup
+def test_a_new_path_is_written_without_a_question(tmp_path):
+    destination = tmp_path / "steam_monitor.conf"
+
+    backup_path, written = monitor.write_generated_config(destination, "NEW = 2\n", interactive=False)
+
+    assert (backup_path, written) == (None, True)
+    assert destination.read_text(encoding="utf-8") == "NEW = 2\n"
+
+
+# Verifies the generated config is written atomically and readable only by its owner
+def test_a_generated_config_is_replaced_atomically_and_kept_private(tmp_path, monkeypatch):
+    destination = tmp_path / "steam_monitor.conf"
+    destination.write_text("OLD = 1\n", encoding="utf-8")
+    replaced = []
+    real_replace = os.replace
+
+    def record_replace(source, target):
+        replaced.append((str(source), str(target)))
+        return real_replace(source, target)
+
+    monkeypatch.setattr(os, "replace", record_replace)
+    monitor.write_generated_config(destination, "NEW = 2\n", force=True)
+
+    assert replaced and replaced[-1][1] == str(destination)
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o600

@@ -99,6 +99,24 @@ def test_generate_config_output_is_machine_friendly():
     assert monitor.STARTUP_BANNER.splitlines()[1] not in result.stdout
 
 
+# Verifies a refused combination names the option as it was typed rather than as argparse stores it
+def test_a_refused_combination_names_the_positional_by_its_metavar():
+    result = run_cli("--set-steam-api-key", "76561198000000000")
+
+    assert result.returncode != 0
+    assert "--set-steam-api-key cannot be combined with STEAM_TARGET" in result.stderr
+    assert "--steam64-id" not in result.stderr
+
+
+# Verifies an option is named by the spelling the user typed, not by its first alias
+@pytest.mark.parametrize("typed", ["--verbose", "--debug"])
+def test_a_refused_combination_names_the_option_that_was_typed(typed):
+    result = run_cli("--set-steam-api-key", typed)
+
+    assert result.returncode != 0
+    assert f"--set-steam-api-key cannot be combined with {typed}" in result.stderr
+
+
 # Verifies help shows one startup banner
 def test_help_shows_one_startup_banner():
     result = run_cli("--help")
