@@ -301,6 +301,15 @@ def test_no_delivery_path_prints_outside_the_recovery_block():
     assert not offenders, "delivery paths printing outside the recovery block: " + ", ".join(offenders)
 
 
+# Verifies the refusal to replace an existing file points at the section describing that file
+def test_the_existing_file_refusal_points_at_the_configuration_file_section():
+    advice = monitor.classify_recovery_error(context="file.exists")
+
+    assert advice.code == "file.exists"
+    assert f"Guide: {monitor.CONFIG_FILE_GUIDE_URL}" in advice.fix
+    assert advice.fix.rstrip().endswith("#configuration-file")
+
+
 # Verifies the missing-target advice names the accepted forms and a command carrying the paths this run was given
 def test_a_missing_target_advises_the_accepted_forms(restored_globals):
     monitor.CLI_CONFIG_PATH = "/tmp/steam_monitor.conf"

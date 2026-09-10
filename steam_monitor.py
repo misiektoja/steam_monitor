@@ -456,7 +456,6 @@ DOCS_BASE_URL = "https://misiektoja.github.io/steam_monitor"
 GUIDE_URL = f"{DOCS_BASE_URL}/"
 INSTALL_GUIDE_URL = f"{DOCS_BASE_URL}/installation/"
 QUICK_START_GUIDE_URL = f"{DOCS_BASE_URL}/setup-and-first-run/"
-CONFIG_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/"
 CONFIG_FILE_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#configuration-file"
 INTERVALS_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#check-intervals"
 STEAM_API_KEY_GUIDE_URL = f"{DOCS_BASE_URL}/setup-and-first-run/#steam-web-api-key"
@@ -2500,7 +2499,7 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
         if any(term in message for term in ("cannot load", "unreadable", "not valid utf-8", "no such file")):
             return advice("file.unreadable", safe_detail or "A file the tool keeps could not be read", "Check the path and its permissions, or delete the file so it is recreated", False)
     if context == "file.exists":
-        return advice("file.exists", safe_detail or "The destination file already exists", f"Re-run with --force to replace it after a timestamped backup, or write to a different path with '{render_command(['--generate-config', '<new-file>'], include_paths=False)}'", False, CONFIG_GUIDE_URL)
+        return advice("file.exists", safe_detail or "The destination file already exists", f"Re-run with --force to replace it after a timestamped backup, or write to a different path with '{render_command(['--generate-config', '<new-file>'], include_paths=False)}'", False, CONFIG_FILE_GUIDE_URL)
 
     if context == "file.unwritable":
         # The wizard reaches this either because a destination was switched off or because the path cannot be written

@@ -55,6 +55,14 @@ def test_every_guide_link_resolves_to_a_real_page_and_anchor():
             assert anchor in page_anchors(page), f"{name} points at a missing anchor on {page.name}: #{anchor}"
 
 
+# Verifies a guide link about the configuration file names its section, since the page covers every setting
+# and a page-level link leaves the reader looking for the part the failure was about
+def test_a_configuration_guide_link_names_its_section():
+    for name in sorted(name for name in vars(monitor) if name.endswith("_GUIDE_URL")):
+        url = getattr(monitor, name)
+        assert not url.rstrip("/").endswith("/configuration"), f"{name} points at the configuration page with no anchor"
+
+
 # Verifies every page the navigation lists exists, so a renamed file fails here rather than in the built site
 def test_every_navigation_entry_exists():
     navigation = MKDOCS.read_text(encoding="utf-8").split("nav:", 1)[1]
