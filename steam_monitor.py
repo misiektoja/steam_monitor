@@ -1468,6 +1468,11 @@ def apply_color_to_text(text):
     return "".join(parts)
 
 
+# Colours every link in a line, for the screens printed before the output stream colouriser is installed
+def colorize_links(text):
+    return _sub_outside_color(_URL_RE, lambda mo: colorize("link", mo.group(0)), text)
+
+
 # Reports whether separator-only log lines should use ASCII on this system
 def ascii_log_separators_enabled():
     mode = str(ASCII_LOG_SEPARATORS).strip().lower()
@@ -3779,11 +3784,6 @@ DOCTOR_MARK_STYLES = {"PASS": "boolean_true", "WARN": "warning", "FAIL": "error"
 DOCTOR_PROGRESS_WIDTH = 0
 
 
-# Colours every link in a doctor detail line, since the report is printed before the line colouriser is installed
-def _colorize_doctor_links(text):
-    return _sub_outside_color(_URL_RE, lambda mo: colorize("link", mo.group(0)), text)
-
-
 # Renders one doctor result marker in the colour its status calls for
 def render_doctor_marker(status):
     return colorize(DOCTOR_MARK_STYLES.get(status, "info"), f"[{status}]")
@@ -3809,7 +3809,7 @@ def render_doctor_sections(report):
         for check in section_checks:
             lines.append(f"{render_doctor_marker(check.status)} {check.label}")
             if check.detail:
-                lines.append(f"  {_colorize_doctor_links(check.detail)}")
+                lines.append(f"  {colorize_links(check.detail)}")
             if check.status != "PASS" and check.advice is not None:
                 # The fix carries its own guide line, so each line is indented and styled on its own rather
                 # than leaving one colour sequence open across the newline
@@ -4313,7 +4313,7 @@ def _wizard_collect_polling_section(state, input_func=None):
 
 # Asks for the Steam Web API key through a hidden prompt and validates it against Steam before accepting it
 def _wizard_collect_auth_section(state, input_func=None, getpass_func=None, validator=None):
-    print(f"Create or view your Steam Web API key: {STEAM_API_KEY_REGISTRATION_URL}")
+    print(colorize_links(f"Create or view your Steam Web API key: {STEAM_API_KEY_REGISTRATION_URL}"))
     existing = doctor_value_is_set(state.config_values.get("STEAM_API_KEY"))
     if existing and not _wizard_ask_yes_no("Replace the Steam Web API key already configured?", default=False, input_func=input_func):
         return
@@ -4818,7 +4818,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     if not terminal_is_interactive:
         print("The setup wizard needs an interactive terminal (TTY).")
         print("Run --setup from an interactive shell or use --generate-config and edit the files manually.")
-        print(f"Guide: {QUICK_START_GUIDE_URL}")
+        print(colorize_links(f"Guide: {QUICK_START_GUIDE_URL}"))
         return 1
 
     try:
