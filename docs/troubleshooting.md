@@ -50,7 +50,7 @@ The banner that says nothing changed prints in any mode: `* Monitoring healthy f
 
 Two flags control how much the tool explains about itself.
 
-`--verbose` reports what the tool is doing in plain `* ` lines. It expands the startup summary, which is where the configuration file, dotenv file, install method and the source of each secret are named. During monitoring it stays quiet unless something happens: it reports any tracked feature that could not fire its alert this cycle. Use `--debug` for a line per completed check.
+`--verbose` reports what the tool is doing in plain `* ` lines. It expands the startup summary, which is where the configuration file, dotenv file, install method and the source of each secret are named. During monitoring it stays quiet unless something happens: it reports any tracked feature that could not fire its alert this cycle and each delivered alert with the inbox or webhook it reached. Use `--debug` for a line per completed check.
 
 A `--debug` run leaves the terminal as it was instead of clearing it, so the output you are comparing against stays on screen. `--verbose` clears it like an ordinary run.
 
