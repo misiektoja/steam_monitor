@@ -2504,6 +2504,8 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
     if context == "file":
         if any(term in message for term in ("cannot load", "unreadable", "not valid utf-8", "no such file")):
             return advice("file.unreadable", safe_detail or "A file the tool keeps could not be read", "Check the path and its permissions, or delete the file so it is recreated", False)
+        return advice("file.unwritable", safe_detail or "A file the tool keeps could not be written", "Check that the directory exists and is writable, or choose another path", False)
+
     if context == "file.exists":
         return advice("file.exists", safe_detail or "The destination file already exists", f"Re-run with --force to replace it after a timestamped backup, or write to a different path with '{render_command(['--generate-config', '<new-file>'], include_paths=False)}'", False, CONFIG_FILE_GUIDE_URL)
 
@@ -5646,13 +5648,13 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         if csv_file_name:
             init_csv_file(csv_file_name)
     except Exception as e:
-        print_recovery_error(e, context="file")
+        print_recovery_error(e, context="file.unwritable")
 
     try:
         if profile_csv_file_name:
             init_profile_csv_file(profile_csv_file_name)
     except Exception as e:
-        print_recovery_error(e, context="file")
+        print_recovery_error(e, context="file.unwritable")
 
     try:
         debug_print("Opening the Steam Web API", steamid=steamid, key=mask_secret(STEAM_API_KEY))
@@ -5766,7 +5768,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         if csv_file_name and (status != last_status):
             write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), steam_personastates[status], gamename, gameid)
     except Exception as e:
-        print_recovery_error(e, context="file")
+        print_recovery_error(e, context="file.unwritable")
 
     print(f"\nSteam64 ID:\t\t\t{steamid}")
     print(f"Display name:\t\t\t{username}")
@@ -6268,7 +6270,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     try:
                         write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="steam_level_change", old_value=last_level_int, new_value=level_int, delta=delta,)
                     except Exception as e:
-                        print(f"* Error writing profile CSV: {e}")
+                        print_recovery_error(e, context="file.unwritable")
 
                 if STEAM_LEVEL_XP_NOTIFICATION or webhook_event_enabled("level_xp"):
                     m_subject = f"Steam user {username} level changed to {level_int}"
@@ -6304,7 +6306,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     try:
                         write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="total_xp_change", old_value=last_xp_int, new_value=xp_int, delta=delta,)
                     except Exception as e:
-                        print(f"* Error writing profile CSV: {e}")
+                        print_recovery_error(e, context="file.unwritable")
 
                 if STEAM_LEVEL_XP_NOTIFICATION or webhook_event_enabled("level_xp"):
                     m_subject = f"Steam user {username} total XP changed to {xp_int}"
@@ -6338,7 +6340,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                         try:
                             write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="friends_count_change", old_value=old_count, new_value=new_count, delta=delta,)
                         except Exception as e:
-                            print(f"* Error writing profile CSV: {e}")
+                            print_recovery_error(e, context="file.unwritable")
 
                     added_details = []
                     removed_details = []
@@ -6375,7 +6377,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                                 try:
                                     write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="friend_added", friend_steamid=sid, friend_persona=persona, friend_realname=real,)
                                 except Exception as e:
-                                    print(f"* Error writing profile CSV: {e}")
+                                    print_recovery_error(e, context="file.unwritable")
                             if real:
                                 added_details.append(f"- {persona} ({real}) [{sid}]")
                             else:
@@ -6394,7 +6396,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                                 try:
                                     write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="friend_removed", friend_steamid=sid, friend_persona=persona, friend_realname=real,)
                                 except Exception as e:
-                                    print(f"* Error writing profile CSV: {e}")
+                                    print_recovery_error(e, context="file.unwritable")
                             if real:
                                 removed_details.append(f"- {persona} ({real}) [{sid}]")
                             else:
@@ -6465,7 +6467,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                         try:
                             write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="games_library_change", old_value=old_count, new_value=new_count, delta=delta,)
                         except Exception as e:
-                            print(f"* Error writing profile CSV: {e}")
+                            print_recovery_error(e, context="file.unwritable")
 
                     if GAMES_LIBRARY_NOTIFICATION or webhook_event_enabled("games"):
                         m_subject_games = f"Steam user {username} games library changed (now {new_count})"
@@ -6497,7 +6499,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 try:
                     write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="name_change", old_value=old_name, new_value=new_name)
                 except Exception as e:
-                    print(f"* Error writing profile CSV: {e}")
+                    print_recovery_error(e, context="file.unwritable")
 
             if NAME_CHANGE_NOTIFICATION or webhook_event_enabled("name"):
                 m_subject_name = f"Steam user {old_name} changed display name to {new_name}"
@@ -6518,7 +6520,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 if csv_file_name:
                     write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), steam_personastates[status], gamename, gameid)
             except Exception as e:
-                print_recovery_error(e, context="file")
+                print_recovery_error(e, context="file.unwritable")
 
         status_old = status
         gameid_old = gameid
@@ -7292,7 +7294,7 @@ def main():
             with open(CSV_FILE, 'a', newline='', buffering=1, encoding="utf-8") as _:
                 pass
         except Exception as e:
-            print_recovery_error(e, context="file", detail=f"CSV file '{CSV_FILE}' cannot be opened for writing")
+            print_recovery_error(e, context="file.unwritable", detail=f"CSV file '{CSV_FILE}' cannot be opened for writing")
             sys.exit(1)
 
     if args.profile_csv_file:
@@ -7306,7 +7308,7 @@ def main():
             with open(PROFILE_CSV_FILE, 'a', newline='', buffering=1, encoding="utf-8") as _:
                 pass
         except Exception as e:
-            print_recovery_error(e, context="file", detail=f"Profile CSV file '{PROFILE_CSV_FILE}' cannot be opened for writing")
+            print_recovery_error(e, context="file.unwritable", detail=f"Profile CSV file '{PROFILE_CSV_FILE}' cannot be opened for writing")
             sys.exit(1)
 
     if args.status_file:

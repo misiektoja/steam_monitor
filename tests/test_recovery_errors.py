@@ -336,3 +336,37 @@ def test_a_missing_target_keeps_the_shared_fix_under_its_own_summary(restored_gl
     assert advice.code == "target.missing"
     assert advice.summary == "A Steam profile target needs to be defined"
     assert advice.fix == monitor.classify_recovery_error(context="target.missing").fix
+
+
+# Verifies a write the tool reports as a file problem is classified as unwritable rather than left unknown
+def test_a_failed_file_write_is_classified_as_unwritable(restored_globals):
+    advice = monitor.classify_recovery_error(PermissionError(13, "Permission denied"), context="file", detail="Cannot save games library to '/x/games.json'")
+
+    assert advice.code == "file.unwritable"
+    assert advice.fix == "Check that the directory exists and is writable, or choose another path"
+
+
+# Verifies a profile CSV row that cannot be written carries the same fix as every other unwritable file
+def test_a_failed_profile_csv_write_carries_the_shared_fix(restored_globals, capsys):
+    monitor.print_recovery_error(RuntimeError("Failed to write to profile CSV file '/x/p.csv': [Errno 2] No such file or directory"), context="file.unwritable")
+
+    printed = capsys.readouterr().out
+    assert printed.startswith("* Error: Failed to write to profile CSV file '/x/p.csv'")
+    assert "To fix: Check that the directory exists and is writable, or choose another path" in printed
+
+
+# Verifies a failed CSV write reports through the recovery block, since the monitoring loop carries on past it
+def test_no_csv_write_failure_prints_its_own_line():
+    csv_writers = {"init_csv_file", "init_profile_csv_file", "write_csv_entry", "write_profile_csv_entry"}
+    offenders = []
+    guarded = 0
+    for node in ast.walk(ast.parse(Path(monitor.__file__).read_text(encoding="utf-8"))):
+        if not isinstance(node, ast.Try) or (node.body[-1].end_lineno or node.body[0].lineno) - node.body[0].lineno > 6:
+            continue
+        if not any(isinstance(inner, ast.Call) and getattr(inner.func, "id", "") in csv_writers for statement in node.body for inner in ast.walk(statement)):
+            continue
+        guarded += 1
+        offenders.extend(f"line {statement.lineno}" for handler in node.handlers for statement in handler.body if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call) and getattr(statement.value.func, "id", "") == "print")
+
+    assert guarded >= 11, f"only {guarded} CSV writes are guarded, so this no longer covers them"
+    assert not offenders, "CSV write failures reported outside the recovery block:\n" + "\n".join(offenders)
