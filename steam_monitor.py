@@ -814,7 +814,7 @@ def migrate_legacy_state_files(steamid, username):
             os.replace(legacy, current)
             print(f"* Saved state file '{legacy}' was renamed to '{current}'")
         except OSError as e:
-            print(f"* Cannot rename '{legacy}' to '{current}': {e}")
+            print_recovery_error(e, context="file.unwritable", detail=f"Cannot rename '{legacy}' to '{current}': {e}")
 
 
 # Writes JSON to a file atomically, so a crash cannot leave a half-written state file behind
@@ -2411,6 +2411,10 @@ def make_recovery_advice(code, summary, fix, retryable, detail=""):
 # Adds a directly relevant documentation link on its own line
 def recovery_fix_with_guide(fix, guide_url):
     return f"{fix}\nGuide: {guide_url}"
+
+
+# Returns the advice an optional library that is missing carries, naming what the run loses and how to install it
+def missing_dependency_advice(package, effect, install_command, alternative=""): return make_recovery_advice("dependency.missing", f"{effect} because the optional '{package}' library is missing", recovery_fix_with_guide(f"Install it with: {install_command}" + (f". {alternative}" if alternative else ""), INSTALL_GUIDE_URL), False)
 
 
 # Returns the advice a cancelled secret entry reports, worded the same way by every one-shot secret command
@@ -5064,7 +5068,7 @@ def reload_secrets_signal_handler(sig, frame):
                 print("* No .env file found, reloading exported environment variables only")
         except ImportError:
             env_path = None
-            print("* python-dotenv not installed, reloading exported environment variables only")
+            print_monitor_recovery(RecoveryError(missing_dependency_advice("python-dotenv", "Only exported environment variables were reloaded", "pip3 install python-dotenv")), "runtime", label="Warning")
 
     webhook_url_changed = False
     sources = secret_sources(env_path)
@@ -5569,7 +5573,7 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
                         steamids=",".join(chunk),
                     )
                 except Exception as e:
-                    print(f"* Warning: Cannot fetch friend details: {e}")
+                    print_recovery_error(e, detail=f"Cannot fetch the friend details: {e}")
                     break
 
                 players = summaries.get("response", {}).get("players", [])
@@ -5707,7 +5711,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             with open(steam_last_status_file, 'r', encoding="utf-8") as f:
                 last_status_read = json.load(f)
         except Exception as e:
-            print(f"* Cannot load last status from '{steam_last_status_file}' file: {e}")
+            print_recovery_error(e, context="file", detail=f"Cannot load the last status from '{steam_last_status_file}' file: {e}")
         if last_status_read:
             last_status_ts = last_status_read[0]
             last_status = last_status_read[1]
@@ -5747,7 +5751,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     last_games_appids = set(appids_list)
             debug_print("Reading the games library file", path=steam_games_file, games=last_games_count, outcome="OK")
         except Exception as e:
-            print(f"* Cannot load games library from '{steam_games_file}': {e}")
+            print_recovery_error(e, context="file", detail=f"Cannot load the games library from '{steam_games_file}': {e}")
 
     if last_status_ts > 0 and status != last_status:
         last_status_to_save = []
@@ -5765,7 +5769,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             write_json_atomic(steam_last_status_file, last_status_to_save)
             debug_print("Saved the last status", path=steam_last_status_file, outcome="OK")
         except Exception as e:
-            print(f"* Cannot save last status to '{steam_last_status_file}' file: {e}")
+            print_recovery_error(e, context="file.unwritable", detail=f"Cannot save the last status to '{steam_last_status_file}' file: {e}")
             debug_swallowed_exception(f"Saving the last status to '{steam_last_status_file}'", e)
 
     try:
@@ -5878,7 +5882,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             write_json_atomic(steam_last_status_file, last_status_to_save)
             debug_print("Saved the last status", path=steam_last_status_file, outcome="OK")
         except Exception as e:
-            print(f"* Cannot save last status to '{steam_last_status_file}' file: {e}")
+            print_recovery_error(e, context="file.unwritable", detail=f"Cannot save the last status to '{steam_last_status_file}' file: {e}")
             debug_swallowed_exception(f"Saving the last status to '{steam_last_status_file}'", e)
 
     if status_ts_old != status_ts_old_bck:
@@ -6110,7 +6114,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             try:
                 write_json_atomic(steam_last_status_file, last_status_to_save)
             except Exception as e:
-                print(f"* Cannot save last status to '{steam_last_status_file}' file: {e}")
+                print_recovery_error(e, context="file.unwritable", detail=f"Cannot save the last status to '{steam_last_status_file}' file: {e}")
 
             print(f"Steam user {username} changed status from {steam_personastates[status_old]} to {steam_personastates[status]}")
             print(f"User was {steam_personastates[status_old]} for {calculate_timespan(int(status_ts), int(status_ts_old))} ({get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)})")
@@ -6465,7 +6469,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     try:
                         write_json_atomic(steam_games_file, {"game_count": new_count, "appids": sorted(current_games_appids)})
                     except Exception as e:
-                        print(f"* Cannot save games library to '{steam_games_file}': {e}")
+                        print_recovery_error(e, context="file.unwritable", detail=f"Cannot save the games library to '{steam_games_file}': {e}")
 
                     if profile_csv_file_name:
                         try:
@@ -7174,7 +7178,7 @@ def main():
         except ImportError:
             env_path = DOTENV_FILE if DOTENV_FILE else None
             if env_path:
-                print(f"* Warning: Cannot load dotenv file '{env_path}' because 'python-dotenv' is not installed\n\nTo install it, run:\n    pip3 install python-dotenv\n\nOnce installed, re-run this tool\n")
+                print_monitor_recovery(RecoveryError(missing_dependency_advice("python-dotenv", f"The dotenv file '{env_path}' was not loaded", "pip3 install python-dotenv", "Or export the secrets as environment variables")), "runtime", label="Warning")
 
     # Exported secrets apply on their own, so a dotenv file is an alternative to the environment rather than a precondition
     applied_secrets = load_secrets_from_environment()
@@ -7406,7 +7410,7 @@ def main():
     if NTFY_IMAGES and not NTFY_IMAGES_AVAILABLE:
         NTFY_IMAGES = False
         if WEBHOOK_ENABLED and normalized_webhook_provider() == "ntfy":
-            print(f"* Warning: ntfy artwork is enabled, but the optional 'Pillow' package is not installed\n\nTo attach artwork, run:\n    {ntfy_images_install_command()}\n\nOnce installed, re-run this tool. To stop this warning, set NTFY_IMAGES to False\n\nSending ntfy alerts as text only...\n")
+            print_monitor_recovery(RecoveryError(missing_dependency_advice("Pillow", "ntfy alerts will be sent as text only", ntfy_images_install_command(), "Or set NTFY_IMAGES to False to stop this warning")), "runtime", label="Warning")
 
     # The line coloriser colours the ID, so the printed text stays plain and the separator matches its width
     out = f"Monitoring user with Steam64 ID {s_id}"
