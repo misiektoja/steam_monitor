@@ -286,6 +286,16 @@ def test_steam_retry_after_values_are_bounded():
     assert monitor.steam_retry_after_seconds(excessive.response, 60) == int(monitor.STEAM_MAX_RETRY_AFTER_SECONDS)
 
 
+# Verifies the cap bounds only what Steam asked for, since clamping the tool's own polling interval would make
+# a rate-limited run poll faster than it was configured to
+def test_the_cap_does_not_shorten_the_tools_own_interval():
+    unhelpful = http_error(429)
+    assert unhelpful.response is not None
+    beyond_the_cap = int(monitor.STEAM_MAX_RETRY_AFTER_SECONDS) + 600
+
+    assert monitor.steam_retry_after_seconds(unhelpful.response, beyond_the_cap) == beyond_the_cap
+
+
 # Verifies a failure that cannot be retried goes straight to the polling interval
 def test_a_rejected_api_key_does_not_get_a_quick_retry(tmp_path, monkeypatch, capsys):
     _api, sleeps = run_one_cycle(tmp_path, monkeypatch, poll_error=http_error(403), stop_after_sleeps=3)
@@ -411,7 +421,31 @@ def test_a_quiet_cycle_records_the_completed_check_in_debug(tmp_path, monkeypatc
     run_one_cycle(tmp_path, monkeypatch)
 
     output = capsys.readouterr().out
-    assert "Completed check: check=#1, user=76561197960435530" in output
+    assert "Completed check: check=#1, user=76561197960435530, outcome=OK" in output
+
+
+# Verifies a failed cycle is recorded like a healthy one, so a trace never ends without saying how the check went
+def test_a_failed_cycle_records_its_outcome_in_debug(tmp_path, monkeypatch, capsys):
+    run_one_cycle(tmp_path, monkeypatch, poll_error=http_error(403), stop_after_sleeps=3)
+
+    output = capsys.readouterr().out
+    assert "Completed check: check=#1, user=76561197960435530, outcome=failed, code=auth.api_key_invalid, error=HTTPError: " in output
+
+
+# Verifies every wait a failing check leads into says how long it is and what it is waiting for, since the three
+# paths wait for different reasons and a trace that stops at the failure leaves the pause unexplained
+def test_every_wait_after_a_failure_says_how_long_it_is_and_why(tmp_path, monkeypatch, capsys):
+    rate_limited = http_error(429)
+    assert rate_limited.response is not None
+    rate_limited.response.headers["Retry-After"] = "120"
+
+    run_one_cycle(tmp_path, monkeypatch, poll_error=rate_limited, stop_after_sleeps=3)
+    assert "Retry wait: check=#1, due_in=2 minutes, reason=steam rate limited the request" in capsys.readouterr().out
+
+    run_one_cycle(tmp_path, monkeypatch, poll_error=http_error(503), stop_after_sleeps=3)
+    output = capsys.readouterr().out
+    assert f"Retry wait: check=#1, due_in={monitor.display_time(monitor.TRANSIENT_RETRY_SECONDS)}, reason=one short retry before the full interval" in output
+    assert "Retry wait: check=#2, due_in=1 minute, reason=waiting the polling interval after a failed check" in output
 
 
 # Verifies the liveness banner says what it is reporting rather than printing a bare timestamp

@@ -170,41 +170,16 @@ def test_malformed_config_redacts_the_complete_secret_value(tmp_path, capsys, re
     assert "SMTP_PASSWORD = <redacted>" in output
 
 
-# Verifies a repeated failure prints its hint once rather than on every cycle of a long outage
-def test_a_repeated_failure_prints_one_hint(capsys, restored_globals):
+# Verifies the fix is rendered whenever this printer runs, since its caller only reaches it on a new failure
+# category and the throttling of a lasting outage is the outage reporter's job rather than a second guard's
+def test_the_printed_failure_carries_its_fix(capsys, restored_globals):
     monitor.DEBUG_MODE = False
-    tracker = monitor.RecoveryHintTracker()
 
-    for _ in range(50):
-        monitor.print_monitor_recovery(http_error(503), "runtime", tracker, "retrying in 5 minutes")
+    monitor.print_monitor_recovery(http_error(503), "runtime", "retrying in 5 minutes")
 
     output = capsys.readouterr().out
+    assert output.startswith("* Error: The Steam Web API is temporarily unavailable (retrying in 5 minutes)\n")
     assert output.count("To fix: ") == 1
-    assert output.count("* Error: The Steam Web API is temporarily unavailable (retrying in 5 minutes)") == 50
-
-
-# Verifies a changed failure category prints its own hint, since the fix is now a different one
-def test_a_changed_failure_category_prints_its_hint(capsys, restored_globals):
-    monitor.DEBUG_MODE = False
-    tracker = monitor.RecoveryHintTracker()
-
-    monitor.print_monitor_recovery(http_error(503), "runtime", tracker, "retrying in 5 minutes")
-    monitor.print_monitor_recovery(http_error(503), "runtime", tracker, "retrying in 5 minutes")
-    monitor.print_monitor_recovery(http_error(403), "runtime", tracker, "retrying in 5 minutes")
-
-    assert capsys.readouterr().out.count("To fix: ") == 2
-
-
-# Verifies a successful cycle clears suppression, so a recurrence is explained again
-def test_a_successful_cycle_clears_suppression(capsys, restored_globals):
-    monitor.DEBUG_MODE = False
-    tracker = monitor.RecoveryHintTracker()
-
-    monitor.print_monitor_recovery(http_error(503), "runtime", tracker, "retrying in 5 minutes")
-    tracker.reset()
-    monitor.print_monitor_recovery(http_error(503), "runtime", tracker, "retrying in 5 minutes")
-
-    assert capsys.readouterr().out.count("To fix: ") == 2
 
 
 # Verifies no user-facing error is printed outside the classifier, which a runtime test cannot prove

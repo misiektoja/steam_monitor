@@ -2552,24 +2552,6 @@ def print_recovery_error(error=None, context="runtime", debug=None, detail=""):
     return advice
 
 
-# Tracks the last uninterrupted recovery category so a long outage cannot repeat the same hint every cycle
-class RecoveryHintTracker:
-    # Starts with no category, so the first failure of any kind always renders its hint
-    def __init__(self):
-        self.last_code = None
-
-    # Returns True for the first category and again only when the failure category changes
-    def should_render(self, advice):
-        if advice.code == self.last_code:
-            return False
-        self.last_code = advice.code
-        return True
-
-    # Clears suppression after a successful cycle, so a recurrence is reported again
-    def reset(self):
-        self.last_code = None
-
-
 # Decides how a lasting failure is reported: in full when it is new, then on the liveness cadence while it lasts
 class OutageReporter:
     # Starts with no failure recorded, so the first failure of any category is reported in full
@@ -2649,10 +2631,10 @@ def render_monitor_recovery(advice, retry_note="", with_fix=True, label="Error")
     return "\n".join(lines)
 
 
-# Prints one monitoring failure, repeating the fix only when the failure category changes
-def print_monitor_recovery(error, context, tracker, retry_note="", label="Error"):
+# Prints one monitoring failure in full, which is the only state its caller reports from
+def print_monitor_recovery(error, context, retry_note="", label="Error"):
     advice = classify_recovery_error(error, context)
-    print(render_monitor_recovery(advice, retry_note, tracker is None or tracker.should_render(advice), label))
+    print(render_monitor_recovery(advice, retry_note, True, label))
     return advice
 
 
@@ -2762,7 +2744,12 @@ def webhook_retry_after_seconds(response):
 def steam_retry_after_seconds(response, fallback):
     headers = getattr(response, "headers", {}) or {}
     candidate = headers.get("Retry-After") if hasattr(headers, "get") else None
-    return max(1, int(round(bounded_retry_after_seconds([candidate], fallback, STEAM_MAX_RETRY_AFTER_SECONDS))))
+    seconds = parse_retry_after_seconds(candidate)
+    if seconds is not None:
+        return max(1, int(round(min(max(0.0, seconds), STEAM_MAX_RETRY_AFTER_SECONDS))))
+    # The fallback is this tool's own polling interval, so the cap on what a service asked for does not apply
+    # to it. Clamping it would make a rate-limited run poll faster than it was configured to
+    return max(1, int(round(fallback)))
 
 
 # Applies configured placeholders recursively to a webhook template
@@ -5944,7 +5931,6 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     else:
         sleep_interval = STEAM_CHECK_INTERVAL
 
-    recovery_hint_tracker = RecoveryHintTracker()
     feature_outages = FeatureOutageTracker()
     outage = OutageReporter()
     transient_retry_used = False
@@ -6029,6 +6015,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
             advice = classify_recovery_error(e, context="runtime")
             response = e.response if isinstance(e, req.exceptions.HTTPError) else None
+            debug_print("Completed check", check=f"#{check_count}", user=steamid, outcome="failed", code=advice.code, error=f"{type(e).__name__}: {e}")
             if advice.code != error_delivery_code:
                 error_email_sent = False
                 error_webhook_sent = False
@@ -6041,13 +6028,14 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 retry_after = steam_retry_after_seconds(response, sleep_interval) if response is not None else sleep_interval
                 retry_note = f"retrying in {display_time(retry_after)}"
                 if outage_outcome == "full":
-                    print_monitor_recovery(e, "runtime", recovery_hint_tracker, retry_note)
+                    print_monitor_recovery(e, "runtime", retry_note)
                     print_cur_ts("Timestamp:\t\t\t")
                 elif outage_outcome == "degraded":
                     print_outage_liveness(steamid, advice, outage.since)
                 elif outage_outcome == "repeat":
                     print(render_monitor_recovery(advice, retry_note, with_fix=False))
                     print_cur_ts("Timestamp:\t\t\t")
+                debug_print("Retry wait", check=f"#{check_count}", due_in=display_time(retry_after), reason="steam rate limited the request")
                 time.sleep(retry_after)
                 continue
             else:
@@ -6055,7 +6043,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 transient_retry = advice.retryable and not transient_retry_used
                 retry_note = f"retrying in {display_time(TRANSIENT_RETRY_SECONDS if transient_retry else sleep_interval)}"
                 if outage_outcome == "full":
-                    print_monitor_recovery(e, "runtime", recovery_hint_tracker, retry_note)
+                    print_monitor_recovery(e, "runtime", retry_note)
                 elif outage_outcome == "degraded":
                     print_outage_liveness(steamid, advice, outage.since)
                 elif outage_outcome == "repeat":
@@ -6064,6 +6052,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     transient_retry_used = True
                     if outage_outcome in ("full", "repeat"):
                         print_cur_ts("Timestamp:\t\t\t")
+                    debug_print("Retry wait", check=f"#{check_count}", due_in=display_time(TRANSIENT_RETRY_SECONDS), reason="one short retry before the full interval")
                     time.sleep(TRANSIENT_RETRY_SECONDS)
                     continue
                 if advice.code == "auth.api_key_invalid":
@@ -6083,11 +6072,11 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             if outage_outcome in ("full", "repeat") or delivery_reported:
                 print_cur_ts("Timestamp:\t\t\t")
 
+            debug_print("Retry wait", check=f"#{check_count}", due_in=display_time(sleep_interval), reason="waiting the polling interval after a failed check")
             time.sleep(sleep_interval)
 
             continue
 
-        recovery_hint_tracker.reset()
         outage_lasted = outage.recovered()
         if outage_lasted is not None:
             print_outage_recovery(steamid, outage_lasted)
@@ -6549,7 +6538,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         gameid_old = gameid
         gamename_old = gamename
 
-        debug_print("Completed check", check=f"#{check_count}", user=steamid, status=steam_personastates[status], game=gamename or None)
+        debug_print("Completed check", check=f"#{check_count}", user=steamid, outcome="OK", status=steam_personastates[status], game=gamename or None)
 
         if LIVENESS_REMINDER_SECONDS and int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS:
             print_liveness_banner(f"Monitoring healthy for {steamid}. The user is {steam_personastates[status]} with no status or game change since the last check")
