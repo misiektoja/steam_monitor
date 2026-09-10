@@ -1462,3 +1462,19 @@ def test_a_rejected_duration_keeps_the_default(capsys):
     assert "Keeping 60s - 1m." in capsys.readouterr().out
     # The hint the question carries belongs in the prompt, not in the offer that repeats it
     assert any("Try entering the Steam polling interval while offline again? [Y/n]: " in prompt for prompt in prompts), prompts
+
+
+# Setup reports the sign-in succeeded and then writes the files a restart reads, so the value it proves has to be
+# the value the next run resolves. Startup prefers an export over the dotenv file, and setup has to agree
+def test_the_effective_secret_follows_the_startup_precedence(tmp_path, monkeypatch):
+    env_path = tmp_path / ".env"
+    env_path.write_text('SMTP_PASSWORD="saved-in-file"\n', encoding="utf-8")
+    monkeypatch.delenv("SMTP_PASSWORD", raising=False)
+    monkeypatch.setattr(monitor, "SMTP_PASSWORD", "from-config-file", raising=False)
+
+    assert monitor.effective_secret_after_setup("SMTP_PASSWORD", env_path, {}) == ("saved-in-file", False)
+    assert monitor.effective_secret_after_setup("SMTP_PASSWORD", env_path, {"SMTP_PASSWORD": "accepted"}) == ("accepted", False)
+    monkeypatch.setenv("SMTP_PASSWORD", "exported")
+    assert monitor.effective_secret_after_setup("SMTP_PASSWORD", env_path, {"SMTP_PASSWORD": "accepted"}) == ("exported", True)
+    monkeypatch.delenv("SMTP_PASSWORD", raising=False)
+    assert monitor.effective_secret_after_setup("SMTP_PASSWORD", tmp_path / "absent.env", {}) == ("from-config-file", False)
