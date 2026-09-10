@@ -248,7 +248,7 @@ def test_a_delivered_email_is_confirmed_in_verbose(capsys, monkeypatch, diagnost
     monkeypatch.setattr(monitor.smtplib, "SMTP", FakeSMTP)
 
     assert monitor.send_email("subject", "body", "", True, smtp_timeout=1) == 0
-    assert "Email delivered to receiver@example.com" in capsys.readouterr().out
+    assert "* Email delivered to receiver@example.com: subject" in capsys.readouterr().out
 
 
 # Verifies every webhook attempt, status code and retry delay is visible in debug
@@ -277,13 +277,17 @@ def test_a_non_retryable_webhook_status_is_reported_as_such(capsys, monkeypatch,
     assert "attempt=2/2" not in output
 
 
-# Verifies a delivered webhook is confirmed with the provider that accepted it
+# Verifies a delivered webhook is confirmed with the provider that accepted it and the alert it carried
 def test_a_delivered_webhook_is_confirmed_in_verbose(capsys, monkeypatch, diagnostics_on):
     configure_webhook()
     monkeypatch.setattr(monitor, "post_webhook_request", lambda **_kwargs: webhook_response(204))
 
     assert monitor.send_webhook("title", "body", "status", force=True, sleeper=lambda _seconds: None) == 0
-    assert "Webhook delivered through discord (HTTP 204)" in capsys.readouterr().out
+
+    output = capsys.readouterr().out
+    assert "* Webhook delivered through discord: title" in output
+    # The status belongs to the technical trace, so verbose keeps the alert readable and debug keeps the code
+    assert "status=204, retryable=False" in output
 
 
 # Verifies an unreachable webhook service names the transport failure
