@@ -2435,7 +2435,8 @@ def recovery_http_status(error):
 def classify_recovery_error(error=None, context="runtime", detail=""):
     if isinstance(error, RecoveryError):
         return error.advice
-    message = str(detail or error or "").lower()
+    # Both are matched, since a caller that adds context would otherwise hide the error text the rules read
+    message = " ".join(part for part in (str(detail or ""), str(error or "")) if part).lower()
     safe_detail = sanitize_error_text(detail or error) if (detail or error) else ""
     status = recovery_http_status(error)
 

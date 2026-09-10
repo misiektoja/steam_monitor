@@ -370,3 +370,12 @@ def test_no_csv_write_failure_prints_its_own_line():
 
     assert guarded >= 11, f"only {guarded} CSV writes are guarded, so this no longer covers them"
     assert not offenders, "CSV write failures reported outside the recovery block:\n" + "\n".join(offenders)
+
+
+# Verifies added context does not replace the error text the rules read, which used to make every such failure unknown
+@pytest.mark.parametrize("message, expected", [("429 rate limit exceeded", "steam.rate_limited"), ("Connection timed out", "network.timeout")])
+def test_a_caller_supplied_detail_does_not_hide_the_error(message, expected):
+    advice = monitor.classify_recovery_error(Exception(message), detail="Cannot read the Steam profile")
+
+    assert advice.code == expected
+    assert "Cannot read the Steam profile" in advice.detail
