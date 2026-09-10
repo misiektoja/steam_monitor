@@ -591,6 +591,16 @@ def test_wizard_prompts_are_colorized(monkeypatch, ask, arguments):
     assert "info" in parts
 
 
+# Verifies --setup is not warned that the dotenv file is missing, since that path is where it writes the secrets
+def test_setup_is_not_warned_that_the_dotenv_file_it_writes_is_missing(tmp_path):
+    arguments = [sys.executable, str(REPO_ROOT / "steam_monitor.py"), "--setup", "--config-file", str(tmp_path / "absent.conf"), "--env-file", str(tmp_path / "absent.env"), "--no-color"]
+    result = subprocess.run(arguments, capture_output=True, text=True, cwd=tmp_path, stdin=subprocess.DEVNULL, check=False)
+
+    output = result.stdout + result.stderr
+    assert "does not exist" not in output
+    assert "needs an interactive terminal" in output
+
+
 # Verifies a non-interactive run explains itself and names the alternative instead of hanging
 def test_a_non_interactive_run_names_the_alternative(capsys):
     code = monitor.run_setup_wizard(interactive=False)

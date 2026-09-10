@@ -7170,7 +7170,9 @@ def main():
             if DOTENV_FILE:
                 env_path = DOTENV_FILE
                 if not os.path.isfile(env_path):
-                    print(f"* Warning: dotenv file '{env_path}' does not exist\n")
+                    # A command that is about to write this file is not warned that it is missing
+                    if not command_writes_dotenv(sys.argv[1:]):
+                        print(f"* Warning: dotenv file '{env_path}' does not exist\n")
                 else:
                     load_dotenv(env_path, override=False)
             else:
