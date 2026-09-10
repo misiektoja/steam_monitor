@@ -2455,6 +2455,10 @@ def is_too_many_open_files(error):
             return True
     return False
 
+# Returns the next step for a failure no rule recognized, since a run already printing the technical cause cannot be told to re-run for it
+def unknown_failure_fix(): return "Open an issue with this output if the failure continues" if DEBUG_MODE else "Re-run with --debug to see the technical cause"
+
+
 
 # Maps one exception plus its HTTP status and calling context to stable recovery advice
 def classify_recovery_error(error=None, context="runtime", detail=""):
@@ -2566,7 +2570,7 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
         return advice("network.unavailable", "Steam could not be reached", "Check connectivity, DNS and any proxy. The tool will keep retrying", True, DIAGNOSTICS_GUIDE_URL)
     if "private" in message or "visibility" in message:
         return advice("target.not_visible", "The monitored profile is not publicly visible", "Ask the user to set game details and profile visibility to Public", False, PRIVACY_GUIDE_URL)
-    return advice("unknown", safe_detail or "The request could not be completed", "Re-run with --debug to see the technical cause", True, DIAGNOSTICS_GUIDE_URL)
+    return advice("unknown", safe_detail or "The request could not be completed", unknown_failure_fix(), True, DIAGNOSTICS_GUIDE_URL)
 
 
 # Renders one built advice as the shared Error, To fix and optional Technical detail block
@@ -2574,7 +2578,8 @@ def render_recovery_advice(advice, debug=None, retry_note="", with_fix=True, lab
     lines = [f"* {label}: {advice.summary}" + (f" ({retry_note})" if retry_note else "")]
     if with_fix:
         lines.append(f"To fix: {advice.fix}")
-        if (DEBUG_MODE if debug is None else debug) and advice.detail:
+        # A detail that only repeats the summary spends a line saying nothing
+        if (DEBUG_MODE if debug is None else debug) and advice.detail and advice.detail != advice.summary:
             lines.append(f"Technical detail: {sanitize_error_text(advice.detail)}")
     return "\n".join(lines)
 
