@@ -3629,8 +3629,8 @@ def doctor_check_configuration(config_path=None, env_path=None, target_value=Non
         checks.append(make_doctor_check("Configuration", "PASS", "No dotenv file selected", "Using environment variables and other configured sources"))
     checks.extend(doctor_secret_checks(env_path))
 
-    intervals = f"{display_time(STEAM_CHECK_INTERVAL)} while offline, {display_time(STEAM_ACTIVE_CHECK_INTERVAL)} while online"
-    if STEAM_ACTIVE_CHECK_INTERVAL < DOCTOR_MIN_SAFE_ACTIVE_INTERVAL:
+    if isinstance(STEAM_ACTIVE_CHECK_INTERVAL, (int, float)) and not isinstance(STEAM_ACTIVE_CHECK_INTERVAL, bool) and 0 < STEAM_ACTIVE_CHECK_INTERVAL < DOCTOR_MIN_SAFE_ACTIVE_INTERVAL:
+        intervals = f"{display_time(STEAM_CHECK_INTERVAL)} while offline, {display_time(STEAM_ACTIVE_CHECK_INTERVAL)} while online"
         advice = make_recovery_advice("steam.rate_limited", "Check intervals are short enough to be rate limited", recovery_fix_with_guide(f"Raise STEAM_ACTIVE_CHECK_INTERVAL to at least {DOCTOR_MIN_SAFE_ACTIVE_INTERVAL} seconds", INTERVALS_GUIDE_URL), True)
         checks.append(make_doctor_check("Configuration", "WARN", "Check intervals are short", intervals, advice))
 

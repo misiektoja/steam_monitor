@@ -1248,6 +1248,16 @@ def test_a_safe_interval_is_not_warned_about(monkeypatch, doctor_globals):
     assert not [item for item in monitor.doctor_check_configuration() if item.label == "Check intervals are short"]
 
 
+# Verifies a quoted interval is reported as an unusable setting, since comparing it against the safe floor used to raise
+def test_an_interval_that_is_not_a_number_is_reported_rather_than_raised(monkeypatch):
+    monkeypatch.setattr(monitor, "STEAM_ACTIVE_CHECK_INTERVAL", "3600")
+
+    labels = [item.label for item in monitor.doctor_check_configuration()]
+
+    assert "One or more numeric settings are invalid" in labels
+    assert "Check intervals are short" not in labels
+
+
 # A run with no target warns with the sentence every monitor in this family uses, so the report reads the same
 def test_a_missing_target_warns_with_the_shared_detail(doctor_globals):
     checks = monitor.doctor_check_target(monitor.DoctorReport(), None)
