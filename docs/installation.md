@@ -131,7 +131,6 @@ On Linux, `pip` may report that the system Python is externally managed. If that
 
 Close Terminal, open it again then run `steam_monitor --version`.
 
-<a id="run-the-setup-wizard"></a>
 ### Run the setup wizard
 
 Every operating system uses the same command:
@@ -140,7 +139,6 @@ Every operating system uses the same command:
 
 The setup wizard collects the target, service credentials and optional notifications. Continue to [Setup & First Run](setup-and-first-run.md) for a walkthrough of its questions.
 
-<a id="choose-an-installation-method"></a>
 ## Choose an Installation Method
 
 | Method | Best for | Command used in later examples |

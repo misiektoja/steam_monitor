@@ -2,7 +2,10 @@
 
 Real-time tracker for Steam players' activity, with detailed profile insights and instant alerts.
 
-<a id="-quick-install"></a>
+<p align="center">
+   <img src="https://raw.githubusercontent.com/misiektoja/steam_monitor/refs/heads/main/assets/steam_monitor.png" alt="steam_monitor_screenshot" width="85%"/>
+</p>
+
 <a id="-quick-install-run"></a>
 ### 🚀 Quick Install & Run
 
@@ -50,11 +53,6 @@ For the manual single-file method, dependencies and upgrade commands, see [Insta
 * **Flexible settings**: Use config files, dotenv files, environment variables and command-line options.
 * **Terminal and runtime controls**: Customize colours and adjust the running monitor through supported signals.
 
-## Screenshots
-
-![steam_monitor](https://raw.githubusercontent.com/misiektoja/steam_monitor/main/assets/steam_monitor.png)
-
-<a id="common-commands"></a>
 ## Common Commands
 
 Use [Quick Install & Run](#-quick-install-run) for first-time setup. These examples use the PyPI command. See [Command Format by Installation Method](usage.md#command-format) for manual-script equivalents.
@@ -82,3 +80,5 @@ Monitoring runs until you press `Ctrl+C`. For email, Discord and ntfy alerts, CS
 * [Configuration](configuration.md) - settings, notifications and secret storage
 * [Usage](usage.md) - monitoring, output and command options
 * [Troubleshooting](troubleshooting.md) - Doctor checks and recovery steps
+* [Testing](testing.md) - automated checks and documentation builds
+* [About](about.md) - contributing, security, licensing and support
