@@ -566,7 +566,7 @@ def test_a_link_in_a_detail_line_is_coloured_as_a_link(monkeypatch, doctor_globa
 
     assert f"  Endpoint: {monitor.colorize('link', 'https://api.steampowered.com/')}" in rendered
     assert fix_line == f"  {monitor.colorize('info', 'To fix: Copy a fresh key from https://steamcommunity.com/dev/apikey')}"
-    assert f"  {monitor.colorize('info', f'Guide: {monitor.DOCTOR_GUIDE_URL}')}" in rendered
+    assert f"  Guide: {monitor.colorize('link', monitor.DOCTOR_GUIDE_URL)}" in rendered
 
 # Verifies every rendered result marker carries its status colour, not just the section headings
 def test_every_marker_is_coloured_in_the_rendered_report(monkeypatch, doctor_globals):
