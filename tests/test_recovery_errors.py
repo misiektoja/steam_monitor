@@ -379,3 +379,65 @@ def test_a_caller_supplied_detail_does_not_hide_the_error(message, expected):
 
     assert advice.code == expected
     assert "Cannot read the Steam profile" in advice.detail
+
+
+# Returns every literal string one argument can evaluate to, following a conditional or a code held in a local name
+def literal_values(node, assignments):
+    if isinstance(node, ast.Constant):
+        return {node.value} if isinstance(node.value, str) else set()
+    if isinstance(node, ast.IfExp):
+        return literal_values(node.body, assignments) | literal_values(node.orelse, assignments)
+    if isinstance(node, ast.Name) and assignments.get(node.id):
+        return set().union(*(literal_values(value, assignments) for value in assignments[node.id]))
+    return set()
+
+
+# Returns every code an advice builder can pass, which is what makes a declared code with no producer visible
+def builder_codes(source):
+    tree = ast.parse(source)
+    assignments = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    assignments.setdefault(target.id, []).append(node.value)
+    codes = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and getattr(node.func, "id", "") in ("advice", "make_recovery_advice") and node.args:
+            codes |= literal_values(node.args[0], assignments)
+    return codes
+
+
+# Verifies every declared code has a producer, so the set records what the tool reports rather than what it might
+def test_every_declared_code_is_reachable():
+    unreachable = set(monitor.RECOVERY_CODES) - builder_codes(Path(monitor.__file__).read_text(encoding="utf-8"))
+
+    assert unreachable == set(), f"codes with no producer: {sorted(unreachable)}"
+
+
+# Verifies no advice builder names a code outside the declared set, so the set stays the whole taxonomy
+def test_no_code_outside_the_declared_set_is_produced():
+    undeclared = builder_codes(Path(monitor.__file__).read_text(encoding="utf-8")) - set(monitor.RECOVERY_CODES)
+
+    assert undeclared == set(), f"codes produced but not declared: {sorted(undeclared)}"
+
+
+# Verifies a key that was never provided is reported as a missing secret, not as one Steam rejected
+def test_a_missing_web_api_key_is_reported_as_a_missing_secret(restored_globals):
+    monitor.CLI_CONFIG_PATH = ""
+    monitor.DOTENV_FILE = ""
+
+    advice = monitor.classify_recovery_error(context="secret.missing", detail="No Steam Web API key is configured")
+
+    assert advice.code == "secret.missing"
+    assert advice.summary == "No Steam Web API key is configured"
+    assert "--set-steam-api-key" in advice.fix
+    assert "export STEAM_API_KEY" in advice.fix
+    assert f"Guide: {monitor.STEAM_API_KEY_GUIDE_URL}" in advice.fix
+
+
+# Verifies the startup gate and the doctor row both report the missing key through that same category
+def test_the_startup_gate_and_the_doctor_row_share_the_missing_key_category():
+    source = Path(monitor.__file__).read_text(encoding="utf-8")
+
+    assert source.count('context="secret.missing", detail="No Steam Web API key is configured"') == 2

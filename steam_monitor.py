@@ -2375,7 +2375,7 @@ RECOVERY_CODES = frozenset({
     "config.missing", "config.invalid", "config.insecure",
     "dependency.missing",
     "secret.missing", "secret.entry",
-    "auth.api_key_invalid", "auth.rejected",
+    "auth.api_key_invalid",
     "network.unavailable", "network.timeout",
     "steam.rate_limited", "steam.unavailable",
     "target.missing", "target.invalid", "target.not_found", "target.not_visible",
@@ -2447,6 +2447,9 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
         if "does not exist" in message:
             return advice("config.missing", safe_detail or "The configuration file was not found", f"Create one with '{render_command(['--generate-config', 'steam_monitor.conf'], include_paths=False)}' or correct the --config-file path", False, CONFIG_FILE_GUIDE_URL)
         return advice("config.invalid", safe_detail or "The configuration file could not be read", f"Correct the reported line, or start from a fresh template with '{render_command(['--generate-config', 'steam_monitor.conf'], include_paths=False)}'", False, CONFIG_FILE_GUIDE_URL)
+
+    if context == "secret.missing":
+        return advice("secret.missing", safe_detail or "No Steam Web API key reached the tool", f"Save one with '{render_command(['--set-steam-api-key'])}', export STEAM_API_KEY or add it to a dotenv file", False, STEAM_API_KEY_GUIDE_URL)
 
     if context in ("set_steam_api_key", "set_smtp_password", "set_webhook_url"):
         flag = {"set_steam_api_key": "--set-steam-api-key", "set_smtp_password": "--set-smtp-password"}.get(context, "--set-webhook-url")
@@ -3350,7 +3353,7 @@ def doctor_check_connectivity():
 # Validates the Steam Web API key once and stores the client so later checks reuse it
 def doctor_check_authentication(report):
     if not doctor_value_is_set(STEAM_API_KEY):
-        advice = classify_recovery_error(context="set_steam_api_key", detail="No Steam Web API key is configured")
+        advice = classify_recovery_error(context="secret.missing", detail="No Steam Web API key is configured")
         return [make_doctor_check("Authentication", "FAIL", "No Steam Web API key is configured", "Nothing can be monitored without one", advice)]
     try:
         report.steam_client = steam_web_api_client()
@@ -7256,7 +7259,7 @@ def main():
         sys.exit(0)
 
     if not STEAM_API_KEY or STEAM_API_KEY == "your_steam_web_api_key":
-        print_recovery_error(context="set_steam_api_key", detail="No Steam Web API key is configured")
+        print_recovery_error(context="secret.missing", detail="No Steam Web API key is configured")
         sys.exit(1)
 
     if args.check_interval:
