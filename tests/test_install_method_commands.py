@@ -1,4 +1,4 @@
-"""Tests that printed commands, masked secrets and guide links match the detected install method."""
+"""Tests that printed commands, described secrets and guide links match the detected install method."""
 
 import pytest
 
@@ -119,28 +119,43 @@ def test_the_artwork_install_hint_follows_the_install_method(monkeypatch):
     assert monitor.ntfy_images_install_command().startswith('pip3 install "Pillow')
 
 
-# Verifies a masked secret discloses no part of its value, since diagnostic output reaches public bug reports
-def test_a_masked_secret_discloses_nothing():
+# Verifies a described secret discloses no part of its value, since diagnostic output reaches public bug reports
+def test_a_described_secret_discloses_nothing():
     secret = "ABCDEFGHIJKLMNOP"
 
-    masked = monitor.mask_secret(secret)
+    described = str(monitor.secret_fields(secret, "STEAM_API_KEY"))
 
-    assert masked == "<redacted>"
     for length in range(2, len(secret) + 1):
-        assert secret[:length] not in masked
-        assert secret[-length:] not in masked
+        assert secret[:length] not in described
+        assert secret[-length:] not in described
 
 
-# Verifies a short secret is not treated differently from a long one
-def test_a_short_secret_is_masked_the_same_way():
-    assert monitor.mask_secret("ab") == "<redacted>"
-    assert monitor.mask_secret("short") == "<redacted>"
+# Verifies a short secret is described the same way as a long one, since only its presence is reported
+def test_a_short_secret_is_described_the_same_way():
+    assert monitor.secret_fields("ab")["value"] == "set"
+    assert monitor.secret_fields("short")["value"] == "set"
 
 
 # Verifies an absent secret is named as absent instead of reading as a value that is present
 def test_an_absent_secret_is_reported_as_not_set():
-    assert monitor.mask_secret("") == "(not set)"
-    assert monitor.mask_secret(None) == "(not set)"
+    assert monitor.secret_fields("")["value"] == "not set"
+    assert monitor.secret_fields(None)["value"] == "not set"
+
+
+# Verifies an unedited placeholder is reported as absent rather than as a loaded secret
+def test_a_placeholder_secret_is_reported_as_not_set():
+    assert monitor.secret_fields("your_steam_api_key", "STEAM_API_KEY")["value"] == "not set"
+
+
+# The diagnostic line is documented as comma-separated key=value fields, so the length travels as its own field
+@pytest.mark.parametrize("key, value, fields", [
+    ("STEAM_API_KEY", "0123456789ABCDEF0123456789ABCDEF", {"value": "set", "chars": 32}),
+    ("SMTP_PASSWORD", "a-password-the-user-picked", {"value": "set", "chars": None}),
+    ("STEAM_API_KEY", "", {"value": "not set", "chars": None}),
+])
+def test_no_secret_field_value_carries_a_comma(key, value, fields):
+    assert monitor.secret_fields(value, key) == fields
+    assert all("," not in str(part) for part in fields.values())
 
 
 # Verifies the setup advice names the files this run was given instead of sending the user to the default ones

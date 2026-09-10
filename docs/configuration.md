@@ -158,6 +158,15 @@ steam_monitor <steam_target> --env-file none
 
 As a fallback, you can also store secrets in the configuration file or source code.
 
+A forgotten `export` can shadow the dotenv file invisibly, so `--debug` names every secret and the source it resolved from, never the value:
+
+```text
+[DEBUG 12:00:00] Secret resolution: name=STEAM_API_KEY, source=environment, value=set, chars=32
+[DEBUG 12:00:00] Secret resolution: name=SMTP_PASSWORD, source=dotenv file, value=set
+```
+
+A secret still holding its `your_...` placeholder counts as unset and is left out, and a run with no secret anywhere says so on one line. A length appears only for the secrets whose length the provider issues, never for a password you chose.
+
 ## TLS Verification
 
 The tool verifies the TLS certificate of every server it contacts: the Steam Web API, the connectivity check endpoint, the mail server that delivers email alerts and, when enabled, the webhook service.

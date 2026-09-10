@@ -322,6 +322,51 @@ def test_placeholder_secrets_are_not_reported_as_loaded(tmp_path, monkeypatch, r
     assert "SMTP_PASSWORD" not in from_file + from_environment + from_settings + from_command_line
 
 
+# Verifies every layer that can supply a secret is traced, not only the ones the environment happened to carry
+@pytest.mark.parametrize("argv, env, expected", [
+    ([], {}, "name=SMTP_PASSWORD, source=configuration file, value=set"),
+    ([], {"NTFY_ACCESS_TOKEN": "tk_exported_token"}, "name=NTFY_ACCESS_TOKEN, source=environment, value=set"),
+    (["--webhook-url", "https://ntfy.sh/some-topic"], {}, "name=WEBHOOK_URL, source=command line, value=set"),
+])
+def test_every_secret_layer_is_traced(tmp_path, monkeypatch, capsys, restored_globals, argv, env, expected):
+    for name in ("WEBHOOK_URL", "SMTP_PASSWORD", "NTFY_ACCESS_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    config = write_config(tmp_path, 'SMTP_PASSWORD = "a-password-the-user-picked"\n')
+
+    run_startup(monkeypatch, ["--debug"] + argv, config)
+
+    assert f"Secret resolution: {expected}" in capsys.readouterr().out
+
+
+# The command line is applied after the other layers, so a trace taken any earlier reports the value it replaced
+def test_a_command_line_secret_reports_where_it_came_from(tmp_path, monkeypatch, capsys, restored_globals):
+    config = write_config(tmp_path, 'STEAM_API_KEY = "steam-api-key-from-the-config-fi"\n')
+
+    run_startup(monkeypatch, ["--debug", "--steam-api-key", "0123456789ABCDEF0123456789ABCDEF"], config)
+
+    traces = [line for line in capsys.readouterr().out.splitlines() if "Secret resolution: name=STEAM_API_KEY" in line]
+    assert len(traces) == 1
+    assert traces[0].endswith("Secret resolution: name=STEAM_API_KEY, source=command line, value=set, chars=32")
+
+
+# Verifies a run with no secret anywhere says so, rather than leaving the question unanswered
+def test_a_run_with_no_secrets_says_nothing_was_resolved(tmp_path, monkeypatch, capsys, restored_globals):
+    for name in monitor.SECRET_KEYS:
+        monkeypatch.delenv(name, raising=False)
+    config = write_config(tmp_path)
+
+    monkeypatch.setattr(monitor, "check_internet", lambda *args, **kwargs: True)
+    monkeypatch.setattr("sys.argv", ["steam_monitor.py", "76561197960435530", "--debug", "--doctor", "--env-file", "none", "--config-file", str(config)])
+    with pytest.raises(SystemExit):
+        monitor.main()
+
+    output = capsys.readouterr().out
+    assert "Secret resolution:" not in output
+    assert "No private settings were resolved from config, dotenv, environment or the command line" in output
+
+
 # Verifies the settings count is a debug trace rather than a verbose line, since it says nothing a user acts on
 def test_the_config_settings_count_is_a_debug_only_trace(tmp_path, monkeypatch, capsys):
     config = tmp_path / "steam_monitor.conf"
