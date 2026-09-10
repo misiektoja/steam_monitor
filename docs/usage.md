@@ -1,5 +1,20 @@
 # Usage
 
+<a id="command-format"></a>
+## Command Format by Installation Method
+
+Examples use the PyPI command. For a downloaded script, run commands from the directory containing `steam_monitor.py` and keep the same arguments:
+
+| Installation | Command |
+| --- | --- |
+| PyPI or pipx | `steam_monitor [OPTIONS]` |
+| Manual script on macOS or Linux | `python3 steam_monitor.py [OPTIONS]` |
+| Manual script on Windows | `python steam_monitor.py [OPTIONS]` |
+
+For example, `steam_monitor --setup` becomes `python3 steam_monitor.py --setup` on macOS or Linux. Use `python` on Windows. Replace placeholders such as `<steam_target>` with a Steam64 ID or complete Steam community profile URL.
+
+For first-time configuration, follow [Setup & First Run](setup-and-first-run.md). Use [Doctor Preflight](troubleshooting.md#doctor-preflight) to check a setup before monitoring.
+
 The tool has two modes. **Monitoring mode** watches a profile continuously and sends alerts as things change. **User information mode** prints a detailed profile snapshot once and exits.
 
 ## Detailed User Information Display Mode

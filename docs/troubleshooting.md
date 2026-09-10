@@ -80,3 +80,15 @@ If long paths or game titles wrap and make the output hard to read, set `TRUNCAT
 Debug mode is the fastest way to find out why a tracked feature reports nothing. Steam level, XP, friends list and games library lookups each degrade quietly when Steam refuses them, usually because the profile is private. Debug names the endpoint that failed and verbose adds a line saying the matching alert cannot fire, once when the feature stops working and once when it works again. Verbose is the lighter of the two when the question is only whether monitoring is still running. Debug also records why ntfy artwork preparation fell back to text.
 
 Secret values are never printed by either mode. Redaction happens inside both printers rather than at each call site, so a known secret is replaced with `<redacted>` no matter which line interpolates it. The webhook destination is traced by host name alone. Debug output is switched off entirely for the duration of `--set-steam-api-key` and `--set-webhook-url`, so a pasted value cannot reach the console or the log.
+
+## Installation and Command Problems
+
+If Python or `pip` is missing, use the [Python install walkthrough](installation.md#new-to-python-install-everything).
+
+If `steam_monitor` is not found after installation, close the terminal and open it again. On Windows with Python Install Manager, run `py install --refresh` to refresh command aliases. For a pipx installation, run `pipx ensurepath` then reopen the terminal. If you downloaded the script, use the [manual command](usage.md#command-format) from its directory.
+
+If `pip` reports an externally managed environment, follow the pipx steps in [Installation](installation.md#install-steam-monitor-after-python-check). Use `pipx upgrade steam_monitor` for later upgrades.
+
+If the tool cannot import a dependency, install the dependencies with the same Python interpreter that runs the script. Use `python3 -m pip install -r requirements.txt` on macOS or Linux, or `python -m pip install -r requirements.txt` on Windows, with the requirements file matching your downloaded script.
+
+If a new terminal cannot find your saved settings, return to the directory used during setup or pass both `--config-file` and `--env-file` explicitly. Run `steam_monitor --doctor <steam_target>` to see which settings are loaded.

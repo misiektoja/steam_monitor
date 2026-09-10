@@ -1,7 +1,12 @@
 # Setup & First Run
 
-This page assumes steam_monitor is already installed. If it is not, start with [Installation](installation.md).
+## Before You Start
 
+Install the tool using [Installation](installation.md). You will need a Steam64 ID or complete Steam community profile URL and the [Steam Web API key](#steam-web-api-key). The wizard collects credentials through hidden prompts.
+
+Open a terminal in the directory where you want to keep the configuration and monitoring output. Later commands should use that directory or explicitly select the same `--config-file` and `--env-file` paths. Manual installations use the [command equivalents](usage.md#command-format).
+
+<a id="setup-wizard"></a>
 ## Guided Setup
 
 The quickest way to a working configuration is to answer a few questions:
@@ -90,3 +95,7 @@ In order to monitor Steam user activity, proper privacy settings need to be enab
 The user should go to [Steam Privacy Settings](https://steamcommunity.com/my/edit/settings).
 
 The value in **My Profile → Game details** should be set to **Friends Only** or **Public**.
+
+## Continue with Usage
+
+Use [Usage](usage.md) for monitoring and output options or [Configuration](configuration.md) to adjust saved settings. If setup or monitoring fails, run [Doctor Preflight](troubleshooting.md#doctor-preflight) and follow the reported recovery steps.

@@ -15,17 +15,27 @@ Powerful tool for real-time tracking of **Steam players' activities**.
 
 **Full documentation: [misiektoja.github.io/steam_monitor](https://misiektoja.github.io/steam_monitor/)**
 
-### 🚀 Quick Install
+<a id="-quick-install"></a>
+<a id="-quick-install-run"></a>
+### 🚀 Quick Install & Run
+
+New to Python or unsure what is installed? Follow the [Python install walkthrough](https://misiektoja.github.io/steam_monitor/installation/#new-to-python-install-everything) first.
+
+Install from PyPI:
 
 ```sh
 pip install steam_monitor
 ```
 
-The guided setup asks a few questions and writes a ready-to-run configuration:
+Run the setup wizard:
 
 ```sh
 steam_monitor --setup
 ```
+
+The wizard asks for the target, authentication, polling intervals and optional notifications. Review the settings before saving them. See [Setup & First Run](https://misiektoja.github.io/steam_monitor/setup-and-first-run/) for the service-specific steps.
+
+For the manual single-file method, dependencies and upgrade commands, see [Installation](https://misiektoja.github.io/steam_monitor/installation/).
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/steam_monitor/refs/heads/main/assets/steam_monitor.png" alt="steam_monitor_screenshot" width="85%"/>
@@ -42,11 +52,32 @@ steam_monitor --setup
 - **CSV export** of every activity and profile change, with **status persistence** across restarts
 - **Flexible configuration** through config files, dotenv files, environment variables and command-line arguments
 
+<a id="common-commands"></a>
+## Common Commands
+
+Use [Quick Install & Run](#-quick-install-run) for first-time setup. These examples use the PyPI command. See [Command Format by Installation Method](https://misiektoja.github.io/steam_monitor/usage/#command-format) for manual-script equivalents.
+
+Replace the target placeholders with a Steam64 ID or complete Steam community profile URL. Monitoring requires the [Steam Web API key](https://misiektoja.github.io/steam_monitor/setup-and-first-run/#steam-web-api-key) described in the setup guide.
+
+| I want to... | Run this |
+| --- | --- |
+| Configure the target, credentials and alerts | `steam_monitor --setup` |
+| Start monitoring with saved credentials | `steam_monitor <steam_target>` |
+| Check setup before monitoring | `steam_monitor --doctor <steam_target>` |
+| Enter or replace credentials through hidden prompts | `steam_monitor --set-steam-api-key` |
+| Use a specific configuration and secrets file | `steam_monitor --config-file steam_monitor.conf --env-file .env <steam_target>` |
+| Show profile details once | `steam_monitor <steam_target> -i` |
+| List every supported command-line option | `steam_monitor --help` |
+
+The monitored account must expose the activity described in [User Privacy Settings](https://misiektoja.github.io/steam_monitor/setup-and-first-run/#user-privacy-settings).
+
+Monitoring runs until you press `Ctrl+C`. For email, Discord and ntfy alerts, CSV output and service-specific commands, see [Usage](https://misiektoja.github.io/steam_monitor/usage/). If a run fails, start with [Doctor Preflight](https://misiektoja.github.io/steam_monitor/troubleshooting/#doctor-preflight).
+
 ## Documentation
 
 | Page | What it covers |
 | --- | --- |
-| [Installation](https://misiektoja.github.io/steam_monitor/installation/) | Requirements, installing from PyPI or by hand, upgrading |
+| [Installation](https://misiektoja.github.io/steam_monitor/installation/) | Python walkthrough, PyPI or manual installation, upgrades |
 | [Setup & First Run](https://misiektoja.github.io/steam_monitor/setup-and-first-run/) | The guided wizard, the Steam Web API key, profile visibility |
 | [Configuration](https://misiektoja.github.io/steam_monitor/configuration/) | Config file, SMTP, webhooks, storing secrets, check intervals |
 | [Usage](https://misiektoja.github.io/steam_monitor/usage/) | Monitoring mode, user information mode, notifications, CSV export, signals, coloring logs with GRC |
