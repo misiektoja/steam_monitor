@@ -481,6 +481,9 @@ EMAIL_UNUSABLE_CHECK_LABEL = "Email alerts are enabled but unusable"
 # List of secret keys to load from env/config
 SECRET_KEYS = ("STEAM_API_KEY", "SMTP_PASSWORD", "WEBHOOK_URL", "NTFY_ACCESS_TOKEN")
 
+# Secrets the provider issues at one length, where a wrong character count is the fault a diagnostic run has to show
+FIXED_LENGTH_SECRET_KEYS = frozenset(("STEAM_API_KEY",))
+
 # Secrets supplied as arguments. The dotenv and environment lookup cannot see them, so they are recorded here
 COMMAND_LINE_SECRET_KEYS = frozenset()
 
@@ -936,13 +939,8 @@ def apply_diagnostic_cli_flags(args):
         DEBUG_MODE = True
 
 
-# Returns a placeholder reporting only whether a secret is set, never any part of its value
-def mask_secret(value):
-    # Diagnostic output is meant to be pasted into public bug reports, so not even a prefix of a live key may appear.
-    # Which secret is loaded is answered by its name and source instead, which secret_sources reports.
-    if value is None or not str(value):
-        return "(not set)"
-    return "<redacted>"
+# Returns the diagnostic fields describing one secret, keeping the length out of the value so a line still splits on ", "
+def secret_fields(value, key=None): return {"value": "set" if doctor_value_is_set(value) else "not set", "chars": len(str(value).strip()) if key in FIXED_LENGTH_SECRET_KEYS and doctor_value_is_set(value) else None}
 
 
 # Returns the newest Pillow release that still supports the running Python version
@@ -3247,6 +3245,13 @@ def doctor_secret_sources(env_path=None):
     return from_file, from_environment, from_settings, from_command_line
 
 
+# Returns the source each configured secret resolved from, so a debug run and the doctor cannot disagree
+def secret_source_labels(env_path=None):
+    grouped = zip(("dotenv file", "environment", "configuration file", "command line"), doctor_secret_sources(env_path), strict=True)
+    labels = {name: source for source, names in grouped for name in names}
+    return {name: labels[name] for name in SECRET_KEYS if name in labels}
+
+
 # Reports which secrets are in effect and where each one was read from, by name and never by value
 def doctor_secret_checks(env_path=None):
     from_file, from_environment, from_settings, from_command_line = doctor_secret_sources(env_path)
@@ -5470,7 +5475,7 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
     print(f"* Fetching details for Steam user with ID '{steamid_coloured}'...\n")
 
     try:
-        debug_print("Opening the Steam Web API", steamid=steamid, key=mask_secret(STEAM_API_KEY))
+        debug_print("Opening the Steam Web API", steamid=steamid, key=secret_fields(STEAM_API_KEY)["value"])
         s_api = steam_web_api_client()
         s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
         s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
@@ -5693,7 +5698,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         print_recovery_error(e, context="file.unwritable")
 
     try:
-        debug_print("Opening the Steam Web API", steamid=steamid, key=mask_secret(STEAM_API_KEY))
+        debug_print("Opening the Steam Web API", steamid=steamid, key=secret_fields(STEAM_API_KEY)["value"])
         s_api = steam_web_api_client()
         s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
         s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
@@ -7209,11 +7214,7 @@ def main():
                 print_monitor_recovery(RecoveryError(missing_dependency_advice("python-dotenv", f"The dotenv file '{env_path}' was not loaded", "pip3 install python-dotenv", "Or export the secrets as environment variables")), "runtime", label="Warning")
 
     # Exported secrets apply on their own, so a dotenv file is an alternative to the environment rather than a precondition
-    applied_secrets = load_secrets_from_environment()
-    if applied_secrets:
-        secret_source_map = secret_sources(env_path)
-        for secret, _ in applied_secrets:
-            debug_print("Secret resolution", name=secret, source=secret_source_map.get(secret, "environment"), value=mask_secret(globals().get(secret)))
+    load_secrets_from_environment()
 
     if args.steam_api_key:
         STEAM_API_KEY = args.steam_api_key
@@ -7222,6 +7223,13 @@ def main():
 
     # Assigned once from the arguments rather than accumulated, so a second run in one process starts clean
     COMMAND_LINE_SECRET_KEYS = frozenset(name for name, supplied in (("STEAM_API_KEY", args.steam_api_key), ("WEBHOOK_URL", args.webhook_url)) if supplied)
+
+    # Traced here rather than at each layer, so the line reports the value that survived every later override
+    resolved_secrets = secret_source_labels(env_path)
+    for secret, source in resolved_secrets.items():
+        debug_print("Secret resolution", name=secret, source=source, **secret_fields(globals().get(secret), secret))
+    if not resolved_secrets:
+        debug_print("No private settings were resolved from config, dotenv, environment or the command line")
 
     # Setup and doctor exit before the monitoring path re-initializes colour, so the configured
     # COLORED_OUTPUT, COLOR_THEME and --no-color are applied here rather than leaving both screens plain
