@@ -1884,7 +1884,7 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
         ipaddress.ip_address(str(SMTP_HOST))
     except ValueError:
         if not fqdn_re.search(str(SMTP_HOST)):
-            print("Error sending email - SMTP settings are incorrect (invalid IP address/FQDN in SMTP_HOST)")
+            print_recovery_error(context="email", detail="The SMTP settings are incorrect (invalid IP address/FQDN in SMTP_HOST)")
             return 1
 
     try:
@@ -1892,23 +1892,23 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
         if not (1 <= port <= 65535):
             raise ValueError
     except ValueError:
-        print("Error sending email - SMTP settings are incorrect (invalid port number in SMTP_PORT)")
+        print_recovery_error(context="email", detail="The SMTP settings are incorrect (invalid port number in SMTP_PORT)")
         return 1
 
     if not email_re.search(str(SENDER_EMAIL)) or not email_re.search(str(RECEIVER_EMAIL)):
-        print("Error sending email - SMTP settings are incorrect (invalid email in SENDER_EMAIL or RECEIVER_EMAIL)")
+        print_recovery_error(context="email", detail="The SMTP settings are incorrect (invalid email in SENDER_EMAIL or RECEIVER_EMAIL)")
         return 1
 
     if not SMTP_USER or not isinstance(SMTP_USER, str) or SMTP_USER == "your_smtp_user" or not SMTP_PASSWORD or not isinstance(SMTP_PASSWORD, str) or SMTP_PASSWORD == "your_smtp_password":
-        print("Error sending email - SMTP settings are incorrect (check SMTP_USER & SMTP_PASSWORD variables)")
+        print_recovery_error(context="email", detail="The SMTP settings are incorrect (check SMTP_USER & SMTP_PASSWORD variables)")
         return 1
 
     if not subject or not isinstance(subject, str):
-        print("Error sending email - SMTP settings are incorrect (subject is not a string or is empty)")
+        print_recovery_error(context="email", detail="The SMTP settings are incorrect (subject is not a string or is empty)")
         return 1
 
     if not body and not body_html:
-        print("Error sending email - SMTP settings are incorrect (body and body_html cannot be empty at the same time)")
+        print_recovery_error(context="email", detail="The SMTP settings are incorrect (body and body_html cannot be empty at the same time)")
         return 1
 
     debug_print("SMTP delivery", host=SMTP_HOST, port=SMTP_PORT, user=SMTP_USER, starttls=bool(use_ssl), timeout=f"{smtp_timeout}s")
@@ -1932,8 +1932,8 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
         smtpObj.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, email_msg.as_string())
         smtpObj.quit()
     except Exception as e:
-        print(f"Error sending email: {sanitize_error_text(e)}")
         debug_swallowed_exception("Sending email", e)
+        print_recovery_error(e, context="email")
         return 1
     debug_print("SMTP delivery", host=SMTP_HOST, port=SMTP_PORT, recipient=RECEIVER_EMAIL, outcome="OK")
     verbose_print(f"Email delivered to {RECEIVER_EMAIL}: {subject}")
@@ -3004,9 +3004,9 @@ def build_ntfy_image(image_url=""):
         return None
 
 
-# Prints one webhook error without revealing private URLs, tokens or response bodies
-def print_webhook_error(message):
-    print(f"Error sending webhook: {sanitize_error_text(message)}")
+# Reports one webhook failure through the recovery block, without revealing private URLs, tokens or response bodies
+def print_webhook_error(message, error=None):
+    print_recovery_error(error, context="webhook", detail=str(message))
 
 
 # Sends one webhook request with the destination, deadline and redirect policy every delivery shares
@@ -3086,7 +3086,7 @@ def send_webhook(title, description, notification_type="status", force=False, sl
                     sleep_func(delay)
                 continue
             if not retryable or attempt == WEBHOOK_MAX_ATTEMPTS - 1:
-                print_webhook_error(f"the service returned HTTP {response.status_code}")
+                print_webhook_error(f"The webhook service returned HTTP {response.status_code}", req.HTTPError(response=response))
                 return 1
             delay = webhook_retry_after_seconds(response) if response.status_code == 429 else WEBHOOK_FALLBACK_RETRY_SECONDS
             debug_print("Webhook delivery", channel=provider, retry_in=f"{delay}s")
@@ -3099,10 +3099,10 @@ def send_webhook(title, description, notification_type="status", force=False, sl
                 sleep_func(WEBHOOK_FALLBACK_RETRY_SECONDS)
                 continue
             if attempt == WEBHOOK_MAX_ATTEMPTS - 1:
-                print_webhook_error("the service could not be reached")
+                print_webhook_error(f"The webhook service could not be reached ({type(exc).__name__})")
                 return 1
             sleep_func(WEBHOOK_FALLBACK_RETRY_SECONDS)
-    print_webhook_error("delivery failed")
+    print_webhook_error("The webhook delivery did not complete")
     return 1
 
 

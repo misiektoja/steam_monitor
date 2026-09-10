@@ -1,5 +1,9 @@
 """Tests that every failure carries a stable code, an actionable fix, and no secrets."""
 
+import ast
+from pathlib import Path
+from unittest.mock import Mock
+
 import pytest
 import requests as req
 
@@ -184,8 +188,6 @@ def test_the_printed_failure_carries_its_fix(capsys, restored_globals):
 
 # Verifies no user-facing error is printed outside the classifier, which a runtime test cannot prove
 def test_no_error_is_printed_outside_the_classifier():
-    from pathlib import Path
-
     source = (Path(__file__).resolve().parents[1] / "steam_monitor.py").read_text(encoding="utf-8")
     allowed_line_markers = (
         "MINIMUM_PYTHON_VERSION_TEXT",  # Runs before the classifier and its dependencies are importable
@@ -198,11 +200,105 @@ def test_no_error_is_printed_outside_the_classifier():
         stripped = line.strip()
         if stripped.startswith("#") or "print_recovery_error" in stripped or "print_monitor_recovery" in stripped:
             continue
-        if 'print(f"* Error' in stripped or 'print("* Error' in stripped:
+        if any(marker in stripped for marker in ('print(f"* Error', 'print("* Error', 'print(f"Error', 'print("Error')):
             if not any(marker in stripped for marker in allowed_line_markers):
                 offenders.append(f"{number}: {stripped}")
 
     assert not offenders, "errors printed without recovery advice:\n" + "\n".join(offenders)
+
+
+# Applies a usable mail server, so a test that breaks one setting is not also broken by the others
+def configure_smtp(monkeypatch):
+    monkeypatch.setattr(monitor, "SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(monitor, "SMTP_PORT", 587)
+    monkeypatch.setattr(monitor, "SMTP_USER", "sender")
+    monkeypatch.setattr(monitor, "SMTP_PASSWORD", "not-a-real-password")
+    monkeypatch.setattr(monitor, "SENDER_EMAIL", "sender@example.com")
+    monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "receiver@example.com")
+
+
+@pytest.mark.parametrize("setting, value", [
+    ("SMTP_HOST", "not a host"),
+    ("SMTP_PORT", "not a port"),
+    ("SENDER_EMAIL", "not-an-email"),
+    ("SMTP_PASSWORD", ""),
+])
+# Verifies a refused setting names the fix and the guide, so no delivery path reports without saying what to do
+def test_a_refused_smtp_setting_carries_the_shared_error_block(capsys, monkeypatch, setting, value):
+    configure_smtp(monkeypatch)
+    monkeypatch.setattr(monitor, setting, value)
+
+    assert monitor.send_email("subject", "body", "", True, smtp_timeout=1) == 1
+
+    output = capsys.readouterr().out
+    assert "* Error: The SMTP settings are incorrect (" in output
+    assert "To fix: Check SMTP_HOST, SMTP_PORT, SENDER_EMAIL and RECEIVER_EMAIL in the configuration file" in output
+    assert f"Guide: {monitor.SMTP_GUIDE_URL}" in output
+
+
+# Verifies a message the tool cannot send carries the same block as an unusable setting
+def test_an_unsendable_message_carries_the_shared_error_block(capsys, monkeypatch):
+    configure_smtp(monkeypatch)
+
+    assert monitor.send_email("", "body", "", True, smtp_timeout=1) == 1
+    assert monitor.send_email("subject", "", "", True, smtp_timeout=1) == 1
+
+    output = capsys.readouterr().out
+    assert output.count("* Error: The SMTP settings are incorrect (") == 2
+    assert output.count(f"Guide: {monitor.SMTP_GUIDE_URL}") == 2
+
+
+# Verifies a mail server that refuses the session is reported with the fix rather than as a bare line
+def test_a_refused_smtp_session_carries_the_shared_error_block(capsys, monkeypatch):
+    configure_smtp(monkeypatch)
+    monkeypatch.setattr(monitor.smtplib, "SMTP", Mock(side_effect=OSError("connection refused")))
+
+    assert monitor.send_email("subject", "body", "", True, smtp_timeout=1) == 1
+
+    output = capsys.readouterr().out
+    assert "* Error: The SMTP server could not be reached" in output
+    assert f"Guide: {monitor.SMTP_GUIDE_URL}" in output
+
+
+# Verifies a refused webhook delivery carries the fix and the guide the email failures carry
+def test_a_refused_webhook_delivery_carries_the_shared_error_block(capsys, monkeypatch, restored_globals):
+    monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", True)
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "discord")
+    monkeypatch.setattr(monitor, "WEBHOOK_URL", "https://discord.com/api/webhooks/123/private-token")
+    monkeypatch.setattr(monitor, "post_webhook_request", Mock(return_value=http_error(404).response))
+
+    assert monitor.send_webhook("title", "body", "status", force=True, sleeper=lambda _seconds: None) == 1
+
+    output = capsys.readouterr().out
+    assert "* Error: The webhook service returned HTTP 404" in output
+    assert "To fix: " in output
+    assert f"Guide: {monitor.WEBHOOK_GUIDE_URL}" in output
+
+
+# Verifies an unusable webhook setting is refused with the same block, so configuration and delivery read alike
+def test_an_unusable_webhook_setting_carries_the_shared_error_block(capsys, monkeypatch, restored_globals):
+    monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", True)
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "carrier pigeon")
+    monkeypatch.setattr(monitor, "WEBHOOK_URL", "https://discord.com/api/webhooks/123/private-token")
+
+    assert monitor.send_webhook("title", "body", "status", force=True) == 1
+
+    output = capsys.readouterr().out
+    assert "* Error: WEBHOOK_PROVIDER must be discord or ntfy" in output
+    assert f"Guide: {monitor.WEBHOOK_GUIDE_URL}" in output
+
+
+# Verifies no delivery path prints at all, since a print there is an error line that skipped the recovery block
+def test_no_delivery_path_prints_outside_the_recovery_block():
+    source = (Path(__file__).resolve().parents[1] / "steam_monitor.py").read_text(encoding="utf-8")
+    delivery = {"send_email", "send_webhook", "print_webhook_error", "smtp_connect_and_login", "post_webhook_request"}
+    offenders = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.FunctionDef) or node.name not in delivery:
+            continue
+        offenders.extend(f"{node.name}:{call.lineno}" for call in ast.walk(node) if isinstance(call, ast.Call) and getattr(call.func, "id", "") == "print")
+
+    assert not offenders, "delivery paths printing outside the recovery block: " + ", ".join(offenders)
 
 
 # Verifies the missing-target advice names the accepted forms and a command carrying the paths this run was given
