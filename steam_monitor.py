@@ -1936,7 +1936,7 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
         debug_swallowed_exception("Sending email", e)
         return 1
     debug_print("SMTP delivery", host=SMTP_HOST, port=SMTP_PORT, recipient=RECEIVER_EMAIL, outcome="OK")
-    verbose_print(f"Email delivered to {RECEIVER_EMAIL}")
+    verbose_print(f"Email delivered to {RECEIVER_EMAIL}: {subject}")
     return 0
 
 
@@ -3093,11 +3093,11 @@ def send_webhook(title, description, notification_type="status", force=False, sl
                 response = post_webhook_request(data=discord_payload, headers=request_headers)
             else:
                 response = post_webhook_request(json=discord_payload, headers=request_headers)
-            if 200 <= response.status_code <= 299:
-                verbose_print(f"Webhook delivered through {provider} (HTTP {response.status_code})")
-                return 0
             retryable = response.status_code == 429 or 500 <= response.status_code <= 599
             debug_print("Webhook delivery", channel=provider, status=response.status_code, retryable=retryable)
+            if 200 <= response.status_code <= 299:
+                verbose_print(f"Webhook delivered through {provider}: {webhook_values['title']}")
+                return 0
             if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
                 use_ntfy_image = False
                 delay = webhook_retry_after_seconds(response) if response.status_code == 429 else WEBHOOK_FALLBACK_RETRY_SECONDS if response.status_code >= 500 else 0.0
