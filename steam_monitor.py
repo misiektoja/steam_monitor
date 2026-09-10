@@ -145,6 +145,15 @@ WEBHOOK_ERROR_NOTIFICATION = True
 # Values support the same placeholders as WEBHOOK_TEMPLATE
 WEBHOOK_HEADERS = {}
 
+# Optional ntfy access token for Bearer authentication
+# Prefer an environment variable or dotenv file instead of storing this token here
+NTFY_ACCESS_TOKEN = ""
+
+# Whether to attach a Steam avatar or game image to supported ntfy alerts
+# Requires the optional Pillow package: pip3 install "steam_monitor[ntfy-images]"
+# Image preparation or delivery failures fall back to text
+NTFY_IMAGES = False
+
 # ----------------------------
 # Advanced Webhook Settings
 # ----------------------------
@@ -185,15 +194,6 @@ WEBHOOK_TEMPLATE = {
 #       ("description", "strip"),
 #   ]
 WEBHOOK_TRANSFORMS = []
-
-# Optional ntfy access token for Bearer authentication
-# Prefer an environment variable or dotenv file instead of storing this token here
-NTFY_ACCESS_TOKEN = ""
-
-# Whether to attach a Steam avatar or game image to supported ntfy alerts
-# Requires the optional Pillow package: pip3 install "steam_monitor[ntfy-images]"
-# Image preparation or delivery failures fall back to text
-NTFY_IMAGES = False
 
 # Whether to periodically check the user's Steam level and total XP for changes
 # (disabled by default to avoid extra API usage)
@@ -287,21 +287,6 @@ ST_LOGFILE = "steam_monitor"
 # Can also be disabled via the -d flag
 DISABLE_LOGGING = False
 
-# Whether to print extra startup and runtime detail
-# Independent of DEBUG_MODE, so enable both to see everything
-# Can also be enabled via the --verbose flag, which turns it on regardless of this setting
-VERBOSE_MODE = False
-
-# Whether to print timestamped diagnostic detail, including every outbound call,
-# each notification delivery attempt and the technical cause of failures
-# Independent of VERBOSE_MODE, so enable both to see everything
-# Can also be enabled via the --debug flag, which turns it on regardless of this setting
-DEBUG_MODE = False
-
-# Whether verbose output confirms each delivered email and webhook alert
-# Applies only when VERBOSE_MODE is enabled
-DELIVERY_CONFIRMATIONS = True
-
 # Controls conversion of separator-only log lines to ASCII:
 #   "Auto" - enable on Windows only (default)
 #   "On"   - enable on every operating system
@@ -378,6 +363,21 @@ COLORED_OUTPUT = True
 #     "help_default": "bright_black",
 # }
 
+# Whether to print extra startup and runtime detail
+# Independent of DEBUG_MODE, so enable both to see everything
+# Can also be enabled via the --verbose flag, which turns it on regardless of this setting
+VERBOSE_MODE = False
+
+# Whether to print timestamped diagnostic detail, including every outbound call,
+# each notification delivery attempt and the technical cause of failures
+# Independent of VERBOSE_MODE, so enable both to see everything
+# Can also be enabled via the --debug flag, which turns it on regardless of this setting
+DEBUG_MODE = False
+
+# Whether verbose output confirms each delivered email and webhook alert
+# Applies only when VERBOSE_MODE is enabled
+DELIVERY_CONFIRMATIONS = True
+
 # Value used by signal handlers increasing/decreasing the check for player activity
 # when user is online/away/snooze (STEAM_ACTIVE_CHECK_INTERVAL); in seconds
 STEAM_ACTIVE_CHECK_SIGNAL_VALUE = 30  # 30 seconds
@@ -418,17 +418,16 @@ WEBHOOK_GAMES_NOTIFICATION = False
 WEBHOOK_NAME_CHANGE_NOTIFICATION = False
 WEBHOOK_ERROR_NOTIFICATION = False
 WEBHOOK_HEADERS = {}
-WEBHOOK_TEMPLATE = {}
-WEBHOOK_TRANSFORMS = []
 NTFY_ACCESS_TOKEN = ""
 NTFY_IMAGES = False
+WEBHOOK_TEMPLATE = {}
+WEBHOOK_TRANSFORMS = []
 STEAM_LEVEL_XP_CHECK = False
 STEAM_LEVEL_XP_NOTIFICATION = False
 FRIENDS_CHECK = False
 FRIENDS_NOTIFICATION = False
 GAMES_LIBRARY_CHECK = False
 GAMES_LIBRARY_NOTIFICATION = False
-PROFILE_CSV_FILE = ""
 STEAM_CHECK_INTERVAL = 0
 STEAM_ACTIVE_CHECK_INTERVAL = 0
 OFFLINE_INTERRUPT = 0
@@ -439,6 +438,7 @@ CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
 VERIFY_SSL = True
 CSV_FILE = ""
+PROFILE_CSV_FILE = ""
 STEAM_STATUS_FILE = ""
 DOTENV_FILE = ""
 FILE_SUFFIX = ""
@@ -446,18 +446,18 @@ ST_LOGFILE = ""
 DISABLE_LOGGING = False
 ASCII_LOG_SEPARATORS = "Auto"
 TRUNCATE_CHARS = 0
-VERBOSE_MODE = False
-DEBUG_MODE = False
-DELIVERY_CONFIRMATIONS = True
+HORIZONTAL_LINE = 0
+CLEAR_SCREEN = False
+COLORED_OUTPUT = False
 
 # True once monitoring has printed its header, so a verbose notice after that closes its own block
 MONITORING_ACTIVE = False
 
-HORIZONTAL_LINE = 0
-CLEAR_SCREEN = False
-STEAM_ACTIVE_CHECK_SIGNAL_VALUE = 0
-COLORED_OUTPUT = False
 COLOR_THEME = {}
+VERBOSE_MODE = False
+DEBUG_MODE = False
+DELIVERY_CONFIRMATIONS = True
+STEAM_ACTIVE_CHECK_SIGNAL_VALUE = 0
 
 exec(CONFIG_BLOCK, globals())
 
