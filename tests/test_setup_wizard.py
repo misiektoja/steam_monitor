@@ -1052,7 +1052,20 @@ def test_a_disabled_config_destination_is_refused(tmp_path, capsys):
 
     out = capsys.readouterr().out
     assert code == 1
-    assert "--setup requires a config destination" in out
+    assert "--setup has nowhere to write the configuration" in out
+    assert "Replace '--config-file none' with a writable path, or drop the flag to write steam_monitor.conf in the current directory" in out
+    assert monitor.CONFIG_FILE_GUIDE_URL in out
+
+
+# Verifies a dotenv destination switched off is refused with the flag to replace and the secrets guide
+def test_a_disabled_dotenv_destination_is_refused(tmp_path, capsys):
+    code = monitor.run_setup_wizard(config_file=str(tmp_path / "steam_monitor.conf"), env_file="none", interactive=True)
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "--setup has nowhere to write the private settings" in out
+    assert "Replace '--env-file none' with a writable path, or drop the flag to write .env in the current directory" in out
+    assert monitor.SECRETS_GUIDE_URL in out
 
 
 # Verifies an existing config can be kept by sending the run to another path instead

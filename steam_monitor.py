@@ -2515,6 +2515,13 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
             return advice("file.unreadable", safe_detail or "A file the tool keeps could not be read", "Check the path and its permissions, or delete the file so it is recreated", False)
     if context == "file.exists":
         return advice("file.exists", safe_detail or "The destination file already exists", f"Re-run with --force to replace it after a timestamped backup, or write to a different path with '{render_command(['--generate-config', '<new-file>'], include_paths=False)}'", False, CONFIG_GUIDE_URL)
+
+    if context == "file.unwritable":
+        # The wizard reaches this either because a destination was switched off or because the path cannot be written
+        if "nowhere to write the private settings" in message:
+            return advice("file.unwritable", safe_detail or "--setup has nowhere to write the private settings", "Replace '--env-file none' with a writable path, or drop the flag to write .env in the current directory", False, SECRETS_GUIDE_URL)
+        if "nowhere to write the configuration" in message:
+            return advice("file.unwritable", safe_detail or "--setup has nowhere to write the configuration", f"Replace '--config-file none' with a writable path, or drop the flag to write {DEFAULT_CONFIG_FILENAME} in the current directory", False, CONFIG_FILE_GUIDE_URL)
         return advice("file.unwritable", safe_detail or "A file the tool keeps could not be written", "Check that the directory exists and is writable, or choose another path", False)
 
     # Runtime, which is the monitoring loop and every Steam Web API call it makes
@@ -3833,9 +3840,9 @@ def _wizard_validate_destination(path, label):
 # Resolves both setup destinations, refusing the disabled settings that leave nowhere to write
 def _wizard_destinations(config_file=None, env_file=None):
     if config_file is not None and str(config_file).casefold() == "none":
-        raise ValueError("--setup requires a config destination. Replace '--config-file none' with a writable path")
+        raise ValueError("--setup has nowhere to write the configuration")
     if env_file is not None and str(env_file).casefold() == "none":
-        raise ValueError("--setup requires a dotenv destination. Replace '--env-file none' with a writable path")
+        raise ValueError("--setup has nowhere to write the private settings")
     config_path = Path(config_file).expanduser() if config_file is not None else Path.cwd() / DEFAULT_CONFIG_FILENAME
     env_path = Path(env_file).expanduser() if env_file is not None else Path.cwd() / ".env"
     return _wizard_validate_destination(config_path, "Configuration destination"), _wizard_validate_destination(env_path, "Dotenv destination")
