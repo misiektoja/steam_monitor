@@ -285,7 +285,7 @@ def test_a_delivered_webhook_is_confirmed_in_verbose(capsys, monkeypatch, diagno
     assert monitor.send_webhook("title", "body", "status", force=True, sleeper=lambda _seconds: None) == 0
 
     output = capsys.readouterr().out
-    assert "* Webhook delivered through discord: title" in output
+    assert "* Webhook delivered through Discord: title" in output
     # The status belongs to the technical trace, so verbose keeps the alert readable and debug keeps the code
     assert "status=204, retryable=False" in output
 

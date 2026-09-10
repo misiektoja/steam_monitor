@@ -3157,7 +3157,7 @@ def send_webhook(title, description, notification_type="status", force=False, sl
             retryable = response.status_code == 429 or 500 <= response.status_code <= 599
             debug_print("Webhook delivery", channel=provider, status=response.status_code, retryable=retryable)
             if 200 <= response.status_code <= 299:
-                verbose_print(f"Webhook delivered through {provider}: {webhook_values['title']}")
+                verbose_print(f"Webhook delivered through {webhook_provider_display_name(provider)}: {webhook_values['title']}")
                 return 0
             if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
                 use_ntfy_image = False
@@ -5161,7 +5161,7 @@ def reload_secrets_signal_handler(sig, frame):
         detected_provider = detect_webhook_provider(WEBHOOK_URL)
         if detected_provider and detected_provider != normalized_webhook_provider():
             WEBHOOK_PROVIDER = detected_provider
-            print(f"* Updated webhook provider to {detected_provider}")
+            print(f"* Updated webhook provider to {webhook_provider_display_name(detected_provider)}")
 
     print_cur_ts("Timestamp:\t\t\t")
 
