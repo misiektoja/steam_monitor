@@ -1,5 +1,6 @@
 """Tests that printed commands, described secrets and guide links match the detected install method."""
 
+import inspect
 import pytest
 
 import steam_monitor as monitor
@@ -167,3 +168,19 @@ def test_setup_advice_names_the_files_this_run_was_given(monkeypatch):
     advice = monitor.classify_recovery_error(ValueError("The mail server settings are incomplete"), context="set_smtp_password")
 
     assert "run python3 steam_monitor.py --setup --config-file /etc/steam.conf --env-file /etc/steam.env" in advice.fix
+
+
+# Verifies the printed-command renderer takes the family's two shared parameters before any tool-specific one
+def test_the_command_renderer_shares_one_contract():
+    parameters = list(inspect.signature(monitor.render_command).parameters.values())
+    assert [parameter.name for parameter in parameters[:2]] == ["arguments", "include_paths"]
+    assert [parameter.default for parameter in parameters[:2]] == [None, True]
+    # A tool-specific extra is keyword-only, so a positional call copied from a sibling cannot bind to it
+    assert all(parameter.kind is inspect.Parameter.KEYWORD_ONLY for parameter in parameters[2:])
+
+
+# Verifies the renderer with no arguments prints the bare command, which is what the help screen puts before each example
+def test_the_renderer_with_no_arguments_prints_the_bare_command():
+    prefix = monitor.render_command(include_paths=False)
+    assert prefix and not prefix.endswith(" ")
+    assert monitor.render_command(["--doctor"], include_paths=False) == f"{prefix} --doctor"

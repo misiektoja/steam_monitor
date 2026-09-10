@@ -706,7 +706,7 @@ def command_targets(explicit_target=None, saved_target=None, placeholder="<steam
 
 
 # Returns a copy-pasteable command line for the detected install method, carrying non-default config and dotenv paths
-def render_command(arguments=None, include_paths=True, config_path=None, env_path=None):
+def render_command(arguments=None, include_paths=True, *, config_path=None, env_path=None):
     parts = list(install_command_prefix())
     parts.extend(str(argument) for argument in (arguments or []))
     # An explicitly passed path is always rendered, while include_paths only governs falling back to the active ones
