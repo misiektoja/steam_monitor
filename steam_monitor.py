@@ -1068,8 +1068,8 @@ _DURATION_RE = re.compile(
 )
 _ONLINE_WORD_RE = re.compile(r"(?i)( online| appeared |\bYes\b)")
 _OFFLINE_WORD_RE = re.compile(r"(?i)( offline| away| snooze|\bNo\b)")
-_BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b")
-_BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b")
+_BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b|\bEnabled\b")
+_BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b|\bDisabled\b")
 _NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \((?:email|webhook)\):\s+)(On|Off)(.*)$")
 # Quoted names such as game titles. At least one word character is required so a run of punctuation between two
 # quotes is not read as a name. The closing quote has to be followed by whitespace, punctuation or the end of the

@@ -138,6 +138,13 @@ def test_liveness_check_timestamp_uses_timestamp_style(colored):
     assert monitor._colorize_line("Liveness check, timestamp:\tWed 26 Aug 2026, 20:23:03") == f"Liveness check, timestamp:\t{colored['timestamp_value']}Wed 26 Aug 2026, 20:23:03{monitor.ANSI_RESET}"
 
 
+# Verifies a startup row reporting a switched feature carries the boolean colours like a True or False row
+@pytest.mark.parametrize(("value", "part"), [("Enabled", "boolean_true"), ("True", "boolean_true"), ("Disabled", "boolean_false"), ("False", "boolean_false")])
+def test_startup_rows_colour_a_switched_feature(colored, value, part):
+    line = monitor._colorize_line(f"* Terminal truncation:          {value}")
+    assert line == f"* Terminal truncation:          {colored[part]}{value}{monitor.ANSI_RESET}"
+
+
 # Verifies the startup banner uses only its explicitly selected colours
 def test_startup_banner_uses_only_its_own_colours(colored, capsys):
     monitor.print_startup_banner()
