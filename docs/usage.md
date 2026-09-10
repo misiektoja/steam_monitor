@@ -303,7 +303,9 @@ As Windows supports limited number of signals, this functionality is available o
 
 ## Terminal Colours
 
-Terminal output is coloured by default. `COLORED_OUTPUT` and `COLOR_THEME` apply to monitoring output and to the `--setup` and `--doctor` screens. `--no-color` turns colour off for all of them.
+Terminal output is coloured by default. `COLORED_OUTPUT` and `COLOR_THEME` apply to monitoring output and to the `--setup`, `--doctor` and `--help` screens. `--no-color` turns colour off for all of them.
+
+The `--help` screen is coloured too. Group headings, option names, the values those options take, the example commands and the comments above them each get their own colour, so the screen can be scanned instead of read.
 
 Turn it off for one run:
 
@@ -356,6 +358,14 @@ COLOR_THEME = {
 | `boolean_true` | `green` | `True`, `Enabled`, `On` and `[PASS]` rows |
 | `boolean_false` | `red` | `False`, `Disabled` and `Off` |
 | `link` | `blue underline` | URLs |
+| `help_heading` | `bright_cyan bold` | The `--help` group headings and example task names |
+| `help_usage` | `bright_white bold` | The `usage:` label |
+| `help_option` | `bright_green` | Option names such as `--doctor` |
+| `help_metavar` | `yellow` | The value each option takes, such as a path or a number of seconds |
+| `help_placeholder` | `bright_magenta` | Values to replace in the help examples |
+| `help_command` | `bright_white` | The commands in the help examples |
+| `help_comment` | `bright_black` | The `#` comment above each help example |
+| `help_default` | `bright_black` | The `(default: ...)` notes |
 
 ## Coloring Log Output with GRC
 
