@@ -248,7 +248,7 @@ def test_a_delivered_email_is_confirmed_in_verbose(capsys, monkeypatch, diagnost
     monkeypatch.setattr(monitor.smtplib, "SMTP", FakeSMTP)
 
     assert monitor.send_email("subject", "body", "", True, smtp_timeout=1) == 0
-    assert "* Email delivered to receiver@example.com: subject" in capsys.readouterr().out
+    assert "* Email delivered to receiver@example.com: 'subject'" in capsys.readouterr().out
 
 
 # Verifies every webhook attempt, status code and retry delay is visible in debug
@@ -285,8 +285,42 @@ def test_a_delivered_webhook_is_confirmed_in_verbose(capsys, monkeypatch, diagno
     assert monitor.send_webhook("title", "body", "status", force=True, sleeper=lambda _seconds: None) == 0
 
     output = capsys.readouterr().out
-    assert "* Webhook delivered through Discord: title" in output
+    assert "* Webhook delivered through Discord: 'title'" in output
     # The status belongs to the technical trace, so verbose keeps the alert readable and debug keeps the code
+    assert "status=204, retryable=False" in output
+
+
+# Verifies DELIVERY_CONFIRMATIONS drops the delivery line without turning the rest of verbose mode off
+def test_delivery_confirmations_can_be_turned_off(capsys, monkeypatch, diagnostics_on):
+    configure_smtp()
+    configure_webhook()
+
+    class FakeSMTP:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def starttls(self, **_kwargs):
+            pass
+
+        def login(self, *_args):
+            pass
+
+        def sendmail(self, *_args):
+            pass
+
+        def quit(self):
+            pass
+
+    monkeypatch.setattr(monitor, "DELIVERY_CONFIRMATIONS", False)
+    monkeypatch.setattr(monitor.smtplib, "SMTP", FakeSMTP)
+    monkeypatch.setattr(monitor, "post_webhook_request", lambda **_kwargs: webhook_response(204))
+
+    assert monitor.send_email("subject", "body", "", True, smtp_timeout=1) == 0
+    assert monitor.send_webhook("title", "body", "status", force=True, sleeper=lambda _seconds: None) == 0
+
+    output = capsys.readouterr().out
+    assert "Email delivered" not in output
+    assert "Webhook delivered" not in output
     assert "status=204, retryable=False" in output
 
 
