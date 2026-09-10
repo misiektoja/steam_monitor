@@ -165,8 +165,8 @@ def test_required_and_optional_dependencies_are_separated(monkeypatch):
 
 
 # Verifies the library the width cap needs is reported, since without it TRUNCATE_CHARS silently stops truncating
-def test_the_truncation_library_is_reported(monkeypatch):
-    installed = [check for check in monitor.doctor_check_environment() if "wcwidth" in check.label]
+def test_the_truncation_library_is_reported():
+    installed = [check for check in monitor.doctor_check_environment(spec_finder=lambda _name: object()) if "wcwidth" in check.label]
     missing = [check for check in monitor.doctor_check_environment(spec_finder=lambda name: None if name == "wcwidth" else object()) if "wcwidth" in check.label]
 
     assert [(check.status, check.detail) for check in installed] == [("PASS", "Used only to measure display width for screen truncation")]
