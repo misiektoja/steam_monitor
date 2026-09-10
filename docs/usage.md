@@ -359,6 +359,8 @@ COLOR_THEME = {
 
 The tool colours the terminal itself, but you can also use [GRC](https://github.com/garabik/grc) to colour logs.
 
+The bundled recipe follows the same colours as the live output. It also covers the other monitors in the family, so one copy in `~/.grc/` colours every tool's logs.
+
 Add to your GRC config (`~/.grc/grc.conf`):
 
 ```
