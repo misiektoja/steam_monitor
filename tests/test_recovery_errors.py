@@ -641,3 +641,12 @@ def test_the_unrecognized_failure_fix_follows_the_diagnostic_mode(monkeypatch):
 
     assert "--debug" in plain
     assert "--debug" not in debugging
+
+
+# A status code is matched as a whole number, so an id or a path that happens to contain the digits is not that status
+def test_a_status_code_inside_a_longer_number_is_not_matched():
+    assert monitor.classify_recovery_error(RuntimeError("profile 76561198004290 unavailable"), context="target").code != "steam.rate_limited"
+    assert monitor.classify_recovery_error(RuntimeError("status 429 returned"), context="target").code == "steam.rate_limited"
+    assert monitor.mentions_status_code("429", "https://example.test/429/status") is False
+    assert monitor.mentions_status_code("429", "HTTP 429 Too Many Requests") is True
+    assert monitor.mentions_status_code("429", "request 14290 failed") is False
