@@ -18,6 +18,12 @@ def read_asset(relative_path):
     return (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
 
 
+# Returns the regexes the secret scanner treats as placeholders rather than leaked credentials
+def placeholder_allowlist_patterns():
+    block = read_asset(".gitleaks.toml").split('description = "Skip placeholders and variable references"', 1)[1]
+    return re.findall(r"'''(.*)'''", block.split("\\n]", 1)[0])
+
+
 # Reads one repository file as parsed YAML
 def read_yaml_asset(relative_path):
     return yaml.safe_load(read_asset(relative_path))
@@ -164,6 +170,17 @@ class TestWorkflowSupplyChain:
 
         supply_chain = read_yaml_asset(".github/workflows/supply-chain.yml")
         assert {"gitleaks", "pip-audit", "sbom"} <= set(supply_chain["jobs"])
+
+    # Verifies the secret scanner accepts the placeholder shapes the suite writes, since the scan CI runs over
+    # the full history reports a fake credential that looks real
+    def test_the_secret_scanner_allows_the_shared_placeholder_shapes(self):
+        patterns = placeholder_allowlist_patterns()
+        for placeholder in ("{api_key}", "{settings.smtp_password}", "{ENV_TOKEN_NAME}", "github_pat_private_wizard_value", "your_smtp_password", "chosen-smtp-password-value"):
+            assert any(re.search(pattern, placeholder) for pattern in patterns), placeholder
+
+        # A value with no placeholder shape stays reportable, or the allowlist would hide a real leak
+        assert not any(re.search(pattern, "NotAPlaceholderValue123456") for pattern in patterns)
+
 
     # The suite is worthless if CI never runs it, so the workflow must invoke pytest and the linter
     def test_ci_runs_the_suite_and_the_linter(self):
