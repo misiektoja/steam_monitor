@@ -3830,6 +3830,7 @@ def _wizard_ask_secret(question, getpass_func=None):
 # Renders one configuration file from the built-in template with the chosen values substituted in
 def generate_config_with_current_values(config_values):
     tree = ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec")
+    template_defaults = _config_template_defaults()
     replacements = {}
     for statement in tree.body:
         if not isinstance(statement, ast.Assign) or len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
@@ -3837,6 +3838,10 @@ def generate_config_with_current_values(config_values):
         name = statement.targets[0].id
         # A secret belongs in the dotenv file, so its template placeholder stays even when the running values hold the real one
         if name not in config_values or name in SECRET_KEYS:
+            continue
+        # A setting still holding what the template ships keeps the template's own lines, so a multi-line
+        # value such as WEBHOOK_TEMPLATE is not collapsed into one unreadable line by a wizard that changed nothing
+        if name in template_defaults and config_values[name] == template_defaults[name] and type(config_values[name]) is type(template_defaults[name]):
             continue
         replacements[name] = (statement.lineno, getattr(statement, "end_lineno", statement.lineno), repr(config_values[name]))
     lines = CONFIG_BLOCK.strip("\n").split("\n")

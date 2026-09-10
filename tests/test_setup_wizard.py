@@ -1255,6 +1255,24 @@ def test_a_rerun_keeps_loaded_secrets_out_of_the_configuration(tmp_path, monkeyp
     assert "your_steam_web_api_key" in written
 
 
+# Verifies a setting still holding the shipped default keeps the template's own lines rather than a collapsed repr
+def test_an_unchanged_setting_keeps_the_template_formatting():
+    rendered = monitor.generate_config_with_current_values(dict(monitor._config_template_defaults()))
+
+    assert rendered.count("\nWEBHOOK_TEMPLATE = {\n") == 1
+    assert "WEBHOOK_TEMPLATE = {'" not in rendered
+
+
+# Verifies a changed setting is rewritten in place, replacing every line of the value it stood for
+def test_a_changed_setting_replaces_the_whole_template_value():
+    values = dict(monitor._config_template_defaults())
+    values["WEBHOOK_TEMPLATE"] = {"content": "one line"}
+    rendered = monitor.generate_config_with_current_values(values)
+
+    assert "WEBHOOK_TEMPLATE = {'content': 'one line'}\n" in rendered
+    assert monitor.parse_config_content(rendered)["WEBHOOK_TEMPLATE"] == {"content": "one line"}
+
+
 # Verifies the configuration renderer keeps the template placeholder for every secret whatever the values hold
 def test_the_configuration_renderer_never_writes_a_secret():
     values = {name: f"real-{name.lower()}" for name in monitor.SECRET_KEYS}
