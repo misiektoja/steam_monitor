@@ -663,6 +663,7 @@ class ErrorAlertState:
         setattr(self, f"{channel}_retry_at", now + delay)
         print(f"* The {channel} alert is on hold for {display_time(delay)} after {failures} {'attempt' if failures == 1 else 'attempts'}, then tried again")
 
+
 NTFY_IMAGE_ALLOWED_HOST_SUFFIXES = ("steamstatic.com", "steamusercontent.com", "steamcdn-a.akamaihd.net", "steamuserimages-a.akamaihd.net")
 
 PILImage = None  # type: Any
