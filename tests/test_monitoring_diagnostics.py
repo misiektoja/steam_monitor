@@ -436,8 +436,10 @@ def test_the_outage_reminder_follows_the_clock_not_the_check_count(monkeypatch):
     assert outcomes.count("reminder") == 1
 
 
-# Verifies a delivered error channel stays suppressed while a failed channel retries during the same outage
-def test_a_continuing_outage_retries_only_failed_notification_channels(tmp_path, monkeypatch):
+# Verifies a delivered error channel stays suppressed while a failed channel retries during the same outage, once
+# its five minute hold has passed, so a webhook service that is down is not dialled on every cycle
+@pytest.mark.parametrize("stop_after_sleeps,expected", [(12, [(True, True)]), (14, [(True, True), (False, True)])])
+def test_a_continuing_outage_retries_only_failed_notification_channels(tmp_path, monkeypatch, capsys, stop_after_sleeps, expected):
     deliveries = []
 
     # Records which delivery channels each outage cycle requests
@@ -446,9 +448,10 @@ def test_a_continuing_outage_retries_only_failed_notification_channels(tmp_path,
         return True, False
 
     monkeypatch.setattr(monitor, "send_notification_channels", record_delivery)
-    run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=http_error(503), stop_after_sleeps=9, error_notifications=True)
+    run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=http_error(503), stop_after_sleeps=stop_after_sleeps, error_notifications=True)
 
-    assert deliveries == [(True, True), (False, True)]
+    assert deliveries == expected
+    assert "* The webhook alert is on hold for 5 minutes after 1 attempt, then tried again" in capsys.readouterr().out
 
 
 # Verifies a failure the tool can retry away is alerted only once the outage has lasted the alert delay, so a
@@ -479,7 +482,7 @@ def test_a_failure_that_cannot_clear_itself_is_alerted_at_once(tmp_path, monkeyp
 def test_a_delivery_retry_on_a_quiet_cycle_ends_with_a_timestamp(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(monitor, "webhook_event_enabled", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(monitor, "send_email", lambda *_args, **_kwargs: 1)
-    run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=http_error(503), stop_after_sleeps=10, error_notifications=True, liveness_seconds=180)
+    run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=http_error(503), stop_after_sleeps=16, error_notifications=True, liveness_seconds=180)
 
     lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
     deliveries = [index for index, line in enumerate(lines) if line.startswith("Sending email notification")]
