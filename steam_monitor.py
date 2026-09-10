@@ -1081,6 +1081,8 @@ _DURATION_RE = re.compile(
 )
 _ONLINE_WORD_RE = re.compile(r"(?i)( online| appeared |\bYes\b)")
 _OFFLINE_WORD_RE = re.compile(r"(?i)( offline| away| snooze|\bNo\b)")
+# A startup summary row names a setting, so a presence word inside its label is part of the label and not a state
+_SUMMARY_ROW_LABEL_RE = re.compile(r"^(\* [\w()/ -]+:[\t ]+)(.*)$", re.S)
 _BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b|\bEnabled\b")
 _BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b|\bDisabled\b")
 # The TLS row reports a word rather than a boolean, and its off state is the one setting that weakens
@@ -1355,7 +1357,6 @@ def _colorize_line(line, notification_summary=False):
     line = _BOOLEAN_FALSE_RE.sub(lambda mo: colorize("boolean_false", mo.group(0)), line)
 
     # Highlight online/offline keywords
-    line = _ONLINE_WORD_RE.sub(lambda mo: colorize("status_online", mo.group(0)), line)
 
     def _offline_repl(mo):
         text = mo.group(0)
@@ -1366,7 +1367,10 @@ def _colorize_line(line, notification_summary=False):
             return colorize("status_snooze", text)
         return colorize("status_offline", text)
 
-    line = _OFFLINE_WORD_RE.sub(_offline_repl, line)
+    row_match = _SUMMARY_ROW_LABEL_RE.match(line)
+    label, body = row_match.groups() if row_match else ("", line)
+    body = _ONLINE_WORD_RE.sub(lambda mo: colorize("status_online", mo.group(0)), body)
+    line = label + _OFFLINE_WORD_RE.sub(_offline_repl, body)
 
     # Errors / warnings (avoid colouring summary lines like 'errors = False')
     lowered = original.lower()
@@ -3209,7 +3213,7 @@ def send_notification_channels(notification_type, subject, body, body_html="", e
         email_delivered = send_email(subject, body, body_html, SMTP_SSL) == 0
         debug_print("Email channel", event=notification_type, outcome="OK" if email_delivered else "failed")
     if webhook_attempted:
-        print("Sending webhook notification")
+        print(f"Sending webhook notification via {webhook_provider_display_name()}")
         webhook_delivered = send_webhook(subject, body, notification_type, force=True, image_url=image_url, ntfy_priority=ntfy_priority, ntfy_tags=ntfy_tags) == 0
         debug_print("Webhook channel", event=notification_type, outcome="OK" if webhook_delivered else "failed")
     # Delivery, not the attempt, so a channel that failed is retried while one that succeeded is not resent
@@ -4821,6 +4825,34 @@ def emit_startup_summary(rows, show_full=False, stream=None):
     destination.flush()
 
 
+# Hides the middle of an address's local part, so a log can be shared while the reader can still spot a typo
+def mask_email_address(address):
+    text = str(address or "").strip()
+    local, at_sign, domain = text.partition("@")
+    if not at_sign or not local or not domain:
+        return text
+    masked = f"{local[0]}{'*' * (len(local) - 2)}{local[-1]}" if len(local) > 2 else f"{local[0]}{'*' * (len(local) - 1)}"
+    return f"{masked}@{domain}"
+
+
+# Names the mail server this run would use, leaving out the account that signs in to it
+def startup_email_transport():
+    if not SMTP_HOST or not SMTP_PORT:
+        return "Not configured"
+    return f"{SMTP_HOST}:{SMTP_PORT} ({'STARTTLS' if SMTP_SSL else 'TLS off'})"
+
+
+# Names the webhook service alerts would reach, with its host and, for ntfy, whether an access token is set
+def startup_webhook_provider():
+    if not WEBHOOK_ENABLED or not str(WEBHOOK_URL or "").strip():
+        return "Not configured"
+    host = webhook_destination_host()
+    details = [host] if host else []
+    if normalized_webhook_provider() == "ntfy":
+        details.append("access token set" if NTFY_ACCESS_TOKEN else "no access token")
+    return webhook_provider_display_name() + (f" ({', '.join(details)})" if details else "")
+
+
 # Builds every startup summary row, deciding per row whether it belongs in the concise view, the full view and the log
 def build_startup_summary(target=None, config_path=None, env_path=None, log_path=None):
     dotenv_secrets, environment_secrets, config_secrets, command_line_secrets = doctor_secret_sources(env_path)
@@ -4830,11 +4862,21 @@ def build_startup_summary(target=None, config_path=None, env_path=None, log_path
     rows = [
         StartupSummaryRow("Target", str(target) if target else "None", concise=True),
         StartupSummaryRow("Polling intervals", f"[offline: {display_time(STEAM_CHECK_INTERVAL)}] [online: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]", concise=True),
+        StartupSummaryRow("Offline grace period", display_time(OFFLINE_INTERRUPT) if OFFLINE_INTERRUPT else "Disabled"),
         StartupSummaryRow("Notifications (email)", _startup_notification_state(_startup_email_notification_categories()), concise=True),
+        StartupSummaryRow("Email transport", startup_email_transport()),
+        StartupSummaryRow("Email recipient", mask_email_address(RECEIVER_EMAIL) if RECEIVER_EMAIL else "Not configured"),
         StartupSummaryRow("Notifications (webhook)", _startup_notification_state(_startup_webhook_notification_categories()), concise=True),
+        StartupSummaryRow("Webhook provider", startup_webhook_provider()),
+    ]
+    # The ntfy attachment setting says nothing about a run that posts to Discord, which ignores it
+    if normalized_webhook_provider() == "ntfy":
+        rows.append(StartupSummaryRow("ntfy images", str(NTFY_IMAGES)))
+    rows.extend([
+        StartupSummaryRow("Delivery confirmations", str(DELIVERY_CONFIRMATIONS)),
         StartupSummaryRow("Output", output_state, concise=True, full=False),
         StartupSummaryRow("Output logging", str(log_path) if logging_enabled else "Disabled"),
-        StartupSummaryRow("Config", str(config_path) if config_path else "None", concise=True),
+        StartupSummaryRow("Config", str(config_path) if config_path else ("Discovery disabled" if CONFIG_DISCOVERY_DISABLED else "None"), concise=True),
         StartupSummaryRow("Dotenv", str(env_path) if env_path else "None", concise=True),
         # Each tracked feature earns a concise row only when it is actually switched on
         StartupSummaryRow("Level/XP tracking", str(STEAM_LEVEL_XP_CHECK), concise=bool(STEAM_LEVEL_XP_CHECK)),
@@ -4845,6 +4887,9 @@ def build_startup_summary(target=None, config_path=None, env_path=None, log_path
         StartupSummaryRow("Profile CSV output", PROFILE_CSV_FILE or "Disabled", concise=bool(PROFILE_CSV_FILE)),
         StartupSummaryRow("Status file", resolve_status_file(target) if target else "None"),
         StartupSummaryRow("Terminal truncation", f"{TRUNCATE_CHARS} chars" if TRUNCATE_CHARS else "Disabled", concise=bool(TRUNCATE_CHARS)),
+        StartupSummaryRow("Process id", str(os.getpid())),
+        StartupSummaryRow("Python version", platform.python_version()),
+        StartupSummaryRow("Operating system", f"{platform.platform(terse=True)} ({platform.machine()})"),
         StartupSummaryRow("Install method", install_method_display_name()),
         StartupSummaryRow("Secrets from dotenv", ", ".join(from_dotenv) if from_dotenv else "None"),
         StartupSummaryRow("Secrets from environment", ", ".join(from_environment) if from_environment else "None"),
@@ -4858,7 +4903,7 @@ def build_startup_summary(target=None, config_path=None, env_path=None, log_path
         StartupSummaryRow("Debug mode", str(DEBUG_MODE), concise=bool(DEBUG_MODE)),
         # Points at the two modes for a reader who does not know they exist, so the full view drops it
         StartupSummaryRow("More details", "use --verbose or --debug", concise=True, full=False),
-    ]
+    ])
     return rows
 
 

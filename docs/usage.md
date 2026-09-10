@@ -104,7 +104,7 @@ By default, the tool looks for a configuration file named `steam_monitor.conf` i
 steam_monitor <steam_target> --config-file /path/steam_monitor_new.conf
 ```
 
-`--config-file none` switches automatic config discovery off for one run.
+`--config-file none` switches automatic config discovery off for one run. The startup summary reports `Discovery disabled` when it is in effect.
 
 The tool runs until interrupted (`Ctrl+C`). Use `tmux` or `screen` for persistence.
 

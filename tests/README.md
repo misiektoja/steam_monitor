@@ -41,6 +41,7 @@ and again before anything is published to PyPI.
 | `test_config_loading.py` | Declarative config parsing, rejected content and the generated template |
 | `test_diagnostics_output.py` | Verbose and debug output for email, webhook, connectivity, TLS and secret redaction |
 | `test_documentation.py` | Documentation site pages, guide links, navigation, documented flags, settings and doctor markers |
+| `test_startup_summary_channels.py` | Summary rows naming the webhook provider, the mail server, the masked recipient, the delivery confirmations and the runtime |
 | `test_startup_ui.py` | Startup summary rows, per-row routing, width-aware truncation and the grouped help |
 | `test_setup_wizard.py` | The setup wizard, per-section editing, input normalizers, the welcome screen and their terminal output contract |
 | `test_doctor.py` | The doctor report, its checks, delivery-test consent, exit code and its terminal output contract |
