@@ -2569,21 +2569,30 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
     return advice("unknown", safe_detail or "The request could not be completed", "Re-run with --debug to see the technical cause", True, DIAGNOSTICS_GUIDE_URL)
 
 
-# Renders one structured failure as the shared Error, To fix and optional Technical detail block
-def render_recovery_error(error=None, context="runtime", debug=None, detail=""):
-    advice = classify_recovery_error(error, context, detail)
-    lines = [f"* Error: {advice.summary}", f"To fix: {advice.fix}"]
-    show_debug = DEBUG_MODE if debug is None else debug
-    if show_debug and advice.detail:
-        lines.append(f"Technical detail: {sanitize_error_text(advice.detail)}")
+# Renders one built advice as the shared Error, To fix and optional Technical detail block
+def render_recovery_advice(advice, debug=None, retry_note="", with_fix=True, label="Error"):
+    lines = [f"* {label}: {advice.summary}" + (f" ({retry_note})" if retry_note else "")]
+    if with_fix:
+        lines.append(f"To fix: {advice.fix}")
+        if (DEBUG_MODE if debug is None else debug) and advice.detail:
+            lines.append(f"Technical detail: {sanitize_error_text(advice.detail)}")
     return "\n".join(lines)
 
 
-# Prints one structured recovery error and returns its stable advice
-def print_recovery_error(error=None, context="runtime", debug=None, detail=""):
-    advice = classify_recovery_error(error, context, detail)
-    print(render_recovery_error(RecoveryError(advice), debug=debug))
+# Classifies one failure and renders it through the shared recovery block
+def render_recovery_error(error=None, context="runtime", debug=None, detail="", retry_note="", with_fix=True, label="Error"):
+    return render_recovery_advice(classify_recovery_error(error, context, detail), debug, retry_note, with_fix, label)
+
+
+# Prints one built advice through the shared recovery block and returns it
+def print_recovery_advice(advice, debug=None, retry_note="", with_fix=True, label="Error"):
+    print(render_recovery_advice(advice, debug, retry_note, with_fix, label))
     return advice
+
+
+# Classifies one failure, prints it through the shared recovery block and returns its stable advice
+def print_recovery_error(error=None, context="runtime", debug=None, detail="", retry_note="", with_fix=True, label="Error"):
+    return print_recovery_advice(classify_recovery_error(error, context, detail), debug, retry_note, with_fix, label)
 
 
 # Decides how a lasting failure is reported: in full when it is new, then on the liveness cadence while it lasts
@@ -2654,22 +2663,6 @@ class FeatureOutageTracker:
         self.unavailable = dict(current)
         return recovered + started
 
-
-# Renders one monitoring failure in the shape every monitor in this family prints
-def render_monitor_recovery(advice, retry_note="", with_fix=True, label="Error"):
-    lines = [f"* {label}: {advice.summary}" + (f" ({retry_note})" if retry_note else "")]
-    if with_fix:
-        lines.append(f"To fix: {advice.fix}")
-        if DEBUG_MODE and advice.detail:
-            lines.append(f"Technical detail: {sanitize_error_text(advice.detail)}")
-    return "\n".join(lines)
-
-
-# Prints one monitoring failure in full, which is the only state its caller reports from
-def print_monitor_recovery(error, context, retry_note="", label="Error"):
-    advice = classify_recovery_error(error, context)
-    print(render_monitor_recovery(advice, retry_note, True, label))
-    return advice
 
 
 # Returns the spelling each webhook service uses for itself, since the stored value is casefolded for comparisons
@@ -4707,7 +4700,6 @@ def print_doctor_next_steps(target_value=None, saved_target=None, doctor_exit=0)
     print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}")
 
 
-
 # Prints the commands a newcomer needs next, instead of an argparse usage error
 def print_welcome_screen(input_func=None, interactive=None):
     terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
@@ -5101,7 +5093,7 @@ def reload_secrets_signal_handler(sig, frame):
                 print("* No .env file found, reloading exported environment variables only")
         except ImportError:
             env_path = None
-            print_monitor_recovery(RecoveryError(missing_dependency_advice("python-dotenv", "Only exported environment variables were reloaded", "pip3 install python-dotenv")), "runtime", label="Warning")
+            print_recovery_advice(missing_dependency_advice("python-dotenv", "Only exported environment variables were reloaded", "pip3 install python-dotenv"), label="Warning")
 
     webhook_url_changed = False
     sources = secret_sources(env_path)
@@ -6057,12 +6049,12 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 retry_after = steam_retry_after_seconds(response, sleep_interval) if response is not None else sleep_interval
                 retry_note = f"retrying in {display_time(retry_after)}"
                 if outage_outcome == "full":
-                    print_monitor_recovery(e, "runtime", retry_note)
+                    print_recovery_error(e, "runtime", retry_note=retry_note)
                     print_cur_ts("Timestamp:\t\t\t")
                 elif outage_outcome == "degraded":
                     print_outage_liveness(steamid, advice, outage.since)
                 elif outage_outcome == "repeat":
-                    print(render_monitor_recovery(advice, retry_note, with_fix=False))
+                    print(render_recovery_advice(advice, retry_note=retry_note, with_fix=False))
                     print_cur_ts("Timestamp:\t\t\t")
                 debug_print("Retry wait", check=f"#{check_count}", due_in=display_time(retry_after), reason="steam rate limited the request")
                 time.sleep(retry_after)
@@ -6072,11 +6064,11 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 transient_retry = advice.retryable and not transient_retry_used
                 retry_note = f"retrying in {display_time(TRANSIENT_RETRY_SECONDS if transient_retry else sleep_interval)}"
                 if outage_outcome == "full":
-                    print_monitor_recovery(e, "runtime", retry_note)
+                    print_recovery_error(e, "runtime", retry_note=retry_note)
                 elif outage_outcome == "degraded":
                     print_outage_liveness(steamid, advice, outage.since)
                 elif outage_outcome == "repeat":
-                    print(render_monitor_recovery(advice, retry_note, with_fix=False))
+                    print(render_recovery_advice(advice, retry_note=retry_note, with_fix=False))
                 if transient_retry:
                     transient_retry_used = True
                     if outage_outcome in ("full", "repeat"):
@@ -7211,7 +7203,7 @@ def main():
         except ImportError:
             env_path = DOTENV_FILE if DOTENV_FILE else None
             if env_path:
-                print_monitor_recovery(RecoveryError(missing_dependency_advice("python-dotenv", f"The dotenv file '{env_path}' was not loaded", "pip3 install python-dotenv", "Or export the secrets as environment variables")), "runtime", label="Warning")
+                print_recovery_advice(missing_dependency_advice("python-dotenv", f"The dotenv file '{env_path}' was not loaded", "pip3 install python-dotenv", "Or export the secrets as environment variables"), label="Warning")
 
     # Exported secrets apply on their own, so a dotenv file is an alternative to the environment rather than a precondition
     load_secrets_from_environment()
@@ -7446,7 +7438,7 @@ def main():
     if NTFY_IMAGES and not NTFY_IMAGES_AVAILABLE:
         NTFY_IMAGES = False
         if WEBHOOK_ENABLED and normalized_webhook_provider() == "ntfy":
-            print_monitor_recovery(RecoveryError(missing_dependency_advice("Pillow", "ntfy alerts will be sent as text only", ntfy_images_install_command(), "Or set NTFY_IMAGES to False to stop this warning")), "runtime", label="Warning")
+            print_recovery_advice(missing_dependency_advice("Pillow", "ntfy alerts will be sent as text only", ntfy_images_install_command(), "Or set NTFY_IMAGES to False to stop this warning"), label="Warning")
 
     # The line coloriser colours the ID, so the printed text stays plain and the separator matches its width
     out = f"Monitoring user with Steam64 ID {s_id}"

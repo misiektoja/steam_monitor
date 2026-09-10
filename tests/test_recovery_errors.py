@@ -1,6 +1,7 @@
 """Tests that every failure carries a stable code, an actionable fix, and no secrets."""
 
 import ast
+import inspect
 import re
 from pathlib import Path
 from unittest.mock import Mock
@@ -180,7 +181,7 @@ def test_malformed_config_redacts_the_complete_secret_value(tmp_path, capsys, re
 def test_the_printed_failure_carries_its_fix(capsys, restored_globals):
     monitor.DEBUG_MODE = False
 
-    monitor.print_monitor_recovery(http_error(503), "runtime", "retrying in 5 minutes")
+    monitor.print_recovery_error(http_error(503), "runtime", retry_note="retrying in 5 minutes")
 
     output = capsys.readouterr().out
     assert output.startswith("* Error: The Steam Web API is temporarily unavailable (retrying in 5 minutes)\n")
@@ -566,3 +567,49 @@ def test_the_guide_guard_still_inspects_the_source():
 
     assert len(inspected) > 40
     assert all(any(marker in summary for _, summary in bare) for marker in GUIDELESS_ADVICE), "an allowlisted summary stopped matching a builder"
+
+
+# One concept carried three names across this family: a renderer taking a built advice, a renderer taking the
+# failure itself, and a third pair named after the monitoring loop. Pinned here so a call copied from a sibling
+# cannot quietly mean something else
+def test_the_recovery_printers_share_one_contract():
+    advice_first = ("advice", "debug", "retry_note", "with_fix", "label")
+    error_first = ("error", "context", "debug", "detail", "retry_note", "with_fix", "label")
+
+    assert tuple(inspect.signature(monitor.render_recovery_advice).parameters) == advice_first
+    assert tuple(inspect.signature(monitor.print_recovery_advice).parameters) == advice_first
+    assert tuple(inspect.signature(monitor.render_recovery_error).parameters) == error_first
+    assert tuple(inspect.signature(monitor.print_recovery_error).parameters) == error_first
+
+
+# The advice pair prints what the caller built, so a summary the classifier would never produce survives the trip
+def test_the_advice_printer_does_not_reclassify(capsys, restored_globals):
+    monitor.DEBUG_MODE = False
+    advice = monitor.make_recovery_advice("network.timeout", "a summary no rule produces", "a fix of its own", True)
+
+    returned = monitor.print_recovery_advice(advice)
+
+    assert capsys.readouterr().out == "* Error: a summary no rule produces\nTo fix: a fix of its own\n"
+    assert returned is advice
+
+
+# The error pair classifies what the caller hands it, which is the difference between the two front doors
+def test_the_error_printer_classifies_what_it_was_given(capsys, restored_globals):
+    monitor.DEBUG_MODE = False
+
+    returned = monitor.print_recovery_error(http_error(503), context="runtime")
+
+    assert returned.code != "unknown"
+    assert capsys.readouterr().out.startswith(f"* Error: {returned.summary}\n")
+
+
+# Both front doors reach the same renderer, so the retry note, the label and a suppressed fix behave the same way
+def test_both_front_doors_render_the_same_line(restored_globals):
+    monitor.DEBUG_MODE = False
+    advice = monitor.classify_recovery_error(http_error(503), "runtime")
+
+    through_advice = monitor.render_recovery_advice(advice, retry_note="retrying in 5 minutes", with_fix=False, label="Warning")
+    through_error = monitor.render_recovery_error(http_error(503), "runtime", retry_note="retrying in 5 minutes", with_fix=False, label="Warning")
+
+    assert through_advice == through_error
+    assert through_advice == f"* Warning: {advice.summary} (retrying in 5 minutes)"
