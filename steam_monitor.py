@@ -469,6 +469,7 @@ STEAM_API_KEY_REGISTRATION_URL = "https://steamcommunity.com/dev/apikey"
 STEAM_TARGET_FORMS = "Steam64 ID, Steam3 identifier, vanity name or full profile URL"
 STEAM_TARGET_INPUT_ERROR = f"Enter a {STEAM_TARGET_FORMS}, for example https://steamcommunity.com/id/<vanity_name>/"
 DOCTOR_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#doctor-preflight"
+DIAGNOSTICS_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#verbose-and-debug-output"
 
 # Shared prefixes for the checks a delivery test depends on, kept as constants because the labels are dynamic
 SMTP_READY_CHECK_LABEL = "SMTP connection and login succeeded"
@@ -2477,17 +2478,18 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
 
     if context == "target":
         if any(term in message for term in ("rate limit", "429")) or status == 429:
-            return advice("steam.rate_limited", "Steam rate limited the profile lookup", "Wait for the reported period then try again", True)
+            return advice("steam.rate_limited", "Steam rate limited the profile lookup", "Wait for the reported period then try again", True, INTERVALS_GUIDE_URL)
         if any(term in message for term in ("timed out", "timeout")):
-            return advice("network.timeout", "The Steam Web API request timed out", "Check connectivity then try again", True)
+            return advice("network.timeout", "The Steam Web API request timed out", "Check connectivity then try again", True, DIAGNOSTICS_GUIDE_URL)
         if "cannot connect" in message:
-            return advice("network.unavailable", "The Steam Web API could not be reached", "Check connectivity, DNS and any proxy then try again", True)
+            return advice("network.unavailable", "The Steam Web API could not be reached", "Check connectivity, DNS and any proxy then try again", True, DIAGNOSTICS_GUIDE_URL)
         if any(term in message for term in ("invalid steam", "only steam user", "not supported")):
             return advice("target.invalid", safe_detail or "That is not a recognized Steam profile", f"Pass a {STEAM_TARGET_FORMS}", False, USAGE_GUIDE_URL)
         return advice("target.not_found", safe_detail or "No Steam user matches that profile", "Check the Steam64 ID or profile URL and try again", False, USAGE_GUIDE_URL)
 
     if context == "connectivity":
         # Classified from the error, because the detail names the endpoint rather than the failure
+        # No guide, since no page covers this check and the doctor report already ends with the troubleshooting link
         cause = str(error or "").lower()
         if "timed out" in cause or "timeout" in cause:
             return advice("network.timeout", "The connectivity endpoint did not answer in time", "Check network, DNS, proxy and CHECK_INTERNET_URL settings", True)
@@ -2511,8 +2513,8 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
 
     if context == "file":
         if any(term in message for term in ("cannot load", "unreadable", "not valid utf-8", "no such file")):
-            return advice("file.unreadable", safe_detail or "A file the tool keeps could not be read", "Check the path and its permissions, or delete the file so it is recreated", False)
-        return advice("file.unwritable", safe_detail or "A file the tool keeps could not be written", "Check that the directory exists and is writable, or choose another path", False)
+            return advice("file.unreadable", safe_detail or "A file the tool keeps could not be read", "Check the path and its permissions, or delete the file so it is recreated", False, DIAGNOSTICS_GUIDE_URL)
+        return advice("file.unwritable", safe_detail or "A file the tool keeps could not be written", "Check that the directory exists and is writable, or choose another path", False, DIAGNOSTICS_GUIDE_URL)
 
     if context == "file.exists":
         return advice("file.exists", safe_detail or "The destination file already exists", f"Re-run with --force to replace it after a timestamped backup, or write to a different path with '{render_command(['--generate-config', '<new-file>'], include_paths=False)}'", False, CONFIG_FILE_GUIDE_URL)
@@ -2523,24 +2525,24 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
             return advice("file.unwritable", safe_detail or "--setup has nowhere to write the private settings", "Replace '--env-file none' with a writable path, or drop the flag to write .env in the current directory", False, SECRETS_GUIDE_URL)
         if "nowhere to write the configuration" in message:
             return advice("file.unwritable", safe_detail or "--setup has nowhere to write the configuration", f"Replace '--config-file none' with a writable path, or drop the flag to write {DEFAULT_CONFIG_FILENAME} in the current directory", False, CONFIG_FILE_GUIDE_URL)
-        return advice("file.unwritable", safe_detail or "A file the tool keeps could not be written", "Check that the directory exists and is writable, or choose another path", False)
+        return advice("file.unwritable", safe_detail or "A file the tool keeps could not be written", "Check that the directory exists and is writable, or choose another path", False, DIAGNOSTICS_GUIDE_URL)
 
     # Runtime, which is the monitoring loop and every Steam Web API call it makes
     if status == 429 or "rate limit" in message or "too many requests" in message:
-        return advice("steam.rate_limited", "Steam is rate limiting requests", "The tool will wait and retry. Increase the polling intervals if this repeats", True)
+        return advice("steam.rate_limited", "Steam is rate limiting requests", "The tool will wait and retry. Increase the polling intervals if this repeats", True, INTERVALS_GUIDE_URL)
     if status in (401, 403) or "forbidden" in message or "unauthorized" in message:
         return advice("auth.api_key_invalid", "Steam rejected the configured Web API key", f"Validate and replace it with '{render_command(['--set-steam-api-key'])}'", False, STEAM_API_KEY_GUIDE_URL)
     if status == 404 or "not found" in message:
         return advice("target.not_found", "Steam has no profile for the monitored Steam64 ID", "Check the Steam64 ID, since a deleted or renamed account cannot be monitored", False, USAGE_GUIDE_URL)
     if status is not None and status >= 500 or "service unavailable" in message or "bad gateway" in message:
-        return advice("steam.unavailable", "The Steam Web API is temporarily unavailable", "This is usually a Steam outage. The tool will keep retrying", True)
+        return advice("steam.unavailable", "The Steam Web API is temporarily unavailable", "This is usually a Steam outage. The tool will keep retrying", True, DIAGNOSTICS_GUIDE_URL)
     if "timed out" in message or "timeout" in message:
-        return advice("network.timeout", "The Steam Web API request timed out", "Check connectivity. The tool will keep retrying", True)
+        return advice("network.timeout", "The Steam Web API request timed out", "Check connectivity. The tool will keep retrying", True, DIAGNOSTICS_GUIDE_URL)
     if any(term in message for term in ("connection", "name resolution", "network is unreachable", "no connectivity")):
-        return advice("network.unavailable", "Steam could not be reached", "Check connectivity, DNS and any proxy. The tool will keep retrying", True)
+        return advice("network.unavailable", "Steam could not be reached", "Check connectivity, DNS and any proxy. The tool will keep retrying", True, DIAGNOSTICS_GUIDE_URL)
     if "private" in message or "visibility" in message:
         return advice("target.not_visible", "The monitored profile is not publicly visible", "Ask the user to set game details and profile visibility to Public", False, PRIVACY_GUIDE_URL)
-    return advice("unknown", safe_detail or "The request could not be completed", "Re-run with --debug to see the technical cause", True)
+    return advice("unknown", safe_detail or "The request could not be completed", "Re-run with --debug to see the technical cause", True, DIAGNOSTICS_GUIDE_URL)
 
 
 # Renders one structured failure as the shared Error, To fix and optional Technical detail block
@@ -3148,7 +3150,7 @@ def doctor_check_environment(version_info=None, spec_finder=None):
     if tuple(selected_version)[:2] >= MINIMUM_PYTHON_VERSION:
         checks.append(make_doctor_check("Environment", "PASS", f"Python {version_text} is supported", minimum_detail))
     else:
-        advice = make_recovery_advice("dependency.missing", f"Python {version_text} is unsupported", f"Install Python {MINIMUM_PYTHON_VERSION_TEXT} or newer then retry", False)
+        advice = make_recovery_advice("dependency.missing", f"Python {version_text} is unsupported", recovery_fix_with_guide(f"Install Python {MINIMUM_PYTHON_VERSION_TEXT} or newer then retry", INSTALL_GUIDE_URL), False)
         checks.append(make_doctor_check("Environment", "FAIL", advice.summary, minimum_detail, advice))
 
     find_spec = importlib.util.find_spec if spec_finder is None else spec_finder
@@ -3164,7 +3166,7 @@ def doctor_check_environment(version_info=None, spec_finder=None):
         if module_present(module_name):
             checks.append(make_doctor_check("Environment", "PASS", f"Required dependency {package_name} is installed"))
         else:
-            advice = make_recovery_advice("dependency.missing", f"Required dependency {package_name} is missing", f'Install it with: pip3 install "{package_name}"', False)
+            advice = make_recovery_advice("dependency.missing", f"Required dependency {package_name} is missing", recovery_fix_with_guide(f'Install it with: pip3 install "{package_name}"', INSTALL_GUIDE_URL), False)
             checks.append(make_doctor_check("Environment", "FAIL", advice.summary, advice=advice))
 
     if module_present("dotenv"):
