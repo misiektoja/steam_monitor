@@ -2514,7 +2514,9 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
     except SecretConfigurationError:
         raise
     except Exception as exc:
-        raise SecretConfigurationError(f"The mail server did not accept the password: {type(exc).__name__}: {sanitize_error_text(exc)}. The private settings file was not changed.") from None
+        # The sign-in restores the previous password before the failure reaches here, so the value that was tried
+        # is passed to the redaction explicitly rather than left to the global it would otherwise read
+        raise SecretConfigurationError(f"The mail server did not accept the password: {type(exc).__name__}: {sanitize_error_text(exc, (smtp_password,))}. The private settings file was not changed.") from None
     try:
         update_dotenv_file(destination, {"SMTP_PASSWORD": smtp_password})
     except Exception:
@@ -2595,10 +2597,11 @@ def _startup_notification_state(categories):
 
 
 # Redacts configured secrets and API key query values from one error-shaped value
-def sanitize_error_text(value):
+def sanitize_error_text(value, extra_secrets=()):
     text = str(value)
-    for secret_name in SECRET_KEYS:
-        secret_value = globals().get(secret_name)
+    # A value being checked before it is saved is held by the caller and by no global, so it is passed in instead
+    entered = [secret for secret in extra_secrets if isinstance(secret, str) and len(secret) > 4]
+    for secret_value in [globals().get(secret_name) for secret_name in SECRET_KEYS] + entered:
         if isinstance(secret_value, str) and secret_value and not secret_value.startswith("your_"):
             text = text.replace(secret_value, "<redacted>")
     text = re.sub(r"(?i)([?&]key=)[^&\s]+", r"\1<redacted>", text)

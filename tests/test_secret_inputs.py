@@ -174,6 +174,24 @@ class SecretInputTests(unittest.TestCase):
         self.assertNotIn(password, rendered)
         self.assertIn("The mail server accepted the password for monitor@example.test", rendered)
 
+    # Verifies a rejection reply quoting the password back is redacted, since the sign-in has already restored
+    # the previous password by the time the caller renders the failure
+    def test_a_reply_quoting_the_password_is_redacted(self):
+        password = "app-password-value"
+
+        def echo(candidate, timeout=5):
+            raise steam_monitor.smtplib.SMTPAuthenticationError(535, f"5.7.8 Not accepted. Sent: pass={candidate}".encode())
+
+        with configured_mail(), patch("builtins.print") as output:
+            with self.assertRaises(steam_monitor.SecretConfigurationError) as raised:
+                steam_monitor.run_set_smtp_password(env_file=str(self.destination), interactive=True, getpass_func=lambda prompt: password, sign_in=echo)
+
+        self.assertNotIn(password, str(raised.exception))
+        self.assertIn("<redacted>", str(raised.exception))
+        self.assertIn("did not accept the password", str(raised.exception))
+        self.assertNotIn(password, "\n".join(" ".join(str(item) for item in call.args) for call in output.call_args_list))
+        self.assertFalse(self.destination.exists())
+
     # Verifies incomplete mail settings are refused before a password is typed
     def test_incomplete_mail_settings_are_refused_before_the_prompt(self):
         hidden = Mock(side_effect=AssertionError("the password prompt was reached"))
