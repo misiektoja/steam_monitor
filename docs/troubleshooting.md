@@ -71,7 +71,7 @@ Traced operations include configuration loading, the connectivity probe, every S
 steam_monitor <steam_target> --debug
 ```
 
-The two modes are independent, so pass both to see everything. Either one on its own expands the startup summary, adding the detected install method, which secrets came from where and the diagnostic state. The same view names the webhook service alerts go to and the mail server that sends them, with the recipient address masked. It also reports whether the delivery confirmations are printed and the process id, Python version and operating system the run is on.
+The two modes are independent, so pass both to see everything. Either one on its own expands the startup summary, adding the detected install method, which secrets came from where and the diagnostic state. The same view names the webhook service alerts go to and whether that channel is switched on, plus the mail server that sends them with the recipient address masked. Each channel's own settings are indented under it. It also reports whether the delivery confirmations are printed and the process id, Python version and operating system the run is on.
 
 Either mode can also be turned on permanently with the `VERBOSE_MODE` and `DEBUG_MODE` configuration settings. Set `DELIVERY_CONFIRMATIONS = False` to keep verbose mode without the `* Email delivered` and `* Webhook delivered` lines, which is worth doing when alerts are frequent. A flag on the command line always wins, so `--debug` still applies when the configuration file sets `DEBUG_MODE = False`.
 
