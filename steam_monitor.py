@@ -2383,6 +2383,7 @@ RECOVERY_CODES = frozenset({
     "smtp.invalid", "smtp.authentication", "smtp.connection",
     "webhook.invalid", "webhook.rejected", "webhook.rate_limited", "webhook.connection",
     "file.unreadable", "file.unwritable", "file.exists",
+    "resource.exhausted",
     "unknown",
 })
 
@@ -2436,6 +2437,27 @@ def recovery_http_status(error):
     return status if isinstance(status, int) else None
 
 
+# Yields the exception and each cause or context up to max_depth, to walk an exception chain
+def iter_exc_chain(error, max_depth=8):
+    current = error
+    for _ in range(max_depth):
+        if current is None:
+            return
+        yield current
+        current = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
+
+
+# Reports whether any exception in the chain is the local file descriptor limit rather than a remote failure
+def is_too_many_open_files(error):
+    for current in iter_exc_chain(error):
+        if isinstance(current, OSError) and getattr(current, "errno", None) == 24:
+            return True
+        message = str(current).lower()
+        if "too many open files" in message or "errno 24" in message:
+            return True
+    return False
+
+
 # Maps one exception plus its HTTP status and calling context to stable recovery advice
 def classify_recovery_error(error=None, context="runtime", detail=""):
     if isinstance(error, RecoveryError):
@@ -2447,6 +2469,10 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
 
     def advice(code, summary, fix, retryable, guide_url=None):
         return make_recovery_advice(code, summary, recovery_fix_with_guide(fix, guide_url) if guide_url else fix, retryable, safe_detail)
+
+    # Checked ahead of every context, since a local descriptor limit is not a failure of whatever call hit it
+    if error is not None and is_too_many_open_files(error):
+        return advice("resource.exhausted", "This process ran out of file descriptors, which is a local limit and not a Steam problem", "Raise the file descriptor limit, for example with 'ulimit -n 4096', or set LimitNOFILE= if you run under systemd, then restart the tool", False, DIAGNOSTICS_GUIDE_URL)
 
     if context == "config":
         if "does not exist" in message:

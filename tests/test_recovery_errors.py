@@ -444,6 +444,22 @@ def builder_codes(source):
     return codes
 
 
+# Verifies a local file descriptor limit is reported as itself rather than as a failure of the call that hit it
+def test_a_file_descriptor_limit_is_not_reported_as_a_service_failure():
+    try:
+        try:
+            raise OSError(24, "Too many open files")
+        except OSError as inner:
+            raise RuntimeError("the Steam request failed") from inner
+    except RuntimeError as error:
+        advice = monitor.classify_recovery_error(error)
+
+    assert advice.code == "resource.exhausted"
+    assert advice.retryable is False
+    assert "not a Steam problem" in advice.summary
+    assert "ulimit -n 4096" in advice.fix
+
+
 # Verifies every declared code has a producer, so the set records what the tool reports rather than what it might
 def test_every_declared_code_is_reachable():
     unreachable = set(monitor.RECOVERY_CODES) - builder_codes(Path(monitor.__file__).read_text(encoding="utf-8"))
