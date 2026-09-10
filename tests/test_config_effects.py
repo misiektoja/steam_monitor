@@ -155,6 +155,18 @@ def test_real_startup_keeps_exported_secret_precedence(tmp_path, monkeypatch, re
     assert monitor.secret_sources(env_file)["STEAM_API_KEY"] == "environment"
 
 
+# Verifies an empty export is treated as absent, so a shell-profile leftover does not blank the dotenv value
+def test_real_startup_ignores_an_empty_export(tmp_path, monkeypatch, restored_globals):
+    config = write_config(tmp_path)
+    env_file = tmp_path / ".env"
+    env_file.write_text('STEAM_API_KEY="from-file"\n', encoding="utf-8")
+
+    observed = run_startup(monkeypatch, [], config, env_path=env_file, exported_api_key="")
+
+    assert observed["steam_api_key_at_monitoring_start"] == "from-file"
+    assert monitor.secret_sources(env_file)["STEAM_API_KEY"] == str(env_file)
+
+
 # Verifies SIGHUP refreshes file secrets without replacing values exported when the process started
 def test_dotenv_reload_preserves_exported_secrets(tmp_path, monkeypatch):
     env_file = tmp_path / ".env"
