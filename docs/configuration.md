@@ -138,7 +138,7 @@ WEBHOOK_URL="https://discord.com/api/webhooks/..."
 NTFY_ACCESS_TOKEN="your_ntfy_access_token"
 ```
 
-Prefer `steam_monitor --set-smtp-password` for `SMTP_PASSWORD`: the value is entered through a hidden prompt and the mail server has to accept it before it is saved. Incomplete mail settings are reported before anything is typed, so a password is never entered against a server that was never configured.
+Prefer `steam_monitor --set-smtp-password` for `SMTP_PASSWORD`: the value is entered through a hidden prompt and the mail server has to accept it before it is saved. Incomplete mail settings are reported before anything is typed, so a password is never entered against a server that was never configured. An exported `SMTP_PASSWORD` wins over the saved one at startup, so the command says so after saving rather than leaving you with a value the next run will not read.
 
 Saving a secret with `--set-steam-api-key`, `--set-smtp-password` or `--set-webhook-url` rewrites the dotenv file atomically with owner-only permissions and keeps no backup, so the replaced secret is not left behind in a `.bak` file. A secret you switch off, such as the ntfy access token in the setup wizard, has its line removed rather than left as an empty value.
 
