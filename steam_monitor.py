@@ -1874,8 +1874,8 @@ def smtp_connect_and_login(use_ssl, smtp_timeout=15):
         raise
 
 
-# Sends one email notification, validating the settings before it connects
-def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
+# Returns the first mail server setting that makes a delivery impossible, or None when they are all usable
+def smtp_settings_problem():
     fqdn_re = re.compile(r'(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)')
     email_re = re.compile(r'[^@]+@[^@]+\.[^@]+')
 
@@ -1883,23 +1883,29 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
         ipaddress.ip_address(str(SMTP_HOST))
     except ValueError:
         if not fqdn_re.search(str(SMTP_HOST)):
-            print_recovery_error(context="email", detail="The SMTP settings are incorrect (invalid IP address/FQDN in SMTP_HOST)")
-            return 1
+            return "The SMTP settings are incorrect (invalid IP address/FQDN in SMTP_HOST)"
 
     try:
         port = int(SMTP_PORT)
         if not (1 <= port <= 65535):
             raise ValueError
     except ValueError:
-        print_recovery_error(context="email", detail="The SMTP settings are incorrect (invalid port number in SMTP_PORT)")
-        return 1
+        return "The SMTP settings are incorrect (invalid port number in SMTP_PORT)"
 
     if not email_re.search(str(SENDER_EMAIL)) or not email_re.search(str(RECEIVER_EMAIL)):
-        print_recovery_error(context="email", detail="The SMTP settings are incorrect (invalid email in SENDER_EMAIL or RECEIVER_EMAIL)")
-        return 1
+        return "The SMTP settings are incorrect (invalid email in SENDER_EMAIL or RECEIVER_EMAIL)"
 
     if not SMTP_USER or not isinstance(SMTP_USER, str) or SMTP_USER == "your_smtp_user" or not SMTP_PASSWORD or not isinstance(SMTP_PASSWORD, str) or SMTP_PASSWORD == "your_smtp_password":
-        print_recovery_error(context="email", detail="The SMTP settings are incorrect (check SMTP_USER & SMTP_PASSWORD variables)")
+        return "The SMTP settings are incorrect (check SMTP_USER & SMTP_PASSWORD variables)"
+
+    return None
+
+
+# Sends email notification
+def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
+    settings_problem = smtp_settings_problem()
+    if settings_problem is not None:
+        print_recovery_error(context="email", detail=settings_problem)
         return 1
 
     if not subject or not isinstance(subject, str):
@@ -7221,6 +7227,11 @@ def main():
         sys.exit(1)
 
     if args.send_test_email:
+        # Checked before the attempt is announced, so a mail server that was never usable is not reported as a failed send
+        settings_problem = smtp_settings_problem()
+        if settings_problem is not None:
+            print_recovery_error(context="email", detail=settings_problem)
+            sys.exit(1)
         print("* Sending test email notification ...\n")
         debug_print("Test email", sender=SENDER_EMAIL, recipient=RECEIVER_EMAIL)
         if send_email("steam_monitor: test email", "This test email was sent by --send-test-email. Your SMTP settings work.", "", SMTP_SSL, smtp_timeout=5) == 0:
@@ -7230,6 +7241,9 @@ def main():
         sys.exit(0)
 
     if args.send_test_webhook:
+        if not validate_webhook_url():
+            print_recovery_error(context="webhook", detail="WEBHOOK_URL must contain a complete HTTPS link")
+            sys.exit(1)
         print("* Sending test webhook notification ...\n")
         debug_print("Test webhook", channel=normalized_webhook_provider() or "an unset provider", host=webhook_destination_host())
         if send_webhook("steam_monitor: test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.", "status", force=True) == 0:

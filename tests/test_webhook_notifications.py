@@ -1,4 +1,6 @@
 import argparse
+import contextlib
+import io
 import unittest
 from unittest.mock import Mock, patch
 
@@ -382,12 +384,24 @@ class WebhookNotificationTests(unittest.TestCase):
         email = Mock(return_value=0)
         webhook = Mock(return_value=0)
         for flag in ("--send-test-email", "--send-test-webhook"):
-            with patch.object(steam_monitor.sys, "argv", ["steam_monitor.py", flag, "--env-file", "none"]), patch.object(steam_monitor, "check_internet", return_value=True), patch.object(steam_monitor, "send_email", email), patch.object(steam_monitor, "send_webhook", webhook), patch.object(steam_monitor, "clear_screen"), patch.object(steam_monitor.signal, "signal"), self.assertRaises(SystemExit) as exit_info:
+            with patch.object(steam_monitor.sys, "argv", ["steam_monitor.py", flag, "--env-file", "none"]), patch.object(steam_monitor, "check_internet", return_value=True), patch.object(steam_monitor, "smtp_settings_problem", return_value=None), patch.object(steam_monitor, "validate_webhook_url", return_value=True), patch.object(steam_monitor, "send_email", email), patch.object(steam_monitor, "send_webhook", webhook), patch.object(steam_monitor, "clear_screen"), patch.object(steam_monitor.signal, "signal"), self.assertRaises(SystemExit) as exit_info:
                 steam_monitor.main()
             self.assertEqual(exit_info.exception.code, 0)
 
         self.assertEqual(email.call_args.args[:2], ("steam_monitor: test email", "This test email was sent by --send-test-email. Your SMTP settings work."))
         self.assertEqual(webhook.call_args.args[:2], ("steam_monitor: test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work."))
+
+
+    # Verifies a delivery test checks the settings before it announces an attempt it cannot make
+    def test_a_delivery_test_checks_the_settings_before_it_announces(self):
+        for flag, announcement in (("--send-test-email", "Sending test email notification"), ("--send-test-webhook", "Sending test webhook notification")):
+            buffer = io.StringIO()
+            with patch.object(steam_monitor.sys, "argv", ["steam_monitor.py", flag, "--env-file", "none"]), patch.object(steam_monitor, "check_internet", return_value=True), patch.object(steam_monitor, "SMTP_HOST", "not a host"), patch.object(steam_monitor, "WEBHOOK_URL", ""), patch.object(steam_monitor, "clear_screen"), patch.object(steam_monitor.signal, "signal"), contextlib.redirect_stdout(buffer), self.assertRaises(SystemExit) as exit_info:
+                steam_monitor.main()
+            self.assertEqual(exit_info.exception.code, 1)
+            self.assertNotIn(announcement, buffer.getvalue())
+            self.assertIn("* Error: ", buffer.getvalue())
+            self.assertIn("To fix: ", buffer.getvalue())
 
 
 if __name__ == "__main__":
