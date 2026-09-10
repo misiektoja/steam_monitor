@@ -43,14 +43,29 @@ For the manual single-file method, dependencies and upgrade commands, see [Insta
 
 ## Features
 
-- **Real-time tracking** of Steam users' gaming activity, including when a user gets online or offline and which games they play
-- **Detailed user information** display mode covering profile details, Steam level and XP, badges, ban status, friends, top games, recently played games, persona name history and recent achievements
-- **Steam community URL resolution**, so you do not need to know the numeric ID
-- **Change tracking** for Steam level and XP, display (persona) names, the friends list and the games library
-- **Email and webhook notifications** through Discord, ntfy and compatible services, configurable per event
-- **Guided setup** with `--setup`, and **preflight diagnostics** with `--doctor`
-- **CSV export** of every activity and profile change, with **status persistence** across restarts
-- **Flexible configuration** through config files, dotenv files, environment variables and command-line arguments
+### Activity and Profile Tracking
+
+* **Gaming activity**: Detect online and offline status, game starts, finishes and changes.
+* **Profile changes**: Track persona names, Steam level, XP, friends and game libraries.
+* **Session statistics**: Measure time in each state, time per game and games played.
+
+### Profile Insights
+
+* **Profile details**: View badges, bans, friends, top games and recent playtime.
+* **Optional detail**: Include friendship dates, persona name history and recent achievements.
+* **Profile URLs**: Resolve Steam community links without looking up a numeric ID.
+
+### Notifications and History
+
+* **Event alerts**: Configure email, Discord and ntfy notifications independently.
+* **CSV history**: Save activity and profile changes with timestamps.
+* **Session continuity**: Save status across restarts and preserve statistics through short offline interruptions.
+
+### Setup and Configuration
+
+* **Guided setup**: Review settings with `--setup` and check readiness with `--doctor`.
+* **Flexible settings**: Use config files, dotenv files, environment variables and command-line options.
+* **Terminal and runtime controls**: Customize colours and adjust the running monitor through supported signals.
 
 <a id="common-commands"></a>
 ## Common Commands

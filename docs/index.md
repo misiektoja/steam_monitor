@@ -26,25 +26,29 @@ For the manual single-file method, dependencies and upgrade commands, see [Insta
 
 ## Features
 
-- **Real-time tracking** of Steam users' gaming activity (including detection when a user gets online/offline or plays games)
-- **Basic statistics for user activity** (such as how long in different states, how long a game is played, overall time and the number of played games in the session etc.)
-- **Detailed user information** display mode providing comprehensive Steam profile insights including **profile details**, **Steam level and XP statistics**, **earned badges**, **ban status**, **friends count** (with optional full friends list showing when each friendship started), **top games by lifetime hours**, **recently played games** with playtime statistics, **hours played in the last 2 weeks**, optional **persona name history** and optionally list of **recent achievements**
-- **Steam community URL resolution** - automatically resolve Steam community URLs to Steam64 IDs (no need to know the numeric ID)
-- **Steam level and total XP change tracking**
-- **Display (persona) name change tracking** (detects and logs in real time when the monitored user renames their account)
-- **Friends list change tracking** (friends count and when available - added/removed friends)
-- **Games library change tracking** (game count, added/removed games)
-- **Email notifications** for different events (when a player gets online/away/snooze/offline, starts/finishes/changes a game, Steam level and total XP changes, display name changes, friends list changes or errors occur)
-- **Webhook notifications** through **Discord**, **ntfy** and compatible services, independently configurable from email alerts
-- **Saving all user activities and profile changes** with timestamps to a **CSV file**
-- **Status persistence** - automatically saves last status to JSON file to resume monitoring after restart
-- **Smart session continuity** - handles short offline interruptions and preserves session statistics
-- **Guided setup** - `--setup` asks a few questions and writes a ready-to-run configuration, with a review summary and per-section editing before anything is saved
-- **Preflight diagnostics** - `--doctor` checks the environment, configuration, connectivity, credentials, monitored profile and notification channels, and tells you how to fix whatever is not ready
-- **Flexible configuration** - support for config files, dotenv files, environment variables and command-line arguments
-- **Configurable color themes** - customizable terminal output colors and styles
-- Possibility to **control the running copy** of the script via signals
-- **Functional, procedural Python** (minimal OOP)
+### Activity and Profile Tracking
+
+* **Gaming activity**: Detect online and offline status, game starts, finishes and changes.
+* **Profile changes**: Track persona names, Steam level, XP, friends and game libraries.
+* **Session statistics**: Measure time in each state, time per game and games played.
+
+### Profile Insights
+
+* **Profile details**: View badges, bans, friends, top games and recent playtime.
+* **Optional detail**: Include friendship dates, persona name history and recent achievements.
+* **Profile URLs**: Resolve Steam community links without looking up a numeric ID.
+
+### Notifications and History
+
+* **Event alerts**: Configure email, Discord and ntfy notifications independently.
+* **CSV history**: Save activity and profile changes with timestamps.
+* **Session continuity**: Save status across restarts and preserve statistics through short offline interruptions.
+
+### Setup and Configuration
+
+* **Guided setup**: Review settings with `--setup` and check readiness with `--doctor`.
+* **Flexible settings**: Use config files, dotenv files, environment variables and command-line options.
+* **Terminal and runtime controls**: Customize colours and adjust the running monitor through supported signals.
 
 ## Screenshots
 
