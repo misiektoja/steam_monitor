@@ -608,6 +608,8 @@ NTFY_IMAGE_PIXEL_LIMIT = 25_000_000
 NTFY_IMAGE_FILENAME = "steam-image.jpg"
 # One short retry absorbs a transient failure without waiting a whole polling interval
 TRANSIENT_RETRY_SECONDS = 5
+# How long a failure the tool can retry away must last before it is alerted, a failure it cannot is alerted at once
+ERROR_ALERT_AFTER_SECONDS = 300  # 5 minutes
 
 NTFY_IMAGE_ALLOWED_HOST_SUFFIXES = ("steamstatic.com", "steamusercontent.com", "steamcdn-a.akamaihd.net", "steamuserimages-a.akamaihd.net")
 
@@ -6106,7 +6108,9 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 else:
                     m_subject = f"steam_monitor: monitoring error (user: {username})"
                     m_body = f"{advice.summary}{nl_ch}{nl_ch}To fix: {advice.fix}{nl_ch}{nl_ch}Steam Monitor will retry in {display_time(sleep_interval)}.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                if (ERROR_NOTIFICATION and not error_email_sent) or (webhook_event_enabled("error") and not error_webhook_sent):
+                # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
+                alert_due = not advice.retryable or int(time.time()) - outage.since >= ERROR_ALERT_AFTER_SECONDS
+                if alert_due and ((ERROR_NOTIFICATION and not error_email_sent) or (webhook_event_enabled("error") and not error_webhook_sent)):
                     email_delivered, webhook_delivered = send_notification_channels("error", m_subject, m_body, email_enabled=ERROR_NOTIFICATION and not error_email_sent, webhook_enabled=webhook_event_enabled("error") and not error_webhook_sent, image_url=current_avatar_url, ntfy_priority=5, ntfy_tags="warning")
                     error_email_sent = error_email_sent or email_delivered
                     error_webhook_sent = error_webhook_sent or webhook_delivered

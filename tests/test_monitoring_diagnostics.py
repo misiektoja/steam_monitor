@@ -379,16 +379,40 @@ def test_a_continuing_outage_retries_only_failed_notification_channels(tmp_path,
         return True, False
 
     monkeypatch.setattr(monitor, "send_notification_channels", record_delivery)
-    run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=http_error(503), stop_after_sleeps=4, error_notifications=True)
+    run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=http_error(503), stop_after_sleeps=9, error_notifications=True)
 
     assert deliveries == [(True, True), (False, True)]
+
+
+# Verifies a failure the tool can retry away is alerted only once the outage has lasted the alert delay, so a
+# blip of a few cycles reaches nobody while a real outage still does
+@pytest.mark.parametrize("stop_after_sleeps,expected", [(7, []), (8, [(True, True)])])
+def test_a_retryable_failure_is_alerted_once_the_outage_has_lasted(tmp_path, monkeypatch, stop_after_sleeps, expected):
+    deliveries = []
+    monkeypatch.setattr(monitor, "send_notification_channels", lambda *_args, **kwargs: deliveries.append((kwargs["email_enabled"], kwargs["webhook_enabled"])) or (True, True))
+
+    # The short retry and then one minute intervals put the seventh failing cycle past the five minute delay
+    run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=http_error(503), stop_after_sleeps=stop_after_sleeps, error_notifications=True)
+
+    assert deliveries == expected
+
+
+# Verifies a failure nothing here can retry away is alerted on the first cycle, since waiting would change nothing
+def test_a_failure_that_cannot_clear_itself_is_alerted_at_once(tmp_path, monkeypatch):
+    deliveries = []
+    monkeypatch.setattr(monitor, "send_notification_channels", lambda *args, **kwargs: deliveries.append(args[1]) or (True, True))
+
+    run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=http_error(403), stop_after_sleeps=2, error_notifications=True)
+
+    assert len(deliveries) == 1
+    assert deliveries[0].startswith("steam_monitor: API key error!")
 
 
 # Verifies a retry that reaches the screen on a quiet cycle still ends with a timestamp
 def test_a_delivery_retry_on_a_quiet_cycle_ends_with_a_timestamp(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(monitor, "webhook_event_enabled", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(monitor, "send_email", lambda *_args, **_kwargs: 1)
-    run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=http_error(503), stop_after_sleeps=4, error_notifications=True, liveness_seconds=180)
+    run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=http_error(503), stop_after_sleeps=10, error_notifications=True, liveness_seconds=180)
 
     lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
     deliveries = [index for index, line in enumerate(lines) if line.startswith("Sending email notification")]
