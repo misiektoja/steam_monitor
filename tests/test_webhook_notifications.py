@@ -73,16 +73,15 @@ class WebhookNotificationTests(unittest.TestCase):
     def test_startup_notification_summaries_use_compact_rollups(self):
         for setting in ("ACTIVE_INACTIVE_NOTIFICATION", "STATUS_NOTIFICATION", "GAME_CHANGE_NOTIFICATION", "STEAM_LEVEL_XP_NOTIFICATION", "FRIENDS_NOTIFICATION", "GAMES_LIBRARY_NOTIFICATION", "NAME_CHANGE_NOTIFICATION", "ERROR_NOTIFICATION", "WEBHOOK_ENABLED", "WEBHOOK_ACTIVE_NOTIFICATION", "WEBHOOK_INACTIVE_NOTIFICATION", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_GAME_CHANGE_NOTIFICATION", "WEBHOOK_LEVEL_XP_NOTIFICATION", "WEBHOOK_FRIENDS_NOTIFICATION", "WEBHOOK_GAMES_NOTIFICATION", "WEBHOOK_NAME_CHANGE_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION"):
             setattr(steam_monitor, setting, True)
-        expected_email = "* Notifications (email):        On (online/offline, status, game, level/XP, friends, games, name,\n                                errors)"
-        expected_webhook = "* Notifications (webhook):      On (active, inactive, status, game, level/XP, friends, games, name,\n                                errors)"
-        self.assertEqual(steam_monitor._startup_notification_summary_lines(), [expected_email, expected_webhook])
-        self.assertTrue(all(len(line) <= 100 for summary in (expected_email, expected_webhook) for line in summary.splitlines()))
-        self.assertNotIn("\n*", expected_email + expected_webhook)
+        rows = {row.label: row.value for row in steam_monitor.build_startup_summary(target="76561197960287930")}
+        self.assertEqual(rows["Notifications (email)"], "On (online/offline, status, game, level/XP, friends, games, name, errors)")
+        self.assertEqual(rows["Notifications (webhook)"], "On (active, inactive, status, game, level/XP, friends, games, name, errors)")
 
     # Verifies webhook categories remain off while the master switch is disabled
     def test_startup_webhook_summary_respects_master_switch(self):
         steam_monitor.WEBHOOK_ENABLED = False
-        self.assertEqual(steam_monitor._startup_notification_summary_lines()[1], "* Notifications (webhook):      Off")
+        rows = {row.label: row.value for row in steam_monitor.build_startup_summary(target="76561197960287930")}
+        self.assertEqual(rows["Notifications (webhook)"], "Off")
 
     # Verifies notification rows color only their state without turning error categories red
     def test_notification_summary_colors_only_on_off_state(self):

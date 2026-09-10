@@ -2348,23 +2348,9 @@ def _selected_webhook_notification_categories(settings=None):
     return [label for enabled, label in settings if enabled]
 
 
-# Formats one notification row with unstarred continuation lines when needed
-def _format_startup_notification_line(label, categories):
-    prefix = f"* {label:<30}"
-    state = "On (" + ", ".join(categories) + ")" if categories else "Off"
-    return textwrap.fill(state, width=100, initial_indent=prefix, subsequent_indent=" " * len(prefix), break_long_words=False, break_on_hyphens=False)
-
-
 # Returns one channel's rollup value, naming the enabled categories rather than only whether the channel is on
 def _startup_notification_state(categories):
     return "On (" + ", ".join(categories) + ")" if categories else "Off"
-
-
-# Builds compact startup notification lines for both delivery channels
-def _startup_notification_summary_lines():
-    enabled_email = _startup_email_notification_categories()
-    enabled_webhook = _startup_webhook_notification_categories()
-    return [_format_startup_notification_line("Notifications (email):", enabled_email), _format_startup_notification_line("Notifications (webhook):", enabled_webhook)]
 
 
 # Redacts configured secrets and API key query values from one error-shaped value
@@ -5253,18 +5239,6 @@ def load_config_file(config_path, namespace=None, report_errors=True):
         print("* Config files are read as data. Only documented SETTING = value lines with plain literal values are accepted.")
         print_recovery_error(context="config", detail=detail)
     return False
-
-
-# Resolves an executable path by checking if it's a valid file or searching in $PATH
-def resolve_executable(path):
-    if os.path.isfile(path) and os.access(path, os.X_OK):
-        return path
-
-    found = shutil.which(path)
-    if found:
-        return found
-
-    raise FileNotFoundError(f"Could not find executable '{path}'")
 
 
 # Prints country/region using raw Steam fields
