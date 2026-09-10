@@ -940,7 +940,8 @@ def apply_diagnostic_cli_flags(args):
 
 
 # Returns the diagnostic fields describing one secret, keeping the length out of the value so a line still splits on ", "
-def secret_fields(value, key=None): return {"value": "set" if doctor_value_is_set(value) else "not set", "chars": len(str(value).strip()) if key in FIXED_LENGTH_SECRET_KEYS and doctor_value_is_set(value) else None}
+def secret_fields(value, key=None):
+    return {"value": "set" if doctor_value_is_set(value) else "not set", "chars": len(str(value).strip()) if key in FIXED_LENGTH_SECRET_KEYS and doctor_value_is_set(value) else None}
 
 
 # Returns the newest Pillow release that still supports the running Python version
@@ -2416,7 +2417,8 @@ def recovery_fix_with_guide(fix, guide_url):
 
 
 # Returns the advice an optional library that is missing carries, naming what the run loses and how to install it
-def missing_dependency_advice(package, effect, install_command, alternative=""): return make_recovery_advice("dependency.missing", f"{effect} because the optional '{package}' library is missing", recovery_fix_with_guide(f"Install it with: {install_command}" + (f". {alternative}" if alternative else ""), INSTALL_GUIDE_URL), False)
+def missing_dependency_advice(package, effect, install_command, alternative=""):
+    return make_recovery_advice("dependency.missing", f"{effect} because the optional '{package}' library is missing", recovery_fix_with_guide(f"Install it with: {install_command}" + (f". {alternative}" if alternative else ""), INSTALL_GUIDE_URL), False)
 
 
 # Returns the advice a cancelled secret entry reports, worded the same way by every one-shot secret command
@@ -2457,9 +2459,10 @@ def is_too_many_open_files(error):
             return True
     return False
 
-# Returns the next step for a failure no rule recognized, since a run already printing the technical cause cannot be told to re-run for it
-def unknown_failure_fix(): return "Open an issue with this output if the failure continues" if DEBUG_MODE else "Re-run with --debug to see the technical cause"
 
+# Returns the next step for a failure no rule recognized, since a run already printing the technical cause cannot be told to re-run for it
+def unknown_failure_fix():
+    return "Open an issue with this output if the failure continues" if DEBUG_MODE else "Re-run with --debug to see the technical cause"
 
 
 # Maps one exception plus its HTTP status and calling context to stable recovery advice
@@ -2669,7 +2672,6 @@ class FeatureOutageTracker:
         started = [messages[0] for key, messages in current.items() if key not in self.unavailable]
         self.unavailable = dict(current)
         return recovered + started
-
 
 
 # Returns the spelling each webhook service uses for itself, since the stored value is casefolded for comparisons
