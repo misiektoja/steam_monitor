@@ -749,3 +749,12 @@ def test_a_link_inside_a_styled_span_is_not_recoloured(monkeypatch):
 
     assert monitor.apply_color_to_text(styled) == styled
     assert monitor.apply_color_to_text("Guide: https://example.test/page") == f"Guide: {monitor.colorize('link', 'https://example.test/page')}"
+
+
+# Verifies the TLS row colours its state word, the one setting whose off state weakens a security property
+def test_the_tls_row_colours_its_state(colored):
+    on_row = monitor._colorize_line("* TLS verification:             On")
+    off_row = monitor._colorize_line("* TLS verification:             Off, server certificates are not checked")
+
+    assert on_row == f"* TLS verification:             {colored['boolean_true']}On{monitor.ANSI_RESET}"
+    assert off_row == f"* TLS verification:             {colored['boolean_false']}Off{monitor.ANSI_RESET}, server certificates are not checked"

@@ -1070,6 +1070,9 @@ _ONLINE_WORD_RE = re.compile(r"(?i)( online| appeared |\bYes\b)")
 _OFFLINE_WORD_RE = re.compile(r"(?i)( offline| away| snooze|\bNo\b)")
 _BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b|\bEnabled\b")
 _BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b|\bDisabled\b")
+# The TLS row reports a word rather than a boolean, and its off state is the one setting that weakens
+# a security property, so the state word is coloured like a boolean
+_TLS_STATE_RE = re.compile(r"^(\* TLS verification:\s+)(On|Off)(.*)$")
 _NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \((?:email|webhook)\):\s+)(On|Off)(.*)$")
 # Quoted names such as game titles. At least one word character is required so a run of punctuation between two
 # quotes is not read as a name. The closing quote has to be followed by whitespace, punctuation or the end of the
@@ -1246,6 +1249,13 @@ def _colorize_line(line, notification_summary=False):
         prefix, state, suffix = match.groups()
         state_style = "boolean_true" if state == "On" else "boolean_false"
         return f"{prefix}{colorize(state_style, state)}{suffix}"
+
+    # The TLS row reports its state as a word rather than as a boolean
+    m = _TLS_STATE_RE.match(line.strip("\n"))
+    if m:
+        prefix, state, suffix = m.groups()
+        colored = f"{prefix}{colorize('boolean_true' if state == 'On' else 'boolean_false', state)}{suffix}"
+        return colored + ("\n" if line.endswith("\n") else "")
 
     # Timestamp lines
     m = _TIMESTAMP_LINE_RE.match(line.strip("\n"))
