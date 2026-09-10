@@ -197,6 +197,7 @@ CLASSIFIER_EXEMPTIONS = {
     "Could not resolve": "a wizard hint inside the question that re-asks, where the next prompt is the recovery",
     "cannot be resolved without a Steam Web API key": "a wizard hint inside the question that re-asks, where the next prompt is the recovery",
     "Setup needs a writable dotenv file": "an answer hint inside the question that re-asks, where the next prompt is the recovery",
+    "Monitoring failure changed for": "a one-line note on a classified outage that already had its full report",
 }
 
 # Words that mark a printed line as a report of something going wrong

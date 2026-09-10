@@ -2618,41 +2618,59 @@ def print_recovery_error(error=None, context="runtime", debug=None, detail="", r
 
 
 # Decides how a lasting failure is reported: in full when it is new, then on the liveness cadence while it lasts
+# How long a reported failure may go on before the run reminds about it, whatever the liveness banner is set to
+OUTAGE_REMINDER_SECONDS = 3600  # 1 hour
+
+
+# Returns the family a failure code belongs to, so the DNS and timeout failures of one internet outage count as one
+def outage_family(code):
+    return "network" if str(code or "").startswith("network.") else str(code or "")
+
+
 class OutageReporter:
-    # Starts with no failure recorded, so the first failure of any category is reported in full
-    def __init__(self):
+    # Starts with no failure recorded and reports a new retryable failure once confirm_checks checks in a row failed
+    def __init__(self, confirm_checks=1):
+        self.confirm_checks = max(1, confirm_checks)
         self.code = None
         self.since = 0
         self.reported_at = 0
+        self.failures = 0
+        self.reported = False
 
-    # Records one failed check and returns "full" for a new failure, "degraded" once the liveness interval has passed,
-    # "repeat" while the liveness banner is switched off or "" while the same failure is merely continuing
-    def failed(self, advice, liveness_interval):
+    # Records one failed check and returns "full" when the failure is to be reported in full, "changed" when a
+    # reported outage moved to another failure family, "reminder" once OUTAGE_REMINDER_SECONDS passed since the
+    # last report or "" while nothing new is to be said
+    def failed(self, advice):
         now = int(time.time())
-        if advice.code != self.code:
-            # A category change mid-outage is still the same outage, so its start and the alert delay it feeds are kept
-            if not self.code:
-                self.since = now
-            self.code = advice.code
+        if not self.code:
+            self.since = now
+        self.failures += 1
+        changed = self.code is not None and outage_family(advice.code) != outage_family(self.code)
+        self.code = advice.code
+        if not self.reported:
+            # A failure the tool cannot retry away is reported at once, one it can waits for the next check to confirm it
+            if advice.retryable and self.failures < self.confirm_checks:
+                return ""
+            self.reported = True
             self.reported_at = now
             return "full"
-        # With the liveness banner off there is nothing to carry the reminder, so the summary keeps its old cadence
-        if not liveness_interval:
-            return "repeat"
-        # Timed rather than counted, because a failing run usually retries on a different interval than a healthy one
-        if now - self.reported_at >= liveness_interval:
+        if changed:
             self.reported_at = now
-            return "degraded"
+            return "changed" if advice.retryable else "full"
+        # Timed rather than counted, because a failing run usually retries on a different interval than a healthy one
+        if now - self.reported_at >= OUTAGE_REMINDER_SECONDS:
+            self.reported_at = now
+            return "reminder"
         return ""
 
-    # Clears the failure after a successful check and returns how long it lasted, or None when none was active
+    # Clears the failure after a successful check and returns how long it lasted, or None when nothing was reported
     def recovered(self):
-        if not self.code:
-            return None
-        lasted = int(time.time()) - self.since
+        lasted = int(time.time()) - self.since if self.code and self.reported else None
         self.code = None
         self.since = 0
         self.reported_at = 0
+        self.failures = 0
+        self.reported = False
         return lasted
 
 
@@ -2662,10 +2680,16 @@ def print_liveness_banner(message):
     print_cur_ts("Liveness check, timestamp:\t")
 
 
-# Reports a lasting failure on the liveness cadence, so a broken run still says it is alive without repeating itself
-def print_outage_liveness(target, advice, since):
-    print(f"* Monitoring degraded for {target}. {advice.summary} since {get_date_from_ts(since)}")
+# Reminds about a lasting failure once an hour, so a broken run still says it is alive without repeating itself
+def print_outage_liveness(target, advice, since, failures=0):
+    count = f", {failures} failed {'check' if failures == 1 else 'checks'}" if failures else ""
+    print(f"* Monitoring degraded for {target}. {advice.summary} since {get_date_from_ts(since)}{count}")
     print_cur_ts("Liveness check, timestamp:\t")
+
+
+# Notes that a reported outage now fails differently, in one line rather than a second full report
+def print_outage_change(target, advice):
+    print(f"* Monitoring failure changed for {target}. {advice.summary}")
 
 
 # Reports that a failure cleared, since a throttled failure no longer stops printing when it is over
@@ -5981,7 +6005,8 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         sleep_interval = STEAM_CHECK_INTERVAL
 
     feature_outages = FeatureOutageTracker()
-    outage = OutageReporter()
+    # A blip is confirmed by the short retry before it is printed, since one lost request is not an outage
+    outage = OutageReporter(confirm_checks=1 if VERBOSE_MODE else 2)
     transient_retry_used = False
 
     debug_print("First check", due_in=display_time(sleep_interval))
@@ -6065,12 +6090,14 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             advice = classify_recovery_error(e, context="runtime")
             response = e.response if isinstance(e, req.exceptions.HTTPError) else None
             debug_print("Completed check", check=f"#{check_count}", user=steamid, outcome="failed", code=advice.code, error=f"{type(e).__name__}: {e}")
-            if advice.code != error_delivery_code:
+            # A failure that changes family is a different failure, so each channel earns a new alert for it, while an
+            # internet outage that flaps between a timeout and an unreachable host stays one failure
+            if outage_family(advice.code) != outage_family(error_delivery_code):
                 error_email_sent = False
                 error_webhook_sent = False
                 error_delivery_code = advice.code
             # A failure that has not changed is left to the liveness cadence rather than repeated every check
-            outage_outcome = outage.failed(advice, LIVENESS_REMINDER_SECONDS)
+            outage_outcome = outage.failed(advice)
             delivery_reported = False
             if advice.code == "steam.rate_limited":
                 # Rate limits carry their own wait, so they skip the retry path rather than burning an attempt
@@ -6079,11 +6106,11 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 if outage_outcome == "full":
                     print_recovery_error(e, "runtime", retry_note=retry_note)
                     print_cur_ts("Timestamp:\t\t\t")
-                elif outage_outcome == "degraded":
-                    print_outage_liveness(steamid, advice, outage.since)
-                elif outage_outcome == "repeat":
-                    print(render_recovery_advice(advice, retry_note=retry_note, with_fix=False))
+                elif outage_outcome == "changed":
+                    print_outage_change(steamid, advice)
                     print_cur_ts("Timestamp:\t\t\t")
+                elif outage_outcome == "reminder":
+                    print_outage_liveness(steamid, advice, outage.since, outage.failures)
                 debug_print("Retry wait", check=f"#{check_count}", due_in=display_time(retry_after), reason="steam rate limited the request")
                 time.sleep(retry_after)
                 continue
@@ -6093,13 +6120,13 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 retry_note = f"retrying in {display_time(TRANSIENT_RETRY_SECONDS if transient_retry else sleep_interval)}"
                 if outage_outcome == "full":
                     print_recovery_error(e, "runtime", retry_note=retry_note)
-                elif outage_outcome == "degraded":
-                    print_outage_liveness(steamid, advice, outage.since)
-                elif outage_outcome == "repeat":
-                    print(render_recovery_advice(advice, retry_note=retry_note, with_fix=False))
+                elif outage_outcome == "changed":
+                    print_outage_change(steamid, advice)
+                elif outage_outcome == "reminder":
+                    print_outage_liveness(steamid, advice, outage.since, outage.failures)
                 if transient_retry:
                     transient_retry_used = True
-                    if outage_outcome in ("full", "repeat"):
+                    if outage_outcome in ("full", "changed"):
                         print_cur_ts("Timestamp:\t\t\t")
                     debug_print("Retry wait", check=f"#{check_count}", due_in=display_time(TRANSIENT_RETRY_SECONDS), reason="one short retry before the full interval")
                     time.sleep(TRANSIENT_RETRY_SECONDS)
@@ -6120,7 +6147,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     # with nothing under it reads as a run that stopped there
                     delivery_reported = True
 
-            if outage_outcome in ("full", "repeat") or delivery_reported:
+            if outage_outcome in ("full", "changed") or delivery_reported:
                 print_cur_ts("Timestamp:\t\t\t")
 
             debug_print("Retry wait", check=f"#{check_count}", due_in=display_time(sleep_interval), reason="waiting the polling interval after a failed check")

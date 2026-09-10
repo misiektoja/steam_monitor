@@ -56,7 +56,8 @@ class FakeSteamWebAPI:
         if endpoint == "ISteamUser.GetPlayerSummaries" and self.poll_error is not None:
             self.polls += 1
             if self.polls > self.healthy_polls and (self.healthy_after is None or self.polls <= self.healthy_after):
-                raise self.poll_error
+                # A callable picks the error per poll, so an outage that changes category can be scripted
+                raise self.poll_error(self.polls) if callable(self.poll_error) else self.poll_error
         if endpoint in self.failing_endpoints:
             raise RuntimeError(f"{endpoint} is unavailable")
         if endpoint == "ISteamUser.GetPlayerSummaries":
@@ -306,24 +307,32 @@ def test_a_rejected_api_key_does_not_get_a_quick_retry(tmp_path, monkeypatch, ca
     assert "Steam rejected the configured Web API key" in capsys.readouterr().out
 
 
-# Verifies a continuing outage explains itself once rather than on every cycle, with the liveness banner switched off
-def test_a_continuing_outage_prints_one_hint(tmp_path, monkeypatch, capsys):
-    _api, _sleeps = run_one_cycle(tmp_path, monkeypatch, poll_error=http_error(503), stop_after_sleeps=6)
+# Verifies the reminder keeps its own clock when the liveness banner is off, so switching the banner off neither
+# silences a lasting failure nor brings back a block per cycle
+def test_the_reminder_survives_where_the_banner_is_off(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "OUTAGE_REMINDER_SECONDS", 180)
+    # The report lands on the third poll at 65 seconds, so the sixth and the ninth poll are the reminders
+    _api, _sleeps = run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=http_error(503), stop_after_sleeps=9)
 
     output = capsys.readouterr().out
-    assert output.count("The Steam Web API is temporarily unavailable") >= 3
+    assert output.count("* Error: The Steam Web API is temporarily unavailable") == 1
+    assert output.count("* Monitoring degraded for 76561197960435530. ") == 2
     assert output.count("To fix: ") == 1
 
 
-# Verifies a continuing outage rides the liveness cadence instead of repeating its summary on every cycle
-def test_a_continuing_outage_rides_the_liveness_cadence(tmp_path, monkeypatch, capsys):
-    _api, _sleeps = run_one_cycle(tmp_path, monkeypatch, poll_error=http_error(503), stop_after_sleeps=6, liveness_seconds=180)
+# Verifies a continuing outage is carried by the hourly reminder with a count, on a clock of its own rather
+# than the liveness banner's
+def test_a_continuing_outage_is_carried_by_the_hourly_reminder(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "OUTAGE_REMINDER_SECONDS", 240)
+    _api, _sleeps = run_one_cycle(tmp_path, monkeypatch, poll_error=http_error(503), stop_after_sleeps=7, liveness_seconds=180)
 
     output = capsys.readouterr().out
     assert output.count("To fix: ") == 1
     assert output.count("The Steam Web API is temporarily unavailable") == 2
     assert "* Monitoring degraded for 76561197960435530. The Steam Web API is temporarily unavailable since " in output
+    assert ", 6 failed checks\n" in output
     assert output.count("Liveness check, timestamp:") == 1
+    assert "Monitoring healthy" not in output
 
 
 # Verifies a failure that clears says so, since a throttled failure no longer stops printing when it is over
@@ -334,23 +343,62 @@ def test_a_cleared_outage_reports_its_recovery(tmp_path, monkeypatch, capsys):
     assert "* Monitoring recovered for 76561197960435530 after " in output
 
 
-# Verifies the reporter reports a new failure in full, stays quiet while it lasts and reminds once the liveness interval passes
+# Verifies the reporter reports a new failure in full, stays quiet while it lasts and reminds once the reminder interval passes
 def test_the_outage_reporter_reports_once_then_on_the_cadence(monkeypatch):
     clock = [1000000.0]
     monkeypatch.setattr(monitor.time, "time", lambda: clock[0])
+    monkeypatch.setattr(monitor, "OUTAGE_REMINDER_SECONDS", 180)
     reporter = monitor.OutageReporter()
     advice = monitor.classify_recovery_error(RuntimeError("boom"), context="runtime")
 
-    assert reporter.failed(advice, 180) == "full"
+    assert reporter.failed(advice) == "full"
     clock[0] += 60
-    assert reporter.failed(advice, 180) == ""
+    assert reporter.failed(advice) == ""
     clock[0] += 119
-    assert reporter.failed(advice, 180) == ""
+    assert reporter.failed(advice) == ""
     clock[0] += 1
-    assert reporter.failed(advice, 180) == "degraded"
-    assert reporter.failed(advice, 0) == "repeat"
+    assert reporter.failed(advice) == "reminder"
+    assert reporter.failed(advice) == ""
     assert reporter.recovered() is not None
     assert reporter.recovered() is None
+
+
+# Verifies the reporter waits for the next check to confirm a retryable failure, and the first check still counts
+def test_the_outage_reporter_confirms_a_retryable_failure(monkeypatch):
+    clock = [1000000.0]
+    monkeypatch.setattr(monitor.time, "time", lambda: clock[0])
+    reporter = monitor.OutageReporter(confirm_checks=2)
+    retryable = monitor.classify_recovery_error(RuntimeError("boom"), context="runtime")
+    rejected = monitor.classify_recovery_error(http_error(403), context="runtime")
+
+    assert reporter.failed(retryable) == ""
+    assert reporter.recovered() is None, "a failure that was never reported recovers in silence"
+    assert reporter.failed(retryable) == ""
+    clock[0] += 5
+    assert reporter.failed(retryable) == "full"
+    assert (reporter.since, reporter.failures) == (1000000, 2)
+    assert reporter.recovered() == 5
+    assert reporter.failed(rejected) == "full", "a failure nothing can retry away is not held for confirmation"
+
+
+# Verifies the reporter treats every network code as one outage and any other change as a one-line note
+def test_the_outage_reporter_merges_network_codes_and_notes_other_changes(monkeypatch):
+    clock = [1000000.0]
+    monkeypatch.setattr(monitor.time, "time", lambda: clock[0])
+    reporter = monitor.OutageReporter()
+    timeout = monitor.classify_recovery_error(TimeoutError("request timed out"), context="runtime")
+    unreachable = monitor.classify_recovery_error(OSError("connection refused"), context="runtime")
+    unavailable = monitor.classify_recovery_error(http_error(503), context="runtime")
+    rejected = monitor.classify_recovery_error(http_error(403), context="runtime")
+    assert (monitor.outage_family(timeout.code), monitor.outage_family(unreachable.code)) == ("network", "network")
+
+    assert reporter.failed(timeout) == "full"
+    assert reporter.failed(unreachable) == ""
+    assert reporter.failed(timeout) == ""
+    assert reporter.failed(unavailable) == "changed"
+    assert reporter.failed(unavailable) == ""
+    assert reporter.failed(rejected) == "full"
+    assert reporter.since == 1000000
 
 
 # Verifies a category change mid-outage keeps the outage start, so the alert delay and the reminder still elapse
@@ -362,10 +410,10 @@ def test_an_outage_that_changes_category_keeps_its_start(monkeypatch):
     second = monitor.classify_recovery_error(OSError(24, "Too many open files"))
     assert first.code != second.code
 
-    assert reporter.failed(first, 900) == "full"
+    assert reporter.failed(first) == "full"
     for index in range(60):
         clock[0] += 15
-        reporter.failed(second if index % 2 else first, 900)
+        reporter.failed(second if index % 2 else first)
 
     assert reporter.since == 1000000
     assert reporter.recovered() == 900
@@ -378,13 +426,14 @@ def test_the_outage_reminder_follows_the_clock_not_the_check_count(monkeypatch):
     reporter = monitor.OutageReporter()
     advice = monitor.classify_recovery_error(RuntimeError("boom"), context="runtime")
 
-    assert reporter.failed(advice, 900) == "full"
+    monkeypatch.setattr(monitor, "OUTAGE_REMINDER_SECONDS", 900)
+    assert reporter.failed(advice) == "full"
     outcomes = []
     for _ in range(60):
         clock[0] += 15
-        outcomes.append(reporter.failed(advice, 900))
+        outcomes.append(reporter.failed(advice))
 
-    assert outcomes.count("degraded") == 1
+    assert outcomes.count("reminder") == 1
 
 
 # Verifies a delivered error channel stays suppressed while a failed channel retries during the same outage
@@ -531,3 +580,80 @@ def test_a_quiet_cycle_stays_silent_without_diagnostics(tmp_path, monkeypatch, c
     output = capsys.readouterr().out
     assert "Completed check" not in output
     assert "outcome=OK" not in output
+
+
+# Fails a poll with a timeout and then an unreachable host, the way one internet outage classifies
+def flapping_network(polls):
+    return TimeoutError("request timed out") if polls % 2 else OSError("connection refused")
+
+
+# Verifies a failure the short retry clears prints nothing, since a blip is not worth a report
+def test_a_blip_absorbed_by_the_short_retry_prints_nothing(tmp_path, monkeypatch, capsys):
+    _api, sleeps = run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=http_error(503), stop_after_sleeps=4, healthy_after=2)
+
+    output = capsys.readouterr().out
+    assert "* Error:" not in output
+    assert "Monitoring recovered" not in output
+    assert sleeps[1] == monitor.TRANSIENT_RETRY_SECONDS
+
+
+# Verifies the short retry failing too is what makes the failure worth a report, and then its recovery worth a line
+def test_a_failure_confirmed_by_the_short_retry_is_reported(tmp_path, monkeypatch, capsys):
+    run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=http_error(503), stop_after_sleeps=5, healthy_after=3)
+
+    output = capsys.readouterr().out
+    assert output.count("* Error: The Steam Web API is temporarily unavailable (retrying in 1 minute)") == 1
+    assert "(retrying in 5 seconds)" not in output, "the first failing poll is the one the short retry confirms in silence"
+    assert "* Monitoring recovered for 76561197960435530 after 1 minute, 5 seconds" in output
+
+
+# Verifies verbose is the mode that wants every decision, so it sees the first failing poll and its recovery
+def test_verbose_reports_the_first_failing_poll(tmp_path, monkeypatch, capsys):
+    run_one_cycle(tmp_path, monkeypatch, poll_error=http_error(503), stop_after_sleeps=4, healthy_after=2)
+
+    output = capsys.readouterr().out
+    assert output.count("* Error: The Steam Web API is temporarily unavailable (retrying in 5 seconds)") == 1
+    assert "* Monitoring recovered for 76561197960435530 after 5 seconds" in output
+
+
+# Verifies a failure nothing here can retry away gains nothing from a confirming poll, so it is reported at once
+def test_a_failure_that_cannot_clear_itself_is_reported_at_once(tmp_path, monkeypatch, capsys):
+    run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=http_error(403), stop_after_sleeps=2)
+
+    assert capsys.readouterr().out.count("* Error: Steam rejected the configured Web API key") == 1
+
+
+# Verifies an internet outage that classifies as a timeout on one poll and as unreachable on the next is one
+# outage, so it is reported once rather than on every change
+def test_an_internet_outage_that_flaps_is_one_outage(tmp_path, monkeypatch, capsys):
+    run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=flapping_network, stop_after_sleeps=12)
+
+    output = capsys.readouterr().out
+    assert output.count("* Error:") == 1
+    assert output.count("To fix: ") == 1
+    assert "Monitoring failure changed" not in output
+
+
+# Verifies a reported outage that starts failing differently is still one outage, so the change is one line
+# rather than a second report
+def test_a_second_failure_category_is_noted_in_one_line(tmp_path, monkeypatch, capsys):
+    changing = lambda polls: http_error(503) if polls < 6 else TimeoutError("request timed out")  # noqa: E731
+    run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=changing, stop_after_sleeps=10)
+
+    lines = capsys.readouterr().out.splitlines()
+    reports = [line for line in lines if line.startswith("* Error:")]
+    changes = [number for number, line in enumerate(lines) if line.startswith("* Monitoring failure changed for 76561197960435530. ")]
+    assert len(reports) == 1 and "temporarily unavailable" in reports[0]
+    assert len(changes) == 1 and lines[changes[0]].endswith("The Steam Web API request timed out")
+    assert lines[changes[0] + 1].startswith("Timestamp:")
+    assert "\n".join(lines).count("To fix: ") == 1
+
+
+# Verifies a flapping internet outage alerts once, since each network failure is the same outage to the channels too
+def test_an_internet_outage_that_flaps_alerts_once(tmp_path, monkeypatch):
+    deliveries = []
+    monkeypatch.setattr(monitor, "send_notification_channels", lambda *args, **kwargs: deliveries.append(args[1]) or (True, True))
+
+    run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=flapping_network, stop_after_sleeps=12, error_notifications=True)
+
+    assert len(deliveries) == 1
