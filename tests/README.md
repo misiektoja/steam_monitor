@@ -49,6 +49,7 @@ and again before anything is published to PyPI.
 | `test_startup_summary_channels.py` | Summary rows naming the webhook provider, the mail server, the masked recipient, the delivery confirmations and the runtime |
 | `test_startup_ui.py` | Startup summary rows, per-row routing, width-aware truncation and the grouped help |
 | `test_setup_wizard.py` | The setup wizard, per-section editing, input normalizers, the welcome screen and their terminal output contract |
+| `test_partial_setup_save.py` | Real wizard inputs and filesystem failures after configuration replacement |
 | `test_doctor.py` | The doctor report, its checks, delivery-test consent, exit code and its terminal output contract |
 | `test_help_screen.py` | The `--help` screen: the option groups, the worked examples and the version banner |
 | `test_recovery_errors.py` | The recovery code taxonomy, classifier, rendered fix lines, hint deduplication and secret redaction |
