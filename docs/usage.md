@@ -349,6 +349,8 @@ COLOR_THEME = {
 }
 ```
 
+The four presence colours apply where the tool reports a state, such as a `Status:` row, a status change line or a capitalised state like `*** User got OFFLINE !`. A sentence that only mentions a state, such as the liveness line `The user is offline with no status or game change since the last check`, stays in the default colour. The two boolean colours apply to a `Yes` or `No` that is the whole value of a labelled row, not to the word inside a sentence.
+
 | Theme key | Default | What it colours |
 | --- | --- | --- |
 | `header` | `bright_cyan` | Report and wizard headings, plus the ASCII banner |
@@ -372,8 +374,8 @@ COLOR_THEME = {
 | `webhook` | `bright_blue` | Lines reporting a webhook being sent |
 | `date` | `magenta` | Single dates and times |
 | `date_range` | `magenta` | Date and time ranges |
-| `boolean_true` | `green` | `True`, `Enabled`, `On` and `[PASS]` rows |
-| `boolean_false` | `red` | `False`, `Disabled` and `Off` |
+| `boolean_true` | `green` | `True`, `Enabled`, `On`, a `Yes` answer and `[PASS]` rows |
+| `boolean_false` | `red` | `False`, `Disabled`, `Off` and a `No` answer |
 | `link` | `blue underline` | URLs |
 | `help_heading` | `bright_cyan bold` | The `--help` group headings and example task names |
 | `help_usage` | `bright_white bold` | The `usage:` label |

@@ -1389,8 +1389,12 @@ _STATUS_CHANGE_RE = re.compile(
 _DURATION_RE = re.compile(
     r"(\d+\s+(seconds?|minutes?|hours?|days?|weeks?|months?|years?))", re.IGNORECASE
 )
-_ONLINE_WORD_RE = re.compile(r"(?i)( online| appeared |\bYes\b)")
-_OFFLINE_WORD_RE = re.compile(r"(?i)( offline| away| snooze|\bNo\b)")
+# A presence word is only a reported state when the tool prints it in capitals, so a sentence that merely
+# mentions a state, such as "the user is offline with no change", keeps its plain colour
+_ONLINE_WORD_RE = re.compile(r"\b(ONLINE|ACTIVE)\b")
+_OFFLINE_WORD_RE = re.compile(r"\b(OFFLINE|INACTIVE|AWAY|SNOOZE)\b")
+# A Yes or No is an answer only as the whole value of a labelled row, never as the word inside a sentence
+_ANSWER_VALUE_RE = re.compile(r"(?<=:)([\t ]+)(Yes|No)[\t ]*$")
 # A startup summary row names a setting, so a presence word inside its label is part of the label and not a state
 _SUMMARY_ROW_LABEL_RE = re.compile(r"^(\* [\w()/ -]+:[\t ]+)(.*)$", re.S)
 _BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b|\bEnabled\b")
@@ -1665,6 +1669,7 @@ def _colorize_line(line, notification_summary=False):
     # Highlight boolean values first
     line = _BOOLEAN_TRUE_RE.sub(lambda mo: colorize("boolean_true", mo.group(0)), line)
     line = _BOOLEAN_FALSE_RE.sub(lambda mo: colorize("boolean_false", mo.group(0)), line)
+    line = _ANSWER_VALUE_RE.sub(lambda mo: f"{mo.group(1)}{colorize('boolean_true' if mo.group(2) == 'Yes' else 'boolean_false', mo.group(2))}", line)
 
     # Highlight online/offline keywords
     def _offline_repl(mo):

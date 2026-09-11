@@ -149,6 +149,33 @@ def test_startup_rows_colour_a_switched_feature(colored, value, part):
     assert line == f"* Terminal truncation:          {colored[part]}{value}{monitor.ANSI_RESET}"
 
 
+# Verifies a sentence that only mentions a presence state or answers with an English "no" stays plain, so a
+# healthy report does not read as a failure
+@pytest.mark.parametrize("line", [
+    "* Monitoring healthy for 76561198128683189. The user is offline with no status or game change since the last check",
+    "* Monitoring healthy for 76561198128683189. The user is online with no status or game change since the last check",
+    "* No .env file found, reloading exported environment variables only",
+    "* No recent achievements found or access is restricted by the user's privacy settings.",
+    "* Polling intervals:           60 seconds while offline, 30 seconds while online",
+    "Send a webhook alert when the user goes offline?",
+])
+def test_a_mentioned_state_or_english_no_is_not_painted(colored, line):
+    spans = re.findall(r"\x1b\[[0-9;]*m(.*?)\x1b\[0m", monitor._colorize_line(line))
+    assert not [span for span in spans if re.search(r"(?i)\b(online|offline|away|snooze|yes|no)\b", span)]
+
+
+# Verifies a state the tool reports in capitals still carries its own colour
+@pytest.mark.parametrize(("state", "part"), [("ONLINE", "status_online"), ("ACTIVE", "status_online"), ("OFFLINE", "status_offline"), ("INACTIVE", "status_offline"), ("AWAY", "status_away"), ("SNOOZE", "status_snooze")])
+def test_a_reported_state_keeps_its_colour(colored, state, part):
+    assert f"{colored[part]}{state}{monitor.ANSI_RESET}" in monitor._colorize_line(f"*** User got {state} !")
+
+
+# Verifies a Yes or No answer is coloured only as the whole value of a labelled row
+def test_an_answer_row_is_coloured_like_a_boolean(colored):
+    assert monitor._colorize_line("* Friends check:               Yes") == f"* Friends check:               {colored['boolean_true']}Yes{monitor.ANSI_RESET}"
+    assert monitor._colorize_line("* Friends check:               No") == f"* Friends check:               {colored['boolean_false']}No{monitor.ANSI_RESET}"
+
+
 # Verifies the startup banner uses only its explicitly selected colours
 def test_startup_banner_uses_only_its_own_colours(colored, capsys):
     monitor.print_startup_banner()
