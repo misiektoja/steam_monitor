@@ -2638,7 +2638,7 @@ def validate_steam_api_key(api_key, timeout=10):
 # Applies the discovered configuration to a secret command that runs before the normal configuration load, so the
 # request it makes to validate the entered secret follows the configured TLS choice rather than the built-in default
 def _prepare_early_command_config() -> None:
-    cfg_path = find_config_file()
+    cfg_path = None if CONFIG_DISCOVERY_DISABLED else find_config_file(CLI_CONFIG_PATH)
     if cfg_path and not load_config_file(cfg_path):
         sys.exit(1)
     apply_tls_verification_setting()
@@ -2678,8 +2678,8 @@ def run_set_steam_api_key(env_file=None, interactive=None, input_func=None, getp
     print(f"* Updated private settings file: {destination}")
     print()
     monitor_target = command_targets(None, config_file_target(find_config_file()))[1]
-    _wizard_print_command("Check setup again:", render_command(["--doctor"], include_paths=False, env_path=destination))
-    _wizard_print_command("After Doctor passes, start monitoring:", render_command([monitor_target] if monitor_target else [], include_paths=False, env_path=destination))
+    _wizard_print_command("Check setup again:", render_command(["--doctor"], env_path=destination))
+    _wizard_print_command("After Doctor passes, start monitoring:", render_command([monitor_target] if monitor_target else [], env_path=destination))
     return str(destination)
 
 
@@ -2756,8 +2756,8 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
     print("* Webhook URL looks valid")
     print(f"* Updated private settings file: {destination}")
     print()
-    _wizard_print_command("Send a test webhook:", render_command(["--send-test-webhook"], include_paths=False, env_path=destination))
-    _wizard_print_command("Check setup again:", render_command(["--doctor"], include_paths=False, env_path=destination))
+    _wizard_print_command("Send a test webhook:", render_command(["--send-test-webhook"], env_path=destination))
+    _wizard_print_command("Check setup again:", render_command(["--doctor"], env_path=destination))
     return str(destination)
 
 
@@ -2858,8 +2858,8 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
         print("* SMTP_PASSWORD is exported in this environment and an export wins at startup, so the next run uses that value rather than the one just saved")
         print(colorize("info", "To fix: Unset the exported SMTP_PASSWORD to use the saved one"))
     print()
-    _wizard_print_command("Send a test email:", render_command(["--send-test-email"], include_paths=False, env_path=destination))
-    _wizard_print_command("Check setup again:", render_command(["--doctor"], include_paths=False, env_path=destination))
+    _wizard_print_command("Send a test email:", render_command(["--send-test-email"], env_path=destination))
+    _wizard_print_command("Check setup again:", render_command(["--doctor"], env_path=destination))
     return str(destination)
 
 
@@ -4017,6 +4017,8 @@ BUILT_IN_SHAPE_SETTINGS = {name: globals()[name] for name in ('ST_LOGFILE', 'CSV
 # Shape errors whose settings were replaced with the built-in values, so doctor still names them
 DISCARDED_SETTING_ERRORS = []
 
+DOTENV_STARTUP_ERRORS = {}
+
 
 # True when the selected command exists to correct the configuration, so a malformed setting is reported
 # there instead of stopping the one run that could repair it
@@ -4094,7 +4096,11 @@ def doctor_check_configuration(config_path=None, env_path=None, target_value=Non
         checks.append(make_doctor_check("Configuration", "PASS", "Configuration file loaded", f"Path: {config_path}"))
     else:
         checks.append(make_doctor_check("Configuration", "PASS", "No configuration file selected", "Using built-in defaults and command-line overrides"))
-    if env_path and os.path.isfile(str(env_path)):
+    if env_path and str(env_path) in DOTENV_STARTUP_ERRORS:
+        detail = DOTENV_STARTUP_ERRORS[str(env_path)]
+        advice = make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide("Save the dotenv file as UTF-8 and check its read permissions, then run Doctor again", CONFIG_FILE_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "FAIL", "Dotenv file could not be loaded", detail, advice))
+    elif env_path and os.path.isfile(str(env_path)):
         checks.append(make_doctor_check("Configuration", "PASS", "Dotenv file loaded", f"Path: {env_path}"))
     elif env_path:
         advice = make_recovery_advice("config.missing", "The requested dotenv file was not found", recovery_fix_with_guide("Create the file or select an existing path with --env-file", SECRETS_GUIDE_URL), False, f"Path: {env_path}")
@@ -5180,9 +5186,11 @@ def _wizard_collect_destination_section(state, input_func=None, getpass_func=Non
     state.config_values["DOTENV_FILE"] = str(selected_env)
     if selected_env == Path(state.env_path).expanduser().resolve():
         return
+    for key, value in _wizard_private_values(state.env_path).items():
+        if key in SECRET_KEYS and isinstance(value, str) and key not in state.secret_updates and _wizard_saved_secret_value(key, selected_env) is None:
+            state.secret_updates[key] = value
     state.env_path = selected_env
-    # A secret kept rather than retyped was never queued, so it would be missing from a dotenv file that just moved
-    print("  The dotenv destination changed. Re-enter authentication and notification settings that may contain secrets.")
+    print("  The dotenv destination changed. Existing private settings will be kept in the new file when you save. Review authentication and notification settings.")
     _wizard_collect_auth_section(state, input_func=input_func, getpass_func=getpass_func)
     _wizard_resolve_pending_target(state, input_func=input_func)
     print()
@@ -7018,6 +7026,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     current_games_appids = None
                     debug_swallowed_exception("Fetching the games library (IPlayerService.GetOwnedGames)", exc)
         except Exception as e:
+            exit_if_out_of_file_descriptors(e)
 
             if status > 0:
                 sleep_interval = STEAM_ACTIVE_CHECK_INTERVAL
@@ -7030,61 +7039,48 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             # A failure that has not changed is left to the liveness cadence rather than repeated every check
             outage_outcome = outage.failed(advice)
             delivery_reported = False
-            if advice.code == "steam.rate_limited":
-                # Rate limits carry their own wait, so they skip the retry path rather than burning an attempt
-                retry_after = steam_retry_after_seconds(response, sleep_interval) if response is not None else sleep_interval
-                retry_note = f"retrying in {display_time(retry_after)}"
-                if outage_outcome == "full":
-                    print_recovery_error(e, "runtime", retry_note=retry_note)
+            rate_limited = advice.code == "steam.rate_limited"
+            if rate_limited and response is not None:
+                sleep_interval = steam_retry_after_seconds(response, sleep_interval)
+            # One short retry absorbs a blip without waiting a whole polling interval
+            transient_retry = not rate_limited and advice.retryable and not transient_retry_used
+            retry_note = f"retrying in {display_time(TRANSIENT_RETRY_SECONDS if transient_retry else sleep_interval)}"
+            if outage_outcome == "full":
+                print_recovery_error(e, "runtime", retry_note=retry_note)
+            elif outage_outcome == "changed":
+                print_outage_change(steamid, advice)
+            elif outage_outcome == "reminder":
+                print_outage_liveness(steamid, advice, outage.since, outage.failures)
+            if transient_retry:
+                transient_retry_used = True
+                if outage_outcome in ("full", "changed"):
                     print_cur_ts("Timestamp:\t\t\t")
-                elif outage_outcome == "changed":
-                    print_outage_change(steamid, advice)
-                    print_cur_ts("Timestamp:\t\t\t")
-                elif outage_outcome == "reminder":
-                    print_outage_liveness(steamid, advice, outage.since, outage.failures)
-                debug_print("Retry wait", check=f"#{check_count}", due_in=display_time(retry_after), reason="steam rate limited the request")
-                time.sleep(retry_after)
+                debug_print("Retry wait", check=f"#{check_count}", due_in=display_time(TRANSIENT_RETRY_SECONDS), reason="one short retry before the full interval")
+                time.sleep(TRANSIENT_RETRY_SECONDS)
                 continue
+            if advice.code == "auth.api_key_invalid":
+                m_subject = f"steam_monitor: API key error! (user: {username})"
+                m_body = f"{advice.summary}{nl_ch}{nl_ch}To fix: {advice.fix}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
             else:
-                # One short retry absorbs a blip without waiting a whole polling interval
-                transient_retry = advice.retryable and not transient_retry_used
-                retry_note = f"retrying in {display_time(TRANSIENT_RETRY_SECONDS if transient_retry else sleep_interval)}"
-                if outage_outcome == "full":
-                    print_recovery_error(e, "runtime", retry_note=retry_note)
-                elif outage_outcome == "changed":
-                    print_outage_change(steamid, advice)
-                elif outage_outcome == "reminder":
-                    print_outage_liveness(steamid, advice, outage.since, outage.failures)
-                if transient_retry:
-                    transient_retry_used = True
-                    if outage_outcome in ("full", "changed"):
-                        print_cur_ts("Timestamp:\t\t\t")
-                    debug_print("Retry wait", check=f"#{check_count}", due_in=display_time(TRANSIENT_RETRY_SECONDS), reason="one short retry before the full interval")
-                    time.sleep(TRANSIENT_RETRY_SECONDS)
-                    continue
-                if advice.code == "auth.api_key_invalid":
-                    m_subject = f"steam_monitor: API key error! (user: {username})"
-                    m_body = f"{advice.summary}{nl_ch}{nl_ch}To fix: {advice.fix}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                else:
-                    m_subject = f"steam_monitor: monitoring error (user: {username})"
-                    m_body = f"{advice.summary}{nl_ch}{nl_ch}To fix: {advice.fix}{nl_ch}{nl_ch}Steam Monitor will retry in {display_time(sleep_interval)}.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
-                alert_due = not advice.retryable or int(time.time()) - outage.since >= ERROR_ALERT_AFTER_SECONDS
-                now = int(time.time())
-                error_email_pending = alert_due and error_alert.pending("email", ERROR_NOTIFICATION, now)
-                error_webhook_pending = alert_due and error_alert.pending("webhook", webhook_event_enabled("error"), now)
-                if error_email_pending or error_webhook_pending:
-                    email_delivered, webhook_delivered = send_notification_channels("error", m_subject, m_body, email_enabled=error_email_pending, webhook_enabled=error_webhook_pending, image_url=current_avatar_url, ntfy_priority=5, ntfy_tags="warning")
-                    error_alert.record("email", error_email_pending, email_delivered, now)
-                    error_alert.record("webhook", error_webhook_pending, webhook_delivered, now)
-                    # A retry can reach the screen on a check the outage reporter keeps quiet, and a delivery line
-                    # with nothing under it reads as a run that stopped there
-                    delivery_reported = True
+                m_subject = f"steam_monitor: monitoring error (user: {username})"
+                m_body = f"{advice.summary}{nl_ch}{nl_ch}To fix: {advice.fix}{nl_ch}{nl_ch}Steam Monitor will retry in {display_time(sleep_interval)}.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+            # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
+            alert_due = not advice.retryable or int(time.time()) - outage.since >= ERROR_ALERT_AFTER_SECONDS
+            now = int(time.time())
+            error_email_pending = alert_due and error_alert.pending("email", ERROR_NOTIFICATION, now)
+            error_webhook_pending = alert_due and error_alert.pending("webhook", webhook_event_enabled("error"), now)
+            if error_email_pending or error_webhook_pending:
+                email_delivered, webhook_delivered = send_notification_channels("error", m_subject, m_body, email_enabled=error_email_pending, webhook_enabled=error_webhook_pending, image_url=current_avatar_url, ntfy_priority=5, ntfy_tags="warning")
+                error_alert.record("email", error_email_pending, email_delivered, now)
+                error_alert.record("webhook", error_webhook_pending, webhook_delivered, now)
+                # A retry can reach the screen on a check the outage reporter keeps quiet, and a delivery line
+                # with nothing under it reads as a run that stopped there
+                delivery_reported = True
 
             if outage_outcome in ("full", "changed") or delivery_reported:
                 print_cur_ts("Timestamp:\t\t\t")
 
-            debug_print("Retry wait", check=f"#{check_count}", due_in=display_time(sleep_interval), reason="waiting the polling interval after a failed check")
+            debug_print("Retry wait", check=f"#{check_count}", due_in=display_time(sleep_interval), reason="steam rate limited the request" if rate_limited else "waiting the polling interval after a failed check")
             time.sleep(sleep_interval)
 
             continue
@@ -8112,6 +8108,10 @@ def main():
     )
 
     args = parser.parse_args()
+    CONFIG_DISCOVERY_DISABLED = args.config_file is not None and str(args.config_file).casefold() == "none"
+    CLI_CONFIG_PATH = os.path.expanduser(args.config_file) if args.config_file and not CONFIG_DISCOVERY_DISABLED else None
+    DOTENV_STARTUP_ERRORS.clear()
+    env_path = None
 
     # Applied here so config-load failures and startup checks can already print diagnostics
     apply_diagnostic_cli_flags(args)
@@ -8121,7 +8121,7 @@ def main():
         parser.error(f"{selected_secret_actions[0]} cannot be combined with {selected_secret_actions[1]}")
 
     if args.set_steam_api_key:
-        validate_secret_action_args(args, parser, "set_steam_api_key", "--set-steam-api-key")
+        validate_secret_action_args(args, parser, "set_steam_api_key", "--set-steam-api-key", permitted_extra=("config_file",))
         _prepare_early_command_config()
         try:
             run_set_steam_api_key(env_file=args.env_file)
@@ -8131,7 +8131,8 @@ def main():
         sys.exit(0)
 
     if args.set_webhook_url:
-        validate_secret_action_args(args, parser, "set_webhook_url", "--set-webhook-url")
+        validate_secret_action_args(args, parser, "set_webhook_url", "--set-webhook-url", permitted_extra=("config_file",))
+        _prepare_early_command_config()
         try:
             run_set_webhook_url(env_file=args.env_file)
         except (SecretConfigurationError, RecoveryError) as exc:
@@ -8208,6 +8209,13 @@ def main():
             env_path = DOTENV_FILE if DOTENV_FILE else None
             if env_path:
                 print_recovery_advice(missing_dependency_advice("python-dotenv", f"The dotenv file '{env_path}' was not loaded", "pip3 install python-dotenv", "Or export the secrets as environment variables"), label="Warning")
+        except (OSError, UnicodeError, ValueError):
+            detail = f"Dotenv file '{env_path}' could not be read as UTF-8"
+            DOTENV_STARTUP_ERRORS[str(env_path)] = detail
+            if not args.doctor:
+                print_recovery_advice(make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide("Save the dotenv file as UTF-8 and check its read permissions", CONFIG_FILE_GUIDE_URL), False))
+                if not command_reports_configuration(args):
+                    sys.exit(1)
 
     # Exported secrets apply on their own, so a dotenv file is an alternative to the environment rather than a precondition
     load_secrets_from_environment()

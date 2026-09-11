@@ -68,6 +68,8 @@ and again before anything is published to PyPI.
 | `test_secret_inputs.py` | Atomic dotenv updates, hidden webhook and ntfy entry, refusal to save invalid input |
 | `test_steam_monitor.py` | Profile URL resolution for numeric, Steam3, invite and vanity forms |
 | `test_webhook_notifications.py` | Startup rollups, notification summary coloring, webhook settings and URL validation |
+| `test_moved_private_settings.py` | Kept credentials across dotenv destination changes and startup error handling |
+| `test_real_rate_limit.py` | Real-client rate-limit alerts and fatal resource failures |
 
 ## Conventions
 
