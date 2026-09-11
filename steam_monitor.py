@@ -713,12 +713,12 @@ def install_method_display_name(method=None):
     return f"{base} in a container" if running_in_container() else base
 
 
-# Returns the argv prefix that invokes this tool for the detected install method
+# Returns a compact display prefix for the detected install method
 def install_command_prefix():
-    executable = sys.executable
+    executable = "python" if system() == "Windows" else "python3"
     if install_method() == INSTALL_METHOD_SCRIPT:
-        return [executable, str(Path(__file__).resolve())]
-    return [executable, "-m", "steam_monitor"]
+        return [executable, "steam_monitor.py"]
+    return ["steam_monitor"]
 
 
 # The documentation placeholders a printed command carries unquoted, because the reader replaces them before running it
