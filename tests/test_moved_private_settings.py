@@ -30,6 +30,8 @@ def destination_answers(config_path, env_path):
             return str(config_path)
         if "Dotenv file destination" in prompt:
             return str(env_path)
+        if "Continue without" in prompt:
+            return "y"
         return "n"
     return answer
 

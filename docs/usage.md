@@ -310,6 +310,8 @@ List of supported signals:
 | ABRT | Decrease check timer for player activity when user is online/away/snooze (by 30 seconds) |
 | HUP | Reload secrets from .env file |
 
+`SIGHUP` keeps command-line credentials and nonempty environment values exported before startup. Change those values and restart to replace them.
+
 Send signals with `kill` or `pkill`, e.g.:
 
 ```sh

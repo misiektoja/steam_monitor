@@ -37,6 +37,7 @@ SGR_SEQUENCE_RE = re.compile(r"\x1b\[[0-9;]*m")
 @pytest.fixture
 # Restores every module-level setting the doctor reads, since the whole suite shares one imported module
 def doctor_globals(monkeypatch):
+    monkeypatch.setattr(monitor, "DOTENV_RELOAD_STATE", {})
     snapshot = {name: value for name, value in vars(monitor).items() if name.isupper()}
     monkeypatch.setattr(monitor, "STEAM_API_KEY", SECRET_API_KEY)
     monkeypatch.setattr(monitor, "DISABLE_LOGGING", True)

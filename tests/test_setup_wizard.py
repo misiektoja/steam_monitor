@@ -1467,6 +1467,7 @@ def test_a_rejected_duration_keeps_the_default(capsys):
 # Setup reports the sign-in succeeded and then writes the files a restart reads, so the value it proves has to be
 # the value the next run resolves. Startup prefers an export over the dotenv file and setup has to agree
 def test_the_effective_secret_follows_the_startup_precedence(tmp_path, monkeypatch):
+    monkeypatch.setattr(monitor, "DOTENV_RELOAD_STATE", {})
     env_path = tmp_path / ".env"
     env_path.write_text('SMTP_PASSWORD="saved-in-file"\n', encoding="utf-8")
     monkeypatch.delenv("SMTP_PASSWORD", raising=False)
@@ -1495,3 +1496,9 @@ def test_a_rebuilt_config_leaves_the_default_theme_commented():
     rendered = monitor.generate_config_with_current_values(dict(monitor._config_template_defaults()))
 
     assert "\nCOLOR_THEME = {" not in rendered
+
+
+@pytest.fixture(autouse=True)
+# Starts each setup scenario without file ownership left by another test
+def isolated_dotenv_ownership(monkeypatch):
+    monkeypatch.setattr(monitor, "DOTENV_RELOAD_STATE", {})
