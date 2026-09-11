@@ -171,7 +171,7 @@ def test_the_truncation_library_is_reported():
     missing = [check for check in monitor.doctor_check_environment(spec_finder=lambda name: None if name == "wcwidth" else object()) if "wcwidth" in check.label]
 
     assert [(check.status, check.detail) for check in installed] == [("PASS", "Used only to measure display width for screen truncation")]
-    assert [(check.status, check.detail) for check in missing] == [("WARN", "Screen truncation is disabled and lines are printed in full. Every other feature is unaffected")]
+    assert [(check.status, check.detail) for check in missing] == [("WARN", "Wide characters count as one column, so a line holding them can run past the limit. Every other feature is unaffected")]
     assert "pip3 install wcwidth" in missing[0].advice.fix
 
 

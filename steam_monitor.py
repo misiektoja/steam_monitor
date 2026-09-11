@@ -1710,7 +1710,8 @@ def truncate_string_per_line(message, truncate_width, tabsize=8):
     try:
         from wcwidth import wcwidth
     except ImportError:
-        return message
+        # Without wcwidth every character costs one column, so truncation still applies and only wide characters are measured short
+        wcwidth = len
     truncated_lines = []
     for line in message.split("\n"):
         expanded_line = line.expandtabs(tabsize)
@@ -3360,14 +3361,19 @@ def format_payload(template, payload):
 
 # Parses legacy and current Discord templates before validating their object shape
 def render_discord_template(template, values):
-    if isinstance(template, str):
-        try:
-            template = json.loads(template)
-        except json.JSONDecodeError:
-            template = json.loads(str(format_payload(template, values)))
-    if not isinstance(template, dict):
-        raise ValueError("WEBHOOK_TEMPLATE must be a dictionary or a JSON object string")
-    return format_payload(template, values)
+    # A placeholder the payload cannot fill, such as the positional {0}, fails inside str.format rather than as a
+    # value error, so every parsing and rendering failure is reported as the one error callers already handle
+    try:
+        if isinstance(template, str):
+            try:
+                template = json.loads(template)
+            except json.JSONDecodeError:
+                template = json.loads(str(format_payload(template, values)))
+        if isinstance(template, dict):
+            return format_payload(template, values)
+    except Exception as exc:
+        raise ValueError("WEBHOOK_TEMPLATE must be a dictionary or a JSON object string") from exc
+    raise ValueError("WEBHOOK_TEMPLATE must be a dictionary or a JSON object string")
 
 
 # Returns a configuration error for unsafe or unsupported webhook customization
@@ -3809,7 +3815,7 @@ def doctor_check_environment(version_info=None, spec_finder=None):
         checks.append(make_doctor_check("Environment", "PASS", "Optional dependency wcwidth is installed", "Used only to measure display width for screen truncation"))
     else:
         advice = make_recovery_advice("dependency.missing", "Optional dependency wcwidth is not installed", recovery_fix_with_guide("Install it with: pip3 install wcwidth", INSTALL_GUIDE_URL), False)
-        checks.append(make_doctor_check("Environment", "WARN", advice.summary, "Screen truncation is disabled and lines are printed in full. Every other feature is unaffected", advice))
+        checks.append(make_doctor_check("Environment", "WARN", advice.summary, "Wide characters count as one column, so a line holding them can run past the limit. Every other feature is unaffected", advice))
 
     # A warning about a library that cannot affect this machine is noise, so the row is skipped off Windows
     if platform.system() == "Windows":
