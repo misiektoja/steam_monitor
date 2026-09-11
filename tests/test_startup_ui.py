@@ -438,7 +438,7 @@ def test_the_notification_rollups_name_their_categories(monkeypatch, summary_glo
     concise = rendered_summary(monitor.build_startup_summary("76561198000000000", "tool.conf", None, "tool.log"), show_full=False)
 
     assert "Notifications (email)" in concise
-    assert "On (online/offline, game)" in concise
+    assert "On (online and offline changes, game changes)" in concise
     assert "Notifications (webhook)" in concise
     assert "Off" in concise
 

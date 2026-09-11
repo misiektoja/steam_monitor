@@ -387,7 +387,7 @@ def test_the_webhook_service_is_chosen_before_the_url(tmp_path, monkeypatch, wiz
     values = monitor.parse_config_content((tmp_path / "steam_monitor.conf").read_text(encoding="utf-8"))
     assert values["WEBHOOK_ENABLED"] is True
     assert values["WEBHOOK_PROVIDER"] == "discord"
-    assert values["WEBHOOK_ACTIVE_NOTIFICATION"] is True and values["WEBHOOK_STATUS_NOTIFICATION"] is False
+    assert values["WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION"] is True and values["WEBHOOK_STATUS_NOTIFICATION"] is False
     assert "Which webhook service should receive alerts?" in capsys.readouterr().out
     assert WEBHOOK_URL in (tmp_path / ".env").read_text(encoding="utf-8")
 

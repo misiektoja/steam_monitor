@@ -60,7 +60,7 @@ def test_a_shipped_template_still_parses(template):
 # Verifies every setting a released version wrote is either still supported or explicitly retired
 def test_no_setting_disappeared_without_being_retired(template):
     old_names = set(re.findall(r"^([A-Z][A-Z0-9_]*)\s*=", template.read_text(encoding="utf-8"), flags=re.MULTILINE))
-    known = set(monitor._config_allowed_names()) | set(monitor.RETIRED_CONFIG_SETTINGS)
+    known = set(monitor._config_allowed_names()) | set(monitor.RETIRED_CONFIG_SETTINGS) | set(monitor.MERGED_CONFIG_SETTINGS)
 
     vanished = sorted(old_names - known)
 
@@ -88,6 +88,41 @@ def test_a_retired_setting_is_ignored_with_a_note(tmp_path, monkeypatch):
     assert retired == ["SOME_OLD_SETTING"]
     assert monitor.load_config_file(config, namespace=namespace, report_errors=False) is True
     assert namespace == {"CLEAR_SCREEN": False}
+
+
+# Verifies the two retired webhook presence settings still switch on the setting that replaced them
+@pytest.mark.parametrize("content, expected", [
+    ("WEBHOOK_ACTIVE_NOTIFICATION = True\nWEBHOOK_INACTIVE_NOTIFICATION = False\n", True),
+    ("WEBHOOK_ACTIVE_NOTIFICATION = False\nWEBHOOK_INACTIVE_NOTIFICATION = True\n", True),
+    ("WEBHOOK_ACTIVE_NOTIFICATION = False\nWEBHOOK_INACTIVE_NOTIFICATION = False\n", False),
+])
+def test_an_older_webhook_presence_setting_applies_to_its_replacement(content, expected):
+    merged = []
+
+    values = monitor.parse_config_content(content, "<old.conf>", merged_out=merged)
+
+    assert values["WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION"] is expected
+    assert merged == ["WEBHOOK_ACTIVE_NOTIFICATION", "WEBHOOK_INACTIVE_NOTIFICATION"]
+
+
+# Verifies a config that already uses the replacement keeps its own value rather than an older setting's
+def test_the_replacement_setting_wins_over_an_older_one():
+    content = "WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION = False\nWEBHOOK_ACTIVE_NOTIFICATION = True\n"
+
+    assert monitor.parse_config_content(content, "<old.conf>")["WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION"] is False
+
+
+# Verifies loading an older config reports which settings were applied through their replacement
+def test_a_merged_setting_is_reported_when_the_config_loads(tmp_path, capsys):
+    config = tmp_path / "old.conf"
+    config.write_text("WEBHOOK_INACTIVE_NOTIFICATION = True\nCLEAR_SCREEN = False\n", encoding="utf-8")
+    namespace = {}
+
+    assert monitor.load_config_file(config, namespace=namespace, report_errors=True) is True
+
+    assert namespace["WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION"] is True
+    output = capsys.readouterr().out
+    assert "WEBHOOK_INACTIVE_NOTIFICATION -> WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION" in output
 
 
 # Verifies a customization the literal-only parser cannot accept explains itself instead of just failing

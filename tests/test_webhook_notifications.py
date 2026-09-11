@@ -42,8 +42,7 @@ class WebhookNotificationTests(unittest.TestCase):
             "WEBHOOK_URL": "https://discord.com/api/webhooks/123/private-token",
             "WEBHOOK_USERNAME": "Steam Monitor",
             "WEBHOOK_AVATAR_URL": "",
-            "WEBHOOK_ACTIVE_NOTIFICATION": False,
-            "WEBHOOK_INACTIVE_NOTIFICATION": False,
+            "WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION": False,
             "WEBHOOK_STATUS_NOTIFICATION": True,
             "WEBHOOK_GAME_CHANGE_NOTIFICATION": False,
             "WEBHOOK_LEVEL_XP_NOTIFICATION": False,
@@ -74,11 +73,12 @@ class WebhookNotificationTests(unittest.TestCase):
 
     # Verifies startup summaries use short labels and unstarred bounded continuation lines
     def test_startup_notification_summaries_use_compact_rollups(self):
-        for setting in ("ACTIVE_INACTIVE_NOTIFICATION", "STATUS_NOTIFICATION", "GAME_CHANGE_NOTIFICATION", "STEAM_LEVEL_XP_NOTIFICATION", "FRIENDS_NOTIFICATION", "GAMES_LIBRARY_NOTIFICATION", "NAME_CHANGE_NOTIFICATION", "ERROR_NOTIFICATION", "WEBHOOK_ENABLED", "WEBHOOK_ACTIVE_NOTIFICATION", "WEBHOOK_INACTIVE_NOTIFICATION", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_GAME_CHANGE_NOTIFICATION", "WEBHOOK_LEVEL_XP_NOTIFICATION", "WEBHOOK_FRIENDS_NOTIFICATION", "WEBHOOK_GAMES_NOTIFICATION", "WEBHOOK_NAME_CHANGE_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION"):
+        for setting in ("ACTIVE_INACTIVE_NOTIFICATION", "STATUS_NOTIFICATION", "GAME_CHANGE_NOTIFICATION", "STEAM_LEVEL_XP_NOTIFICATION", "FRIENDS_NOTIFICATION", "GAMES_LIBRARY_NOTIFICATION", "NAME_CHANGE_NOTIFICATION", "ERROR_NOTIFICATION", "WEBHOOK_ENABLED", "WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_GAME_CHANGE_NOTIFICATION", "WEBHOOK_LEVEL_XP_NOTIFICATION", "WEBHOOK_FRIENDS_NOTIFICATION", "WEBHOOK_GAMES_NOTIFICATION", "WEBHOOK_NAME_CHANGE_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION"):
             setattr(steam_monitor, setting, True)
         rows = {row.label: row.value for row in steam_monitor.build_startup_summary(target="76561197960287930")}
-        self.assertEqual(rows["Notifications (email)"], "On (online/offline, status, game, level/XP, friends, games, name, errors)")
-        self.assertEqual(rows["Notifications (webhook)"], "On (active, inactive, status, game, level/XP, friends, games, name, errors)")
+        expected = "On (online and offline changes, all status changes, game changes, level and XP changes, friends list changes, games library changes, name changes, errors)"
+        self.assertEqual(rows["Notifications (email)"], expected)
+        self.assertEqual(rows["Notifications (webhook)"], expected)
 
     # Verifies webhook categories remain off while the master switch is disabled
     def test_startup_webhook_summary_respects_master_switch(self):
@@ -307,8 +307,7 @@ class WebhookNotificationTests(unittest.TestCase):
             webhook_provider="ntfy",
             webhook_url="https://ntfy.example.test/private-topic",
             webhook_enabled=None,
-            webhook_active=True,
-            webhook_inactive=None,
+            webhook_active_inactive=True,
             webhook_status=None,
             webhook_game_changes=None,
             webhook_level_xp=None,
@@ -323,7 +322,7 @@ class WebhookNotificationTests(unittest.TestCase):
         self.assertEqual(steam_monitor.WEBHOOK_PROVIDER, "ntfy")
         self.assertEqual(steam_monitor.WEBHOOK_URL, "https://ntfy.example.test/private-topic")
         self.assertTrue(steam_monitor.WEBHOOK_ENABLED)
-        self.assertTrue(steam_monitor.WEBHOOK_ACTIVE_NOTIFICATION)
+        self.assertTrue(steam_monitor.WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION)
         self.assertFalse(steam_monitor.WEBHOOK_ERROR_NOTIFICATION)
         parser.error.assert_not_called()
 
@@ -333,8 +332,7 @@ class WebhookNotificationTests(unittest.TestCase):
             webhook_provider=None,
             webhook_url="https://ntfy.sh/private-topic",
             webhook_enabled=None,
-            webhook_active=None,
-            webhook_inactive=None,
+            webhook_active_inactive=None,
             webhook_status=None,
             webhook_game_changes=None,
             webhook_level_xp=None,

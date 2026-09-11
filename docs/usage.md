@@ -237,8 +237,7 @@ Webhook event switches mirror the email choices while remaining independent:
 
 | Event | Configuration | One-run flag |
 | --- | --- | --- |
-| User becomes active | `WEBHOOK_ACTIVE_NOTIFICATION` | `--webhook-active` |
-| User goes offline | `WEBHOOK_INACTIVE_NOTIFICATION` | `--webhook-inactive` |
+| User goes online or offline | `WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION` | `--webhook-active-inactive` |
 | Any status change | `WEBHOOK_STATUS_NOTIFICATION` | `--webhook-status` |
 | Game starts, changes or stops | `WEBHOOK_GAME_CHANGE_NOTIFICATION` | `--webhook-game-changes` |
 | Steam level or XP changes | `WEBHOOK_LEVEL_XP_NOTIFICATION` | `--webhook-level-xp` |
@@ -252,7 +251,7 @@ Use `--webhook` or `--no-webhook` to override the master switch for one run. Eve
 For example:
 
 ```sh
-steam_monitor <steam_target> --webhook-active --webhook-inactive --webhook-game-changes
+steam_monitor <steam_target> --webhook-active-inactive --webhook-game-changes
 steam_monitor <steam_target> --check-friends --webhook-friends
 ```
 

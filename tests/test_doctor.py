@@ -52,7 +52,7 @@ def doctor_globals(monkeypatch):
                  "STEAM_LEVEL_XP_NOTIFICATION", "FRIENDS_NOTIFICATION", "GAMES_LIBRARY_NOTIFICATION",
                  "NAME_CHANGE_NOTIFICATION", "ERROR_NOTIFICATION"):
         monkeypatch.setattr(monitor, name, False)
-    for name in ("WEBHOOK_ACTIVE_NOTIFICATION", "WEBHOOK_INACTIVE_NOTIFICATION", "WEBHOOK_STATUS_NOTIFICATION",
+    for name in ("WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION", "WEBHOOK_STATUS_NOTIFICATION",
                  "WEBHOOK_GAME_CHANGE_NOTIFICATION", "WEBHOOK_LEVEL_XP_NOTIFICATION", "WEBHOOK_FRIENDS_NOTIFICATION",
                  "WEBHOOK_GAMES_NOTIFICATION", "WEBHOOK_NAME_CHANGE_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION"):
         monkeypatch.setattr(monitor, name, False)
@@ -356,7 +356,7 @@ def test_the_email_ready_row_reports_the_sign_in_and_the_alerts(monkeypatch, doc
 
     assert checks[0].status == "PASS"
     assert checks[0].label == "SMTP connection and login succeeded"
-    assert checks[0].detail == "Alerts: status. No email was sent during this passive check"
+    assert checks[0].detail == "Alerts: all status changes. No email was sent during this passive check"
     assert report.email_ready is True
     assert closed == [True]
 

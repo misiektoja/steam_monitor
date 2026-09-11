@@ -105,13 +105,9 @@ WEBHOOK_USERNAME = "Steam Monitor"
 # Applies only when WEBHOOK_PROVIDER is "discord" (ignored by the ntfy provider)
 WEBHOOK_AVATAR_URL = ""
 
-# Whether to send a webhook notification when the user becomes active
-# Can also be enabled via the --webhook-active flag
-WEBHOOK_ACTIVE_NOTIFICATION = False
-
-# Whether to send a webhook notification when the user goes offline
-# Can also be enabled via the --webhook-inactive flag
-WEBHOOK_INACTIVE_NOTIFICATION = False
+# Whether to send a webhook notification when user goes online/offline
+# Can also be enabled via the --webhook-active-inactive flag
+WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION = False
 
 # Whether to send a webhook notification on any status change
 # Can also be enabled via the --webhook-status flag
@@ -408,8 +404,7 @@ WEBHOOK_PROVIDER = ""
 WEBHOOK_URL = ""
 WEBHOOK_USERNAME = ""
 WEBHOOK_AVATAR_URL = ""
-WEBHOOK_ACTIVE_NOTIFICATION = False
-WEBHOOK_INACTIVE_NOTIFICATION = False
+WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION = False
 WEBHOOK_STATUS_NOTIFICATION = False
 WEBHOOK_GAME_CHANGE_NOTIFICATION = False
 WEBHOOK_LEVEL_XP_NOTIFICATION = False
@@ -2897,13 +2892,13 @@ def normalized_webhook_provider(provider=None):
 # Returns enabled email notification category names in display order
 def _startup_email_notification_categories():
     settings = (
-        (ACTIVE_INACTIVE_NOTIFICATION, "online/offline"),
-        (STATUS_NOTIFICATION, "status"),
-        (GAME_CHANGE_NOTIFICATION, "game"),
-        (STEAM_LEVEL_XP_NOTIFICATION, "level/XP"),
-        (FRIENDS_NOTIFICATION, "friends"),
-        (GAMES_LIBRARY_NOTIFICATION, "games"),
-        (NAME_CHANGE_NOTIFICATION, "name"),
+        (ACTIVE_INACTIVE_NOTIFICATION, "online and offline changes"),
+        (STATUS_NOTIFICATION, "all status changes"),
+        (GAME_CHANGE_NOTIFICATION, "game changes"),
+        (STEAM_LEVEL_XP_NOTIFICATION, "level and XP changes"),
+        (FRIENDS_NOTIFICATION, "friends list changes"),
+        (GAMES_LIBRARY_NOTIFICATION, "games library changes"),
+        (NAME_CHANGE_NOTIFICATION, "name changes"),
         (ERROR_NOTIFICATION, "errors"),
     )
     return [label for enabled, label in settings if enabled]
@@ -2911,34 +2906,21 @@ def _startup_email_notification_categories():
 
 # Returns enabled webhook notification category names in display order
 def _startup_webhook_notification_categories():
-    settings = (
-        (WEBHOOK_ACTIVE_NOTIFICATION, "active"),
-        (WEBHOOK_INACTIVE_NOTIFICATION, "inactive"),
-        (WEBHOOK_STATUS_NOTIFICATION, "status"),
-        (WEBHOOK_GAME_CHANGE_NOTIFICATION, "game"),
-        (WEBHOOK_LEVEL_XP_NOTIFICATION, "level/XP"),
-        (WEBHOOK_FRIENDS_NOTIFICATION, "friends"),
-        (WEBHOOK_GAMES_NOTIFICATION, "games"),
-        (WEBHOOK_NAME_CHANGE_NOTIFICATION, "name"),
-        (WEBHOOK_ERROR_NOTIFICATION, "errors"),
-    )
-    return [label for label in _selected_webhook_notification_categories(settings) if WEBHOOK_ENABLED]
+    return _selected_webhook_notification_categories() if WEBHOOK_ENABLED else []
 
 
 # Returns the webhook alert types selected in the configuration, ignoring the master switch
-def _selected_webhook_notification_categories(settings=None):
-    if settings is None:
-        settings = (
-            (WEBHOOK_ACTIVE_NOTIFICATION, "active"),
-            (WEBHOOK_INACTIVE_NOTIFICATION, "inactive"),
-            (WEBHOOK_STATUS_NOTIFICATION, "status"),
-            (WEBHOOK_GAME_CHANGE_NOTIFICATION, "game"),
-            (WEBHOOK_LEVEL_XP_NOTIFICATION, "level/XP"),
-            (WEBHOOK_FRIENDS_NOTIFICATION, "friends"),
-            (WEBHOOK_GAMES_NOTIFICATION, "games"),
-            (WEBHOOK_NAME_CHANGE_NOTIFICATION, "name"),
-            (WEBHOOK_ERROR_NOTIFICATION, "errors"),
-        )
+def _selected_webhook_notification_categories():
+    settings = (
+        (WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION, "online and offline changes"),
+        (WEBHOOK_STATUS_NOTIFICATION, "all status changes"),
+        (WEBHOOK_GAME_CHANGE_NOTIFICATION, "game changes"),
+        (WEBHOOK_LEVEL_XP_NOTIFICATION, "level and XP changes"),
+        (WEBHOOK_FRIENDS_NOTIFICATION, "friends list changes"),
+        (WEBHOOK_GAMES_NOTIFICATION, "games library changes"),
+        (WEBHOOK_NAME_CHANGE_NOTIFICATION, "name changes"),
+        (WEBHOOK_ERROR_NOTIFICATION, "errors"),
+    )
     return [label for enabled, label in settings if enabled]
 
 
@@ -3347,8 +3329,8 @@ def doctor_value_is_set(value):
 # Returns whether one configured webhook alert is enabled independently of email settings
 def webhook_event_enabled(notification_type):
     settings = {
-        "active": WEBHOOK_ACTIVE_NOTIFICATION,
-        "inactive": WEBHOOK_INACTIVE_NOTIFICATION,
+        "active": WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION,
+        "inactive": WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION,
         "status": WEBHOOK_STATUS_NOTIFICATION,
         "game": WEBHOOK_GAME_CHANGE_NOTIFICATION,
         "level_xp": WEBHOOK_LEVEL_XP_NOTIFICATION,
@@ -4756,7 +4738,7 @@ WIZARD_SMTP_TIMEOUT = 5
 
 # The email and webhook alert settings the wizard offers, in the order the questions are asked
 WIZARD_EMAIL_NOTIFICATION_KEYS = ("ACTIVE_INACTIVE_NOTIFICATION", "GAME_CHANGE_NOTIFICATION", "STATUS_NOTIFICATION", "NAME_CHANGE_NOTIFICATION", "ERROR_NOTIFICATION")
-WIZARD_WEBHOOK_NOTIFICATION_KEYS = ("WEBHOOK_ACTIVE_NOTIFICATION", "WEBHOOK_INACTIVE_NOTIFICATION", "WEBHOOK_GAME_CHANGE_NOTIFICATION", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_NAME_CHANGE_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION")
+WIZARD_WEBHOOK_NOTIFICATION_KEYS = ("WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION", "WEBHOOK_GAME_CHANGE_NOTIFICATION", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_NAME_CHANGE_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION")
 
 
 # Each editable section: internal name, menu label and description, then the keys reverted when it is re-entered
@@ -5081,14 +5063,13 @@ def _wizard_collect_webhook_section(state, input_func=None, getpass_func=None):
         ("Custom", "Choose each webhook alert separately."),
     ], input_func=input_func)
     if preset == 0:
-        selected = {"WEBHOOK_ACTIVE_NOTIFICATION": True, "WEBHOOK_INACTIVE_NOTIFICATION": True, "WEBHOOK_GAME_CHANGE_NOTIFICATION": True, "WEBHOOK_STATUS_NOTIFICATION": False, "WEBHOOK_NAME_CHANGE_NOTIFICATION": False, "WEBHOOK_ERROR_NOTIFICATION": True}
+        selected = {"WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION": True, "WEBHOOK_GAME_CHANGE_NOTIFICATION": True, "WEBHOOK_STATUS_NOTIFICATION": False, "WEBHOOK_NAME_CHANGE_NOTIFICATION": False, "WEBHOOK_ERROR_NOTIFICATION": True}
     elif preset == 1:
         selected = {name: True for name in WIZARD_WEBHOOK_NOTIFICATION_KEYS}
     else:
         print()
         questions = (
-            ("WEBHOOK_ACTIVE_NOTIFICATION", "Send a webhook alert when the user goes online?"),
-            ("WEBHOOK_INACTIVE_NOTIFICATION", "Send a webhook alert when the user goes offline?"),
+            ("WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION", "Send a webhook alert when the user goes online or offline?"),
             ("WEBHOOK_GAME_CHANGE_NOTIFICATION", "Send a webhook alert when the user starts, changes or stops a game?"),
             ("WEBHOOK_STATUS_NOTIFICATION", "Send a webhook alert on every status change?"),
             ("WEBHOOK_NAME_CHANGE_NOTIFICATION", "Send a webhook alert when the display name changes?"),
@@ -5347,7 +5328,7 @@ def _wizard_collect_output_section(state, input_func=None):
 # Shows everything that is about to be written, by name and never by secret value
 def _wizard_print_setup_summary(state):
     email_labels = {"ACTIVE_INACTIVE_NOTIFICATION": "online/offline", "GAME_CHANGE_NOTIFICATION": "game", "STATUS_NOTIFICATION": "every status change", "NAME_CHANGE_NOTIFICATION": "name change", "ERROR_NOTIFICATION": "errors"}
-    webhook_labels = {"WEBHOOK_ACTIVE_NOTIFICATION": "online", "WEBHOOK_INACTIVE_NOTIFICATION": "offline", "WEBHOOK_GAME_CHANGE_NOTIFICATION": "game", "WEBHOOK_STATUS_NOTIFICATION": "every status change", "WEBHOOK_NAME_CHANGE_NOTIFICATION": "name change", "WEBHOOK_ERROR_NOTIFICATION": "errors"}
+    webhook_labels = {"WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION": "online/offline", "WEBHOOK_GAME_CHANGE_NOTIFICATION": "game", "WEBHOOK_STATUS_NOTIFICATION": "every status change", "WEBHOOK_NAME_CHANGE_NOTIFICATION": "name change", "WEBHOOK_ERROR_NOTIFICATION": "errors"}
     enabled_email = [email_labels[name] for name in WIZARD_EMAIL_NOTIFICATION_KEYS if state.config_values.get(name)]
     enabled_webhooks = [webhook_labels[name] for name in WIZARD_WEBHOOK_NOTIFICATION_KEYS if state.config_values.get(name)] if state.config_values.get("WEBHOOK_ENABLED") else []
     api_key_set = "STEAM_API_KEY" in state.secret_updates or doctor_value_is_set(state.config_values.get("STEAM_API_KEY"))
@@ -6247,6 +6228,12 @@ def find_config_file(cli_path=None):
 # Settings an older version wrote that this version no longer defines, ignored instead of rejected
 RETIRED_CONFIG_SETTINGS = frozenset(())
 
+# Settings an older version wrote that now fold into one replacement, so an upgrade keeps the alerts it had
+MERGED_CONFIG_SETTINGS = {
+    "WEBHOOK_ACTIVE_NOTIFICATION": "WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION",
+    "WEBHOOK_INACTIVE_NOTIFICATION": "WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION",
+}
+
 # Settings the template ships commented out so the built-in default applies, still accepted from a config file
 COMMENTED_CONFIG_SETTINGS = frozenset({"COLOR_THEME"})
 
@@ -6280,15 +6267,26 @@ def _normalized_config_value(name, value, defaults):
 
 
 # Parses allowlisted literal config assignments without executing any file content
-def parse_config_content(content, filename="<config>", retired_out=None, reference_values=None):
+def parse_config_content(content, filename="<config>", retired_out=None, reference_values=None, merged_out=None):
     tree = ast.parse(content, filename, "exec")
     allowed_names = _config_allowed_names()
     template_defaults = _config_template_defaults()
     parsed_values = {}
+    merged_values = {}
     for statement in tree.body:
         if not isinstance(statement, ast.Assign) or len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
             raise ValueError(f"Line {getattr(statement, 'lineno', '?')}: only NAME = value assignments are allowed")
         name = statement.targets[0].id
+        replacement = MERGED_CONFIG_SETTINGS.get(name)
+        if replacement is not None and name not in allowed_names:
+            try:
+                folded = bool(ast.literal_eval(statement.value))
+            except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError) as exc:
+                raise ValueError(f"Line {statement.lineno}: {name} must be True or False") from exc
+            merged_values[replacement] = merged_values.get(replacement, False) or folded
+            if merged_out is not None and name not in merged_out:
+                merged_out.append(name)
+            continue
         if name in RETIRED_CONFIG_SETTINGS and name not in allowed_names:
             if retired_out is not None and name not in retired_out:
                 retired_out.append(name)
@@ -6309,6 +6307,9 @@ def parse_config_content(content, filename="<config>", retired_out=None, referen
             parsed_values[name] = _normalized_config_value(name, ast.literal_eval(statement.value), template_defaults)
         except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError) as exc:
             raise ValueError(f"Line {statement.lineno}: {name} must be a plain value such as a number, string, True, False, None, list, tuple or dict") from exc
+    # An explicit replacement setting wins, so a file that already uses the new name is not overridden by an old one
+    for name, value in merged_values.items():
+        parsed_values.setdefault(name, value)
     return parsed_values
 
 
@@ -6323,14 +6324,21 @@ def describe_retired_settings(names, quoted_path):
     return f"Config file {quoted_path} contains settings this version no longer uses, which were ignored: {listed}"
 
 
+# Reports settings an older version wrote that were applied through the setting that replaced them
+def describe_merged_settings(names, quoted_path):
+    listed = ", ".join(f"{name} -> {MERGED_CONFIG_SETTINGS[name]}" for name in sorted(names))
+    return f"Config file {quoted_path} contains settings that were replaced, and were applied as: {listed}"
+
+
 # Loads a config file as data and applies only recognized literal settings
 def load_config_file(config_path, namespace=None, report_errors=True):
     selected_namespace = globals() if namespace is None else namespace
     retired_settings = []
+    merged_settings = []
     try:
         content = Path(config_path).read_text(encoding="utf-8")
         # Parsed as data rather than executed, so a config file picked up from the working directory cannot run code
-        parsed_values = parse_config_content(content, str(config_path), retired_settings)
+        parsed_values = parse_config_content(content, str(config_path), retired_settings, merged_out=merged_settings)
         selected_namespace.update(parsed_values)
         # Only a load that reaches the module settings records a choice, not a copy read for the wizard or a report
         if selected_namespace is globals():
@@ -6339,6 +6347,8 @@ def load_config_file(config_path, namespace=None, report_errors=True):
             debug_print("Configuration applied", path=config_path, settings=len(parsed_values))
         if retired_settings and report_errors:
             print(f"* Note: {describe_retired_settings(retired_settings, chr(39) + str(config_path) + chr(39))}")
+        if merged_settings and report_errors:
+            print(f"* Note: {describe_merged_settings(merged_settings, chr(39) + str(config_path) + chr(39))}")
         return True
     except SyntaxError as exc:
         detail = f"Config file '{config_path}' has invalid Python syntax"
@@ -7645,7 +7655,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
 # Applies validated one-run webhook command-line overrides to runtime settings
 def apply_webhook_cli_overrides(args, parser):
-    global WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_PROVIDER, WEBHOOK_ACTIVE_NOTIFICATION, WEBHOOK_INACTIVE_NOTIFICATION, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_GAME_CHANGE_NOTIFICATION, WEBHOOK_LEVEL_XP_NOTIFICATION, WEBHOOK_FRIENDS_NOTIFICATION, WEBHOOK_GAMES_NOTIFICATION, WEBHOOK_NAME_CHANGE_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION
+    global WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_PROVIDER, WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_GAME_CHANGE_NOTIFICATION, WEBHOOK_LEVEL_XP_NOTIFICATION, WEBHOOK_FRIENDS_NOTIFICATION, WEBHOOK_GAMES_NOTIFICATION, WEBHOOK_NAME_CHANGE_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION
     if args.webhook_provider is not None:
         WEBHOOK_PROVIDER = str(args.webhook_provider)
     if args.webhook_url is not None:
@@ -7656,8 +7666,7 @@ def apply_webhook_cli_overrides(args, parser):
     if args.webhook_enabled is not None:
         WEBHOOK_ENABLED = args.webhook_enabled
     event_overrides = (
-        ("webhook_active", "WEBHOOK_ACTIVE_NOTIFICATION"),
-        ("webhook_inactive", "WEBHOOK_INACTIVE_NOTIFICATION"),
+        ("webhook_active_inactive", "WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION"),
         ("webhook_status", "WEBHOOK_STATUS_NOTIFICATION"),
         ("webhook_game_changes", "WEBHOOK_GAME_CHANGE_NOTIFICATION"),
         ("webhook_level_xp", "WEBHOOK_LEVEL_XP_NOTIFICATION"),
@@ -7968,18 +7977,11 @@ def main():
         help="Webhook request format for this run (default: configured provider)"
     )
     webhook_notify.add_argument(
-        "--webhook-active",
-        dest="webhook_active",
+        "--webhook-active-inactive",
+        dest="webhook_active_inactive",
         action="store_true",
         default=None,
-        help="Send a webhook alert when the user becomes active"
-    )
-    webhook_notify.add_argument(
-        "--webhook-inactive",
-        dest="webhook_inactive",
-        action="store_true",
-        default=None,
-        help="Send a webhook alert when the user goes offline"
+        help="Send a webhook alert when user goes online/offline"
     )
     webhook_notify.add_argument(
         "--webhook-status",
