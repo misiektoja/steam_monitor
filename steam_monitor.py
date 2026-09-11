@@ -5642,10 +5642,19 @@ def _config_template_defaults():
     return defaults
 
 
+# Returns the parsed value with a legacy numeric on/off setting read as the boolean it stands for
+def _normalized_config_value(name, value, defaults):
+    # 0 and 1 were accepted for these settings before the values were checked, so they still mean off and on
+    if isinstance(value, int) and not isinstance(value, bool) and value in (0, 1) and isinstance(defaults.get(name), bool):
+        return bool(value)
+    return value
+
+
 # Parses allowlisted literal config assignments without executing any file content
 def parse_config_content(content, filename="<config>", retired_out=None, reference_values=None):
     tree = ast.parse(content, filename, "exec")
     allowed_names = _config_allowed_names()
+    template_defaults = _config_template_defaults()
     parsed_values = {}
     for statement in tree.body:
         if not isinstance(statement, ast.Assign) or len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
@@ -5668,7 +5677,7 @@ def parse_config_content(content, filename="<config>", retired_out=None, referen
             parsed_values[name] = source[referenced]
             continue
         try:
-            parsed_values[name] = ast.literal_eval(statement.value)
+            parsed_values[name] = _normalized_config_value(name, ast.literal_eval(statement.value), template_defaults)
         except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError) as exc:
             raise ValueError(f"Line {statement.lineno}: {name} must be a plain value such as a number, string, True, False, None, list, tuple or dict") from exc
     return parsed_values
