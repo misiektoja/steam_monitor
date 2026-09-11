@@ -68,6 +68,7 @@ def test_a_backup_is_created_before_a_replace(tmp_path):
     destination.write_text("CLEAR_SCREEN = False\n", encoding="utf-8")
 
     backup_path = monitor.create_timestamped_backup(destination)
+    assert backup_path is not None
 
     assert backup_path is not None
     backup = Path(backup_path)
@@ -83,9 +84,11 @@ def test_backups_never_overwrite_each_other(tmp_path, monkeypatch):
     destination = tmp_path / "tool.conf"
     destination.write_text("first\n", encoding="utf-8")
     first = monitor.create_timestamped_backup(destination)
+    assert first is not None
 
     destination.write_text("second\n", encoding="utf-8")
     second = monitor.create_timestamped_backup(destination)
+    assert second is not None
 
     assert first is not None and second is not None
     assert first != second
@@ -244,6 +247,7 @@ def test_an_accepted_replacement_backs_the_previous_file_up(tmp_path):
 
     assert written is True
     assert destination.read_text(encoding="utf-8") == "NEW = 2\n"
+    assert backup_path is not None
     assert Path(backup_path).read_text(encoding="utf-8") == "OLD = 1\n"
 
 
@@ -256,6 +260,7 @@ def test_force_replaces_without_asking(tmp_path):
 
     assert written is True
     assert destination.read_text(encoding="utf-8") == "NEW = 2\n"
+    assert backup_path is not None
     assert Path(backup_path).read_text(encoding="utf-8") == "OLD = 1\n"
 
 
@@ -324,6 +329,7 @@ def test_the_backup_carries_the_family_name_and_mode(tmp_path):
     destination.write_text("SETTING = 1\n", encoding="utf-8")
 
     backup_path = monitor.create_timestamped_backup(destination)
+    assert backup_path is not None
 
     assert re.fullmatch(r"monitor\.conf\.\d{14}\.bak", Path(backup_path).name)
     assert Path(backup_path).read_text(encoding="utf-8") == "SETTING = 1\n"
@@ -335,9 +341,11 @@ def test_a_second_backup_in_the_same_second_keeps_the_first(tmp_path):
     destination = tmp_path / "monitor.conf"
     destination.write_text("first\n", encoding="utf-8")
     first = monitor.create_timestamped_backup(destination)
+    assert first is not None
     destination.write_text("second\n", encoding="utf-8")
 
     second = monitor.create_timestamped_backup(destination)
+    assert second is not None
 
     assert first != second
     assert Path(first).read_text(encoding="utf-8") == "first\n"

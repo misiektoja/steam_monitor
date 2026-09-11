@@ -1,5 +1,6 @@
 """Tests that printed commands, described secrets and guide links match the detected install method."""
 
+from command_expectations import runtime_command
 import shlex
 import inspect
 import pytest
@@ -23,7 +24,7 @@ def test_a_downloaded_script_is_detected(monkeypatch):
 
     assert monitor.install_method() == monitor.INSTALL_METHOD_SCRIPT
     assert monitor.install_method_display_name() == "downloaded script"
-    assert monitor.render_command(["--version"]) == "python3 steam_monitor.py --version"
+    assert monitor.render_command(["--version"]) == runtime_command("python3 steam_monitor.py --version")
 
 
 # Verifies a value only shaped like a placeholder is quoted, so pasting the rendered command cannot run a substitution
@@ -40,7 +41,7 @@ def test_a_pypi_install_is_detected(monkeypatch):
 
     assert monitor.install_method() == monitor.INSTALL_METHOD_PYPI
     assert monitor.install_method_display_name() == "PyPI install"
-    assert monitor.render_command(["--version"]) == "steam_monitor --version"
+    assert monitor.render_command(["--version"]) == runtime_command("steam_monitor --version")
 
 
 # Verifies detection can be pinned explicitly, which containers and packaged builds need
@@ -68,7 +69,7 @@ def test_active_paths_are_carried_into_printed_commands(monkeypatch):
 
     rendered = monitor.render_command(["--send-test-email"])
 
-    assert rendered == "steam_monitor --send-test-email --config-file '/home/user/my tool.conf' --env-file /home/user/secrets.env"
+    assert rendered == runtime_command("steam_monitor --send-test-email --config-file '/home/user/my tool.conf' --env-file /home/user/secrets.env")
 
 
 # Verifies a command that must stay path-free does not inherit the active paths
@@ -76,7 +77,7 @@ def test_paths_can_be_left_out(monkeypatch):
     monkeypatch.setattr("sys.argv", ["/usr/local/bin/steam_monitor"])
     monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", "/home/user/tool.conf")
 
-    assert monitor.render_command(["--generate-config"], include_paths=False) == "steam_monitor --generate-config"
+    assert monitor.render_command(["--generate-config"], include_paths=False) == runtime_command("steam_monitor --generate-config")
 
 
 # Verifies an explicitly supplied path is rendered even when the active ones are left out
@@ -86,7 +87,7 @@ def test_an_explicit_path_wins_over_the_active_ones(monkeypatch):
 
     rendered = monitor.render_command(["--send-test-webhook"], include_paths=False, env_path="/home/user/chosen.env")
 
-    assert rendered == "steam_monitor --send-test-webhook --env-file /home/user/chosen.env"
+    assert rendered == runtime_command("steam_monitor --send-test-webhook --env-file /home/user/chosen.env")
 
 
 # Verifies the disabled dotenv search reaches the commands that accept it and stays out of the ones that refuse it
@@ -94,9 +95,9 @@ def test_a_disabled_dotenv_search_is_carried_only_where_it_is_accepted(monkeypat
     monkeypatch.setattr("sys.argv", ["/usr/local/bin/steam_monitor"])
     monkeypatch.setattr(monitor, "DOTENV_FILE", "none")
 
-    assert monitor.render_command(["--doctor"]) == "steam_monitor --doctor --env-file none"
-    assert monitor.render_command(["--set-steam-api-key"]) == "steam_monitor --set-steam-api-key"
-    assert monitor.render_command(["--setup"]) == "steam_monitor --setup"
+    assert monitor.render_command(["--doctor"]) == runtime_command("steam_monitor --doctor --env-file none")
+    assert monitor.render_command(["--set-steam-api-key"]) == runtime_command("steam_monitor --set-steam-api-key")
+    assert monitor.render_command(["--setup"]) == runtime_command("steam_monitor --setup")
 
 
 # Verifies the disabled config search reaches the commands that accept it and stays out of the ones that refuse it
@@ -105,10 +106,10 @@ def test_a_disabled_config_search_is_carried_only_where_it_is_accepted(monkeypat
     monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", None)
     monkeypatch.setattr(monitor, "CONFIG_DISCOVERY_DISABLED", True)
 
-    assert monitor.render_command(["--doctor"]) == "steam_monitor --doctor --config-file none"
-    assert monitor.render_command(["--set-steam-api-key"]) == "steam_monitor --set-steam-api-key --config-file none"
-    assert monitor.render_command(["--setup"]) == "steam_monitor --setup"
-    assert monitor.render_command(["--doctor"], include_paths=False) == "steam_monitor --doctor"
+    assert monitor.render_command(["--doctor"]) == runtime_command("steam_monitor --doctor --config-file none")
+    assert monitor.render_command(["--set-steam-api-key"]) == runtime_command("steam_monitor --set-steam-api-key --config-file none")
+    assert monitor.render_command(["--setup"]) == runtime_command("steam_monitor --setup")
+    assert monitor.render_command(["--doctor"], include_paths=False) == runtime_command("steam_monitor --doctor")
 
 
 # Verifies arguments containing spaces are quoted for the shell the user pastes into
@@ -176,7 +177,7 @@ def test_setup_advice_names_the_files_this_run_was_given(monkeypatch):
 
     advice = monitor.classify_recovery_error(ValueError("The mail server settings are incomplete"), context="set_smtp_password")
 
-    assert "run python3 steam_monitor.py --setup --config-file /etc/steam.conf --env-file /etc/steam.env" in advice.fix
+    assert runtime_command("run python3 steam_monitor.py --setup --config-file /etc/steam.conf --env-file /etc/steam.env") in advice.fix
 
 
 # Verifies the printed-command renderer takes the family's two shared parameters before any tool-specific one

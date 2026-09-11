@@ -1,5 +1,6 @@
 """Tests the --help screen: the shared argument group names, the task-grouped examples and the startup banner."""
 
+from command_expectations import runtime_command
 import subprocess
 import sys
 from pathlib import Path
@@ -60,7 +61,7 @@ def test_the_wizard_is_the_first_example(help_screen):
     block = help_screen.split("Examples:", 1)[1]
     first = [line.strip() for line in block.splitlines() if line.startswith("  ")][:2]
 
-    assert first == ["# Guided setup, recommended for the first run", "python3 steam_monitor.py --setup"]
+    assert first == ["# Guided setup, recommended for the first run", runtime_command("python3 steam_monitor.py --setup")]
 
 
 # Verifies every example command is introduced by a comment saying what it is for

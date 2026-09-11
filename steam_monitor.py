@@ -715,9 +715,10 @@ def install_method_display_name(method=None):
 
 # Returns the argv prefix that invokes this tool for the detected install method
 def install_command_prefix():
+    executable = sys.executable
     if install_method() == INSTALL_METHOD_SCRIPT:
-        return ["python3", os.path.basename(sys.argv[0]) or "steam_monitor.py"]
-    return ["steam_monitor"]
+        return [executable, str(Path(__file__).resolve())]
+    return [executable, "-m", "steam_monitor"]
 
 
 # The documentation placeholders a printed command carries unquoted, because the reader replaces them before running it
@@ -2258,11 +2259,10 @@ def _dotenv_contains_key(destination, key):
     if not destination_path.exists():
         return False
     try:
-        lines = destination_path.read_text(encoding="utf-8").splitlines()
+        content = destination_path.read_text(encoding="utf-8")
     except (OSError, UnicodeError):
         raise SecretConfigurationError(f"Could not read dotenv destination '{destination_path}'. Check that it is a readable UTF-8 file.")
-    assignment_pattern = re.compile(rf"^\s*(?:export\s+)?{re.escape(key)}\s*=")
-    return any(assignment_pattern.match(line) for line in lines)
+    return any(binding.key == key for binding in _dotenv_bindings(content))
 
 
 # Returns the dotenv parser's own bindings for one file's text, where a quoted value written across several lines is one binding
@@ -4210,6 +4210,22 @@ def _wizard_validate_destination(path, label):
     return destination
 
 
+# Loads the selected setup baseline and preserves its dotenv path unless explicitly overridden
+def _wizard_seed_destination(state, env_file):
+    saved = {}
+    if state.config_path.is_file() and not load_config_file(state.config_path, namespace=saved):
+        raise ValueError(f"Configuration file '{state.config_path}' could not be read. Correct it before retrying setup.")
+    state.baseline_values.update({key: value for key, value in saved.items() if key not in SECRET_KEYS})
+    state.config_values.update(state.baseline_values)
+    selected = env_file if env_file is not None else saved.get("DOTENV_FILE") or state.env_path
+    if str(selected).casefold() == "none":
+        raise ValueError("Setup needs a writable dotenv destination. Pass --env-file PATH to choose one.")
+    state.env_path = _wizard_validate_destination(selected, "Dotenv destination")
+    if state.env_path == state.config_path.resolve():
+        raise ValueError("Configuration and dotenv destinations must be different files. Pass --env-file with another path.")
+    state.config_values["DOTENV_FILE"] = str(state.env_path)
+
+
 # Resolves both setup destinations, refusing the disabled settings that leave nowhere to write
 def _wizard_destinations(config_file=None, env_file=None):
     if config_file is not None and str(config_file).casefold() == "none":
@@ -4647,29 +4663,36 @@ def _wizard_collect_ntfy_images(input_func=None):
     return False
 
 
+# Reads saved secrets with the same interpolation rules as normal startup
+def _wizard_private_values(env_path):
+    from dotenv.main import DotEnv
+    if not env_path or not Path(env_path).exists():
+        return {}
+    return DotEnv(str(env_path), interpolate=True, override=False).dict()
+
+
+# Keeps actual exports separate from values copied into the environment by dotenv
+def _wizard_exported_secrets():
+    origins = secret_sources(DOTENV_FILE)
+    return {key: os.environ[key] for key in SECRET_KEYS if os.environ.get(key) and origins.get(key, "environment") == "environment"}
+
+
 # Returns the secret stored in the dotenv file or None when the file has no assignment for it
 def _wizard_saved_secret_value(key, env_path):
-    value = None
-    path = Path(env_path)
-    if path.is_file():
-        try:
-            from dotenv import dotenv_values
-            value = dotenv_values(str(path), interpolate=False).get(key)
-        except Exception:
-            value = None
+    value = _wizard_private_values(env_path).get(key)
     return value if isinstance(value, str) else None
 
 
 # Returns the secret the next run would resolve and whether an exported variable is what supplies it. Startup loads
 # the dotenv file without overriding the environment, so an export wins over a saved value and over a new one
 def effective_secret_after_setup(key, env_path, secret_updates):
-    exported = os.environ.get(key)
+    exported = _wizard_exported_secrets().get(key)
     if exported:
         return exported, True
     if key in secret_updates:
         return str(secret_updates[key] or ""), False
     saved = _wizard_saved_secret_value(key, env_path)
-    if saved:
+    if saved is not None:
         return saved, False
     # Nothing private holds it, so the configuration file is what a restart would read
     return str(globals().get(key) or ""), False
@@ -4951,6 +4974,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
             print("\n" + colorize("warning", "Setup cancelled. Destination files were not changed."))
             return 1
         state.config_path = chosen_config
+        _wizard_seed_destination(state, env_file)
         # A destination nothing was asked about printed nothing, so the separator would leave a blank gap
         if config_existed:
             print()
@@ -4969,6 +4993,10 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
         if not _wizard_review_setup(state, input_func=input_func, getpass_func=getpass_func):
             print("\n" + colorize("warning", "Setup cancelled. Destination files were not changed."))
             return 1
+    except (OSError, UnicodeError, ValueError) as exc:
+        print_recovery_error(exc, context="config")
+        print("Correct the selected file or pass --env-file with a writable destination.")
+        return 1
     except (EOFError, KeyboardInterrupt):
         print(colorize("warning", "Setup cancelled. Destination files were not changed."))
         return 1
@@ -5001,13 +5029,13 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     try:
         if doctor_offered and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True, input_func=input_func):
             print()
-            _wizard_apply_saved_values(state, env_path=state.env_path if dotenv_result else None)
-            doctor_exit = run_doctor(target_value=int(state.target), config_path=str(state.config_path), env_path=str(state.env_path) if dotenv_result else None)
+            _wizard_apply_saved_values(state, env_path=state.env_path if state.env_path.is_file() else None)
+            doctor_exit = run_doctor(target_value=int(state.target), config_path=str(state.config_path), env_path=str(state.env_path) if state.env_path.is_file() else None)
     except (EOFError, KeyboardInterrupt):
         # The files are already written, so an interrupt here only skips the optional check
         print(colorize("warning", "Setup is saved. Use the commands below when ready."))
 
-    env_argument = str(state.env_path) if dotenv_result else ""
+    env_argument = str(state.env_path) if state.env_path.is_file() else ""
     # A persisted target is already in the config file, so the printed commands stay short
     target_arguments = [] if state.persist_target or not state.target else [state.target]
     print(colorize("header", "\nNext steps\n"))
@@ -5024,7 +5052,7 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
         print(colorize("warning", "Setup is saved. Start monitoring with the command above when ready."))
         return 0
     if start_monitoring:
-        launch_arguments = _wizard_local_command_args(target=None if state.persist_target else state.target, config_path=state.config_path, env_path=state.env_path if dotenv_result else None)
+        launch_arguments = _wizard_local_command_args(target=None if state.persist_target else state.target, config_path=state.config_path, env_path=state.env_path if state.env_path.is_file() else None)
         sys.stdout.flush()
         return _wizard_launch_monitor(launch_arguments)
     return 0
@@ -5032,20 +5060,26 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
 
 # Puts the values setup just saved into effect, so doctor checks the written files instead of the pre-setup state
 def _wizard_apply_saved_values(state, env_path=None):
-    # Config values first: they carry the unset placeholders for every secret, which would otherwise
-    # overwrite the secrets applied below and make doctor report a working setup as unconfigured
+    exported = _wizard_exported_secrets()
+    selected_path = state.env_path if env_path is None else env_path
+    try:
+        saved = _wizard_private_values(selected_path)
+    except (OSError, UnicodeError, ValueError) as exc:
+        print_recovery_error(exc, context="file", detail=f"Could not read saved secrets from '{selected_path}'")
+        raise SystemExit(1) from None
     globals().update(state.config_values)
-    if env_path:
-        try:
-            reload_dotenv_secrets(str(env_path))
-        except Exception:
-            # Reading the file back needs python-dotenv, so the entered values are applied directly below
-            pass
-    load_secrets_from_environment()
-    # Secrets exported before startup keep winning here, exactly as they will when monitoring runs
-    for key, value in state.secret_updates.items():
-        if key not in EXPORTED_SECRET_KEYS and not doctor_value_is_set(globals().get(key)):
-            globals()[key] = value
+    for key in SECRET_KEYS:
+        if key in exported:
+            value, source = exported[key], "environment"
+        elif saved.get(key) is not None:
+            value, source = saved[key], "dotenv file"
+        else:
+            value, source = state.config_values.get(key), "configuration file"
+        globals()[key] = value
+        if source == "dotenv file":
+            os.environ[key] = str(value)
+        elif key not in exported:
+            os.environ.pop(key, None)
 
 
 # Builds the exact local command that starts this monitor, used when setup offers to launch it
@@ -7703,7 +7737,7 @@ def main():
     if args.setup:
         # Runs here rather than earlier so the values already in effect become the defaults it offers
         setup_target = args.resolve_community_url or args.steam64_id or TARGET_STEAM_ID
-        sys.exit(run_setup_wizard(initial_target=setup_target, config_file=args.config_file or cfg_path, env_file=args.env_file or env_path))
+        sys.exit(run_setup_wizard(initial_target=setup_target, config_file=args.config_file or cfg_path, env_file=args.env_file))
 
     if args.doctor:
         # Applied before the report so the log destination it names is the one monitoring would open
@@ -7758,7 +7792,11 @@ def main():
         STEAM_CHECK_INTERVAL = args.check_interval
 
     # The interval can come from a config file, so the reminder is settled once every layer has been applied
-    LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_INTERVAL > 0 else 0
+    numeric_errors = [] if isinstance(LIVENESS_CHECK_INTERVAL, (int, float)) else [f"LIVENESS_CHECK_INTERVAL must be a number, not {LIVENESS_CHECK_INTERVAL!r}"]
+    if numeric_errors and not getattr(args, "doctor", False):
+        print_recovery_error(context="config", detail="Invalid numeric settings: " + ", ".join(numeric_errors))
+        raise SystemExit(1)
+    LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if not numeric_errors and LIVENESS_CHECK_INTERVAL > 0 else 0
 
     if args.active_interval:
         STEAM_ACTIVE_CHECK_INTERVAL = args.active_interval

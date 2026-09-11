@@ -1,5 +1,6 @@
 """Tests the startup summary row model, its per-row routing, truncation, the grouped help and the cross-tool wording."""
 
+from command_expectations import runtime_command
 import ast
 import argparse
 from io import StringIO
@@ -460,10 +461,10 @@ def test_the_help_examples_are_grouped():
 def test_the_help_examples_suit_the_install(monkeypatch):
     monkeypatch.delenv(monitor.INSTALL_METHOD_ENV_VAR, raising=False)
     monkeypatch.setattr("sys.argv", ["/usr/local/bin/steam_monitor"])
-    assert "steam_monitor --setup" in monitor.help_examples()
+    assert runtime_command("steam_monitor --setup") in monitor.help_examples()
 
     monkeypatch.setattr("sys.argv", ["/home/user/steam_monitor.py"])
-    assert "python3 steam_monitor.py --setup" in monitor.help_examples()
+    assert runtime_command("python3 steam_monitor.py --setup") in monitor.help_examples()
 
 
 # Verifies the examples reach the commands a newcomer needs first
@@ -513,10 +514,10 @@ def test_the_welcome_screen_keeps_the_shared_block_shape(monkeypatch, capsys):
         ("Check setup before monitoring:", "steam_monitor --doctor <steam_target>"),
     ):
         index = lines.index(label)
-        assert lines[index + 1] == f"    {command}", lines[index + 1]
+        assert lines[index + 1] == f"    {runtime_command(command)}", lines[index + 1]
         assert lines[index + 2] == ""
     # These two are single lines rather than blocks, and the guide value is column aligned
-    assert "Full options: steam_monitor --help" in lines
+    assert runtime_command("Full options: steam_monitor --help") in lines
     assert f"Guide:        {monitor.QUICK_START_GUIDE_URL}" in lines
 
 

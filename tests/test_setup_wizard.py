@@ -1275,7 +1275,7 @@ def test_a_changed_setting_replaces_the_whole_template_value():
 
 # Verifies the configuration renderer keeps the template placeholder for every secret whatever the values hold
 def test_the_configuration_renderer_never_writes_a_secret():
-    values = {name: f"real-{name.lower()}" for name in monitor.SECRET_KEYS}
+    values: dict = {name: f"real-{name.lower()}" for name in monitor.SECRET_KEYS}
     values["STEAM_CHECK_INTERVAL"] = 4321
 
     rendered = monitor.generate_config_with_current_values(values)

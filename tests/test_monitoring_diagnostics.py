@@ -57,7 +57,9 @@ class FakeSteamWebAPI:
             self.polls += 1
             if self.polls > self.healthy_polls and (self.healthy_after is None or self.polls <= self.healthy_after):
                 # A callable picks the error per poll, so an outage that changes category can be scripted
-                raise self.poll_error(self.polls) if callable(self.poll_error) else self.poll_error
+                error = self.poll_error(self.polls) if callable(self.poll_error) else self.poll_error
+                assert isinstance(error, BaseException)
+                raise error
         if endpoint in self.failing_endpoints:
             raise RuntimeError(f"{endpoint} is unavailable")
         if endpoint == "ISteamUser.GetPlayerSummaries":
