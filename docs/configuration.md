@@ -189,3 +189,16 @@ steam_monitor <steam_target> -k 30 -c 120
 * `STEAM_CHECK_INTERVAL`, `-c`: check interval when the user is offline (seconds)
 
 An active interval below 30 seconds invites the Steam rate limiter, which stops the tool seeing anything. `--doctor` warns when the configured interval is that short.
+
+
+### Reloading secrets and backup contents
+
+On systems with SIGHUP, reloading applies changes from the selected dotenv file. Removing a file-owned
+assignment restores its independently configured fallback or clears the value when no fallback exists.
+A read or parsing failure keeps the last usable credentials and reports how to correct the file.
+Values exported when the process started continue to take precedence during reload.
+
+
+Setup's configuration backup blanks inline secret assignments from older configurations while retaining
+other settings and comments. General `--generate-config` backups remain exact copies and can contain
+inline credentials. The dotenv file is not backed up during secret replacement.

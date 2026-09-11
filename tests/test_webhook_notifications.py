@@ -1,6 +1,7 @@
 import argparse
 import contextlib
 import io
+import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
@@ -129,7 +130,10 @@ class WebhookNotificationTests(unittest.TestCase):
         steam_monitor.DOTENV_FILE = "test.env"
         steam_monitor.WEBHOOK_URL = "https://discord.com/api/webhooks/123/old-token"
         steam_monitor.WEBHOOK_PROVIDER = "discord"
-        with patch("dotenv.load_dotenv"), patch.object(steam_monitor.os, "getenv", side_effect=replacements.get):
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as dotenv_file, patch.dict(steam_monitor.os.environ), patch.object(steam_monitor, "DOTENV_RELOAD_STATE", {}), patch.object(steam_monitor, "EXPORTED_SECRET_KEYS", frozenset()):
+            dotenv_file.write("".join(key + "=" + repr(value) + "\n" for key, value in replacements.items()))
+            dotenv_file.flush()
+            steam_monitor.DOTENV_FILE = dotenv_file.name
             steam_monitor.reload_secrets_signal_handler(steam_monitor.signal.SIGHUP, None)
         self.assertEqual(steam_monitor.WEBHOOK_PROVIDER, "ntfy")
 
