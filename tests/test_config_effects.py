@@ -540,4 +540,3 @@ def test_legacy_state_files_never_replace_current_ones(monkeypatch, tmp_path, ca
     assert (tmp_path / "steam_Persona_games.json").read_text(encoding="utf-8") == "legacy"
     assert (tmp_path / "steam_76561197960435530_games.json").read_text(encoding="utf-8") == "current"
     assert capsys.readouterr().out == ""
-

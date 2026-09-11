@@ -57,7 +57,6 @@ def test_recovery_prefix_uses_short_names(monkeypatch, tmp_path):
     assert monitor.install_command_prefix() == ["python3", "steam_monitor.py"]
 
 
-
 @pytest.mark.parametrize("override", [False, True])
 # Setup resolves the selected file before offering saved answers or looking for credentials
 def test_setup_keeps_saved_dotenv_destination(monkeypatch, tmp_path, override):
@@ -69,8 +68,10 @@ def test_setup_keeps_saved_dotenv_destination(monkeypatch, tmp_path, override):
     explicit.write_text('SMTP_PASSWORD="synthetic-explicit"\n', encoding="utf-8")
     config.write_text(f"DOTENV_FILE={str(saved)!r}\nDISABLE_LOGGING=True\n", encoding="utf-8")
     recorded = []
+
     class Captured(BaseException):
         pass
+
     # Stops at the first section after destination and baseline resolution
     def collect(state, *args, **kwargs):
         recorded.append((state.env_path, state.config_values["DISABLE_LOGGING"]))
@@ -90,6 +91,7 @@ def test_doctor_handles_quoted_liveness_before_arithmetic(monkeypatch, tmp_path)
     config = tmp_path / "settings.conf"
     config.write_text('LIVENESS_CHECK_INTERVAL="3600"\n', encoding="utf-8")
     errors = []
+
     # Records the validation reached through normal startup without contacting external services
     def doctor(*args, **kwargs):
         errors.extend(monitor.runtime_configuration_errors())

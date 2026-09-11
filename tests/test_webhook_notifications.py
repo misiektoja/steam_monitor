@@ -382,7 +382,6 @@ class WebhookNotificationTests(unittest.TestCase):
         self.assertLess(len(message.encode("utf-8")), 4096)
         self.assertNotIn("\ufffd", message)
 
-
     # Verifies both test commands carry the subject, title and body shared with the sibling monitors
     def test_the_test_messages_use_the_shared_wording(self):
         email = Mock(return_value=0)
@@ -394,7 +393,6 @@ class WebhookNotificationTests(unittest.TestCase):
 
         self.assertEqual(email.call_args.args[:2], ("steam_monitor: test email", "This test email was sent by --send-test-email. Your SMTP settings work."))
         self.assertEqual(webhook.call_args.args[:2], ("steam_monitor: test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work."))
-
 
     # Verifies a delivery test checks the settings before it announces an attempt it cannot make
     def test_a_delivery_test_checks_the_settings_before_it_announces(self):

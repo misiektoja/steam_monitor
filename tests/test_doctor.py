@@ -26,6 +26,8 @@ def render_doctor_report(report):
 # Builds the minimal advice a WARN or FAIL row is required to carry
 def actionable_advice():
     return monitor.make_recovery_advice("unknown", "a summary", "do the thing", False)
+
+
 SECRET_API_KEY = "0123456789ABCDEF0123456789ABCDEF"
 SECRET_WEBHOOK_URL = "https://discord.com/api/webhooks/123456789/verysecrettokenvalue"
 # Colour changes only, so the screen-clearing escape a startup always writes is not read as colour
@@ -568,6 +570,7 @@ def test_a_link_in_a_detail_line_is_coloured_as_a_link(monkeypatch, doctor_globa
     assert fix_line == f"  {monitor.colorize('info', 'To fix: Copy a fresh key from https://steamcommunity.com/dev/apikey')}"
     assert f"  Guide: {monitor.colorize('link', monitor.DOCTOR_GUIDE_URL)}" in rendered
 
+
 # Verifies every rendered result marker carries its status colour, not just the section headings
 def test_every_marker_is_coloured_in_the_rendered_report(monkeypatch, doctor_globals):
     monkeypatch.setattr(monitor, "COLOR_ENABLED", True)
@@ -919,7 +922,6 @@ def test_doctor_reports_the_output_overrides_the_run_was_given(monkeypatch, doct
 
     assert seen["csv"] == str(csv_path)
     assert seen["logging_disabled"] is True
-
 
 
 # The user-visible strings that must read identically across the sibling tools, since users learn them once

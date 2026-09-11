@@ -181,7 +181,6 @@ class TestWorkflowSupplyChain:
         # A value with no placeholder shape stays reportable, or the allowlist would hide a real leak
         assert not any(re.search(pattern, "NotAPlaceholderValue123456") for pattern in patterns)
 
-
     # The suite is worthless if CI never runs it, so the workflow must invoke pytest and the linter
     def test_ci_runs_the_suite_and_the_linter(self):
         workflow = read_yaml_asset(".github/workflows/tests.yml")

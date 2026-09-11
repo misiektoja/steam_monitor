@@ -193,8 +193,9 @@ def test_status_reader_keeps_legacy_trailing_metadata(tmp_path):
     path.write_text(json.dumps(record))
     assert monitor.read_status_record(str(path)) == record
 
-# Reports an unrenderable Discord template rather than raising out of validation and delivery
+
 @pytest.mark.parametrize("template", ["{0}", "{}{}", "{title!z}", "plain body"])
+# Reports an unrenderable Discord template rather than raising out of validation and delivery
 def test_an_unrenderable_discord_template_is_reported_not_raised(delivery, monkeypatch, capsys, template):
     monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "discord")
     monkeypatch.setattr(monitor, "WEBHOOK_URL", "https://discord.com/api/webhooks/123456789012345678/private")
@@ -223,4 +224,3 @@ def test_screen_truncation_still_applies_without_wcwidth(monkeypatch):
     line = "x" * 40 + "\n"
     assert monitor.truncate_string_per_line(line, 10) == "x" * 10 + "\n"
     assert logger._truncate_terminal(line) == "x" * 10 + "\n"
-

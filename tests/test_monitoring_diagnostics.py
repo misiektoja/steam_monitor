@@ -665,7 +665,11 @@ def test_an_internet_outage_that_flaps_is_one_outage(tmp_path, monkeypatch, caps
 # Verifies a reported outage that starts failing differently is still one outage, so the change is one line
 # rather than a second report
 def test_a_second_failure_category_is_noted_in_one_line(tmp_path, monkeypatch, capsys):
-    changing = lambda polls: http_error(503) if polls < 6 else TimeoutError("request timed out")  # noqa: E731
+
+    # Changes the simulated outage from an HTTP error to a timeout
+    def changing(polls):
+        return http_error(503) if polls < 6 else TimeoutError("request timed out")
+
     run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=changing, stop_after_sleeps=10)
 
     lines = capsys.readouterr().out.splitlines()

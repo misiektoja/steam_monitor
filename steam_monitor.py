@@ -1629,7 +1629,6 @@ def _colorize_line(line, notification_summary=False):
     line = _BOOLEAN_FALSE_RE.sub(lambda mo: colorize("boolean_false", mo.group(0)), line)
 
     # Highlight online/offline keywords
-
     def _offline_repl(mo):
         text = mo.group(0)
         lower = text.lower()
@@ -1795,7 +1794,6 @@ class Logger(object):
     def flush(self):
         self.terminal.flush()
         self.logfile.flush()
-
 
     # Limits the terminal line across separate writes while leaving the log complete
     def _truncate_terminal(self, message):
@@ -3944,6 +3942,7 @@ def runtime_boolean_errors():
         if isinstance(default, bool) and not isinstance(value, bool):
             errors.append(f"{name} must be True or False, not {value!r}")
     return errors
+
 
 # Returns all type and range errors in settings that control runtime timing or counts
 def runtime_configuration_errors():

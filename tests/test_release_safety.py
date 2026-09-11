@@ -80,6 +80,7 @@ def test_normal_startup_validates_before_network(monkeypatch, tmp_path, capsys):
     setting = "SPOTIFY_CHECK_INTERVAL" if hasattr(monitor, "runtime_numeric_errors") else "CHECK_INTERNET_TIMEOUT"
     config.write_text(setting + " = 1e309\n", encoding="utf-8")
     calls = []
+
     # Records attempts at the actual socket boundary without replacing a provider client
     def offline(sock, address):
         calls.append(address)
@@ -92,6 +93,7 @@ def test_normal_startup_validates_before_network(monkeypatch, tmp_path, capsys):
     assert not calls
     output = capsys.readouterr()
     assert setting in output.out + output.err
+
 
 @pytest.mark.parametrize("record", [{}, [], [1], [-1, "online"], [1e309, "online"], ["yesterday", "online"], [1700000000, {}]])
 # Damaged saved status is rejected before any caller performs date arithmetic
@@ -162,6 +164,7 @@ def test_achievement_failure_stops_real_client(monkeypatch, capsys, status):
     from requests.adapters import HTTPAdapter
     methods = {"IPlayerService": {"GetOwnedGames": ["steamid", "include_appinfo", "include_played_free_games", "appids_filter[0]", "include_free_sub", "include_extended_appinfo", "language"]}, "ISteamUserStats": {"GetPlayerAchievements": ["steamid", "appid"]}}
     calls = []
+
     # Returns real responses at the HTTP boundary while keeping the provider library intact
     def send(adapter, request, **kwargs):
         response = requests.Response()

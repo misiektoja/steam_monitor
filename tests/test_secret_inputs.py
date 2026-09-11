@@ -56,7 +56,6 @@ class SecretInputTests(unittest.TestCase):
                 self.assertEqual("<steam_target>" in output, expects_placeholder)
                 self.assertNotIn("76561198000000000", output)
 
-
     # Verifies hidden webhook entry saves the URL without displaying it
     def test_hidden_webhook_entry(self):
         secret = "https://discord.com/api/webhooks/123/private-token"

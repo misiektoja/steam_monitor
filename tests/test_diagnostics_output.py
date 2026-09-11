@@ -558,4 +558,3 @@ def test_a_delivered_email_reports_its_smtp_outcome_in_debug(capsys, monkeypatch
     assert "SMTP delivery: host=smtp.example.com, port=587" in output
     assert "SMTP delivery: host=smtp.example.com, port=587, recipient=receiver@example.com, outcome=OK" in output
     assert SECRET_SMTP_PASSWORD not in output
-
