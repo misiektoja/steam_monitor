@@ -102,3 +102,16 @@ def test_secret_commands_use_selected_configuration(tmp_path, monkeypatch, flag,
         monitor.main()
     assert stopped.value.code == 0
     assert reached == [(str(config), False, str(env))]
+
+
+# Proves each cause names itself, so a readable file with bad bytes and an unopenable one do not share one message
+@pytest.mark.parametrize("error,expected_detail,expected_fix", [
+    (UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte"), "is not valid UTF-8 text", "Save the dotenv file as UTF-8"),
+    (PermissionError(13, "Permission denied"), "could not be opened", "Check the dotenv file path and its read permissions"),
+    (ValueError("unexpected"), "could not be read", "Check that the dotenv file is readable UTF-8 text"),
+])
+def test_dotenv_load_problem_names_its_cause(error, expected_detail, expected_fix):
+    detail, fix = monitor.dotenv_load_problem("/tmp/private.env", error)
+
+    assert detail == f"Dotenv file '/tmp/private.env' {expected_detail}"
+    assert fix == expected_fix
