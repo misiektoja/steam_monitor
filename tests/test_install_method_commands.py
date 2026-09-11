@@ -1,5 +1,6 @@
 """Tests that printed commands, described secrets and guide links match the detected install method."""
 
+import shlex
 import inspect
 import pytest
 
@@ -23,6 +24,14 @@ def test_a_downloaded_script_is_detected(monkeypatch):
     assert monitor.install_method() == monitor.INSTALL_METHOD_SCRIPT
     assert monitor.install_method_display_name() == "downloaded script"
     assert monitor.render_command(["--version"]) == "python3 steam_monitor.py --version"
+
+
+# Verifies a value only shaped like a placeholder is quoted, so pasting the rendered command cannot run a substitution
+def test_a_value_shaped_like_a_placeholder_is_quoted():
+    crafted = "<$(echo>marker)>"
+
+    assert shlex.split(monitor.quote_command_argument(crafted)) == [crafted]
+    assert monitor.quote_command_argument("<steam_target>") == "<steam_target>"
 
 
 # Verifies the packaged console script is detected and rendered by its entry point name
