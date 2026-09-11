@@ -29,25 +29,25 @@ For the manual single-file method, dependencies and upgrade commands, see [Insta
 
 ## Features
 
-### Activity and Profile Tracking
+### 🔍 Activity and Profile Tracking
 
 * **Gaming activity**: Detect online and offline status, game starts, finishes and changes.
 * **Profile changes**: Track persona names, Steam level, XP, friends and game libraries.
 * **Session statistics**: Measure time in each state, time per game and games played.
 
-### Profile Insights
+### 📊 Profile Insights
 
 * **Profile details**: View badges, bans, friends, top games and recent playtime.
 * **Optional detail**: Include friendship dates, persona name history and recent achievements.
 * **Profile URLs**: Resolve Steam community links without looking up a numeric ID.
 
-### Notifications and History
+### 🔔 Notifications and History
 
 * **Event alerts**: Configure email, Discord and ntfy notifications independently.
 * **CSV history**: Save activity and profile changes with timestamps.
 * **Session continuity**: Save status across restarts and preserve statistics through short offline interruptions.
 
-### Setup and Configuration
+### ⚙️ Setup and Configuration
 
 * **Guided setup**: Review settings with `--setup` and check readiness with `--doctor`.
 * **Flexible settings**: Use config files, dotenv files, environment variables and command-line options.
