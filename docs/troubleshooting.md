@@ -97,7 +97,9 @@ If a new terminal cannot find your saved settings, return to the directory used 
 
 Timing values must be finite and within the documented range. Normal startup checks effective timing settings before monitoring. A configuration syntax error reports its file, line number and parser message without echoing source text that may contain credentials.
 
-If a saved status or games-library file has an invalid structure, monitoring stops before replacing it. Correct the named file or move it aside to start a fresh baseline. Keep a copy if you need the old history. Older valid records and extra trailing metadata remain accepted.
+If a saved status file has an invalid structure, monitoring stops before replacing it. Correct the named file or move it aside to start fresh. Keep a copy if you need the old history. Older valid records and extra trailing metadata remain accepted.
+
+A games-library file the tool cannot use is reported as a warning instead. The run continues, the next lookup starts a fresh baseline and no library change is reported for it. Files written before 2.0 that recorded a game count differing from their list of game IDs still load, with the count taken from the IDs.
 
 An incomplete or inaccessible Steam games response leaves the previous library snapshot intact. Achievement lookups stop on rate limits or connection failures and report how to retry, instead of continuing through the rest of the library.
 

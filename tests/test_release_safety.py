@@ -126,6 +126,19 @@ def test_explicit_empty_library():
     assert monitor.games_library_snapshot({"response": {"game_count": 0}}) == (0, set())
 
 
+@pytest.mark.parametrize("saved", [{"game_count": 3, "appids": [10, 20]}, {"game_count": 2, "appids": [10, 10, 20]}])
+# Earlier releases counted the response list while deduplicating the IDs, so their files must still load
+def test_saved_snapshot_tolerates_a_legacy_count(saved):
+    assert monitor.games_library_snapshot(saved, saved=True) == (2, {10, 20})
+
+
+@pytest.mark.parametrize("saved", [[], {"game_count": -1, "appids": []}, {"game_count": 1, "appids": "10"}, {"game_count": 1, "appids": [0]}])
+# A saved snapshot with an unusable shape is still refused rather than adopted
+def test_saved_snapshot_rejects_unusable_shapes(saved):
+    with pytest.raises(ValueError):
+        monitor.games_library_snapshot(saved, saved=True)
+
+
 # Legacy filenames keep the original persona spelling while display text can be normalized
 def test_migrate_whitespace_persona(monkeypatch, tmp_path):
     monkeypatch.setattr(monitor, "STEAM_STATUS_FILE", "")

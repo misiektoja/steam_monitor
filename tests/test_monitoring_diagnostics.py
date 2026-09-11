@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 
 import copy
+import json
 import time
 
 import pytest
@@ -689,3 +690,29 @@ def test_an_internet_outage_that_flaps_alerts_once(tmp_path, monkeypatch):
     run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=flapping_network, stop_after_sleeps=12, error_notifications=True)
 
     assert len(deliveries) == 1
+
+
+# Verifies a games-library file written by an earlier release loads instead of stopping the run, since it counted
+# the response list while deduplicating the IDs and the two can disagree in a file this tool wrote itself
+def test_a_legacy_games_library_file_still_loads(tmp_path, monkeypatch, capsys):
+    legacy = tmp_path / monitor.default_games_file(STEAM_ID)
+    legacy.write_text(json.dumps({"game_count": 3, "appids": [10, 20]}), encoding="utf-8")
+
+    run_one_cycle(tmp_path, monkeypatch, diagnostics=False)
+
+    output = capsys.readouterr().out
+    assert "Cannot load the games library" not in output
+    assert "games library changed" not in output
+
+
+# Verifies a saved games library this tool cannot use costs the comparison baseline rather than the whole run
+def test_an_unusable_games_library_file_does_not_stop_the_run(tmp_path, monkeypatch, capsys):
+    unusable = tmp_path / monitor.default_games_file(STEAM_ID)
+    unusable.write_text(json.dumps({"game_count": 3, "appids": ["ten"]}), encoding="utf-8")
+
+    run_one_cycle(tmp_path, monkeypatch, diagnostics=False)
+
+    output = capsys.readouterr().out
+    assert "* Warning: Cannot load the games library" in output
+    assert "starts a fresh baseline" in output
+    assert "games library changed" not in output
