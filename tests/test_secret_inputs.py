@@ -216,6 +216,23 @@ class SecretInputTests(unittest.TestCase):
 
         self.assertEqual(self.destination.read_text(encoding="utf-8"), "KEEP=value\n")
 
+    # Verifies a saved value written across several lines is replaced whole, since replacing only its first
+    # line left the rest of the old secret behind and the next run could not parse what it wrote
+    def test_a_multiline_secret_is_replaced_whole(self):
+        self.destination.write_text('NTFY_ACCESS_TOKEN="first line\nsecond line"\nOTHER=keep\n', encoding="utf-8")
+
+        steam_monitor.update_dotenv_file(self.destination, {"NTFY_ACCESS_TOKEN": "replacement"})
+
+        self.assertEqual(self.destination.read_text(encoding="utf-8"), 'NTFY_ACCESS_TOKEN="replacement"\nOTHER=keep\n')
+
+    # Verifies clearing such a value removes all of it, for the same reason
+    def test_a_cleared_multiline_secret_leaves_nothing_behind(self):
+        self.destination.write_text('NTFY_ACCESS_TOKEN="first line\nsecond line"\nOTHER=keep\n', encoding="utf-8")
+
+        steam_monitor.update_dotenv_file(self.destination, {"NTFY_ACCESS_TOKEN": ""})
+
+        self.assertEqual(self.destination.read_text(encoding="utf-8"), "OTHER=keep\n")
+
     # Verifies clearing a secret that was never saved does not add an empty line for it
     def test_clearing_an_absent_secret_writes_nothing(self):
         self.destination.write_text("KEEP=value\n", encoding="utf-8")

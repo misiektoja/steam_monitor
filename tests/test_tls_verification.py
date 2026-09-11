@@ -196,3 +196,19 @@ def test_certificates_are_verified_by_default():
 
     assert shipped["VERIFY_SSL"] is True
     assert monitor.VERIFY_SSL is True
+
+
+# Verifies the discovered configuration reaches private API key entry, which checks the key over the network before
+# the normal configuration load and would otherwise verify certificates against the default rather than the setting
+def test_private_key_entry_applies_the_configured_setting(tls_setting, tmp_path, monkeypatch):
+    (tmp_path / "steam_monitor.conf").write_text("VERIFY_SSL = False\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    tls_setting.setattr(monitor, "VERIFY_SSL", True)
+    observed = {}
+    monkeypatch.setattr(monitor, "run_set_steam_api_key", lambda **kwargs: observed.setdefault("verify", monitor.VERIFY_SSL))
+    monkeypatch.setattr(monitor.sys, "argv", ["steam_monitor", "--set-steam-api-key"])
+
+    with pytest.raises(SystemExit):
+        monitor.main()
+
+    assert observed["verify"] is False
