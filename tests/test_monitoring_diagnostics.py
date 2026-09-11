@@ -343,6 +343,16 @@ def test_a_cleared_outage_reports_its_recovery(tmp_path, monkeypatch, capsys):
     assert "* Monitoring recovered for 76561197960435530 after " in output
 
 
+# Verifies a check that reported the end of an outage restarts the quiet clock, since the banner speaks for a
+# check that said nothing and would otherwise contradict the recovery line above it
+def test_a_check_that_reported_a_recovery_does_not_claim_it_was_quiet(tmp_path, monkeypatch, capsys):
+    _api, _sleeps = run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=http_error(503), stop_after_sleeps=6, healthy_after=3, liveness_seconds=180)
+
+    output = capsys.readouterr().out
+    assert "* Monitoring recovered for 76561197960435530 after " in output, "the check under test reported no recovery"
+    assert "Monitoring healthy" not in output
+
+
 # Verifies the reporter reports a new failure in full, stays quiet while it lasts and reminds once the reminder interval passes
 def test_the_outage_reporter_reports_once_then_on_the_cadence(monkeypatch):
     clock = [1000000.0]

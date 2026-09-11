@@ -447,6 +447,8 @@ DISABLE_LOGGING = False
 ASCII_LOG_SEPARATORS = "Auto"
 TRUNCATE_CHARS = 0
 HORIZONTAL_LINE = 0
+# Counts the reports printed so far, so a check can tell whether it said anything before the banner claims it was quiet
+REPORTS_PRINTED = 0
 CLEAR_SCREEN = False
 COLORED_OUTPUT = False
 
@@ -4138,6 +4140,18 @@ def _wizard_ask_secret(question, getpass_func=None):
         raise
 
 
+# Renders an explicit assignment for a setting the template ships commented out, so overrides the user wrote
+# survive a rewrite instead of being replaced by the commented default
+def _rendered_commented_setting(variable, values):
+    value = values.get(variable)
+    if not isinstance(value, dict) or not value:
+        return []
+    lines = ["", f"{variable} = {{"]
+    lines.extend(f"    {repr(str(name))}: {repr(str(setting))}," for name, setting in value.items())
+    lines.append("}")
+    return lines
+
+
 # Renders one configuration file from the built-in template with the chosen values substituted in
 def generate_config_with_current_values(config_values):
     tree = ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec")
@@ -4158,6 +4172,8 @@ def generate_config_with_current_values(config_values):
     lines = CONFIG_BLOCK.strip("\n").split("\n")
     # The template keeps its own leading blank line, so template line numbers are one ahead of this list
     offset = 1 if CONFIG_BLOCK.startswith("\n") else 0
+    commented_pattern = re.compile(r"^#\s*([A-Z][A-Z0-9_]*)\s*=\s*\{$")
+    commented_block = ""
     skip_until = 0
     output = []
     for number, line in enumerate(lines, 1):
@@ -4167,6 +4183,13 @@ def generate_config_with_current_values(config_values):
         replaced = next((name for name, (start, _end, _value) in replacements.items() if start == template_line), None)
         if replaced is None:
             output.append(line)
+            stripped = line.strip()
+            commented_match = commented_pattern.match(stripped)
+            if commented_match and commented_match.group(1) in COMMENTED_CONFIG_SETTINGS:
+                commented_block = commented_match.group(1)
+            elif commented_block and stripped == "# }":
+                output.extend(_rendered_commented_setting(commented_block, config_values))
+                commented_block = ""
             continue
         start, end, rendered = replacements[replaced]
         output.append(f"{replaced} = {rendered}")
@@ -4780,7 +4803,12 @@ def _wizard_normalize_status_path(answer):
 # Collects the log and CSV output destinations monitoring would write
 def _wizard_collect_output_section(state, input_func=None):
     state.config_values["DISABLE_LOGGING"] = not _wizard_ask_yes_no("Write the normal per-target log file?", default=not bool(state.config_values.get("DISABLE_LOGGING")), input_func=input_func)
-    state.config_values["CSV_FILE"] = _wizard_normalize_csv_path(_wizard_ask_text("Optional CSV output path (blank disables it)", default=str(state.config_values.get("CSV_FILE") or ""), input_func=input_func))
+    saved_csv = str(state.config_values.get("CSV_FILE") or "")
+    # Asked as its own question, since Enter on the path prompt takes the shown default and so could never clear a saved one
+    if _wizard_ask_yes_no("Write a CSV file of the changes?", default=bool(saved_csv), input_func=input_func):
+        state.config_values["CSV_FILE"] = _wizard_normalize_csv_path(_wizard_ask_text("CSV output path", default=saved_csv, required=True, input_func=input_func))
+    else:
+        state.config_values["CSV_FILE"] = ""
     state.config_values["STEAM_STATUS_FILE"] = _wizard_normalize_status_path(_wizard_ask_text("Optional status file path (blank uses the default name in the working directory)", default=str(state.config_values.get("STEAM_STATUS_FILE") or ""), input_func=input_func))
 
 
@@ -5292,6 +5320,8 @@ def get_cur_ts(ts_str=""):
 
 # Prints the current date/time in human readable format with separator; eg. Sun 21 Apr 2024, 15:08:45
 def print_cur_ts(ts_str=""):
+    global REPORTS_PRINTED
+    REPORTS_PRINTED += 1
     print(get_cur_ts(str(ts_str)))
     print("─" * HORIZONTAL_LINE)
 
@@ -5531,7 +5561,7 @@ def early_config_file_argument(arguments=None):
 
 # Applies the terminal settings needed before argument parsing, leaving any failure to normal config loading
 def apply_early_output_config():
-    global CLEAR_SCREEN, COLORED_OUTPUT
+    global CLEAR_SCREEN, COLORED_OUTPUT, COLOR_THEME
     try:
         cli_path = early_config_file_argument()
         if cli_path is not None and cli_path.casefold() == "none":
@@ -5547,6 +5577,10 @@ def apply_early_output_config():
         CLEAR_SCREEN = values["CLEAR_SCREEN"]
     if isinstance(values.get("COLORED_OUTPUT"), bool):
         COLORED_OUTPUT = values["COLORED_OUTPUT"]
+    # --help is printed and exited from inside argparse, long before the config load, so the help_* overrides
+    # have to be here or they could never colour the one screen they name. Unusable styles are dropped downstream
+    if isinstance(values.get("COLOR_THEME"), dict):
+        COLOR_THEME = values["COLOR_THEME"]
 
 
 # Keeps argparse from colouring its own help, so the help screen is coloured by this tool alone and --no-color is
@@ -6365,6 +6399,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     # Main loop
     while True:
         check_count += 1
+        reports_before_check = REPORTS_PRINTED
         current_steam_level = None
         current_player_xp = None
         current_friend_ids = None
@@ -6505,7 +6540,6 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         outage_lasted = outage.recovered()
         if outage_lasted is not None:
             print_outage_recovery(steamid, outage_lasted)
-            alive_since = int(time.time())
         transient_retry_used = False
         error_alert.reset()
 
@@ -6963,7 +6997,10 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
         debug_print("Completed check", check=f"#{check_count}", user=steamid, outcome="OK", status=steam_personastates[status], game=gamename or None)
 
-        if LIVENESS_REMINDER_SECONDS and int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS:
+        # The banner speaks for a quiet check, so anything this one reported restarts the clock instead of being contradicted by it
+        if REPORTS_PRINTED != reports_before_check:
+            alive_since = int(time.time())
+        elif LIVENESS_REMINDER_SECONDS and int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS:
             print_liveness_banner(f"Monitoring healthy for {steamid}. The user is {steam_personastates[status]} with no status or game change since the last check")
             alive_since = int(time.time())
 
@@ -7663,6 +7700,12 @@ def main():
         # Applied before the report so the log destination it names is the one monitoring would open
         if args.file_suffix:
             FILE_SUFFIX = args.file_suffix
+        # Doctor exits before monitoring applies these, so they are resolved here too and the output rows
+        # describe the run that was actually asked for. Nothing is written, only reported
+        if args.csv_file:
+            CSV_FILE = os.path.expanduser(args.csv_file)
+        if args.disable_logging is True:
+            DISABLE_LOGGING = True
         doctor_target = args.resolve_community_url or args.steam64_id or TARGET_STEAM_ID
         doctor_exit = run_doctor(target_value=doctor_target, config_path=cfg_path, env_path=env_path)
         # A target the config file already carries is left out, so the command stays as short as the wizard's

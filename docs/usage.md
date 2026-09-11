@@ -340,7 +340,7 @@ On Windows, install [colorama](https://pypi.org/project/colorama/) for colours i
 
 Each part of the output has a logical name. `COLOR_THEME` in the config file overrides only the names it lists. Combine attributes with spaces or `+`, for example `"bright_cyan bold"` or `"red underline"`. Valid colours are `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white` and their `bright_` variants, plus the `bold`, `dim`, `underline` and `blink` attributes. An empty string leaves that part uncoloured.
 
-Generated configuration files ship this block commented out, so the built-in defaults apply and a later change to them reaches you. A configuration file written before v2.0 sets every colour explicitly and therefore keeps the old ones: delete its `COLOR_THEME` block to follow the current defaults or edit the values you want to keep. Such a file still loads unchanged. The old `steam_id` key is still read as `id`.
+Generated configuration files ship this block commented out, so the built-in defaults apply and a later change to them reaches you. Overrides you added are written back as a real block when setup rebuilds the file, so they are not lost. A configuration file written before v2.0 sets every colour explicitly and therefore keeps the old ones: delete its `COLOR_THEME` block to follow the current defaults or edit the values you want to keep. Such a file still loads unchanged. The old `steam_id` key is still read as `id`.
 
 ```python
 COLOR_THEME = {

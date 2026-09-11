@@ -896,6 +896,32 @@ def test_doctor_consumes_the_command_line_api_key(monkeypatch, doctor_globals):
     assert observed["key"] == command_line_key
 
 
+# Verifies doctor reports the output destinations the run was given, since it exits before monitoring applies them
+def test_doctor_reports_the_output_overrides_the_run_was_given(monkeypatch, doctor_globals, tmp_path):
+    csv_path = tmp_path / "chosen.csv"
+    seen = {}
+    monkeypatch.setattr(monitor, "find_config_file", lambda _path=None: None)
+    monkeypatch.setattr(monitor, "CLEAR_SCREEN", False)
+    monkeypatch.setattr(monitor, "stdout_bck", None)
+    monkeypatch.setattr(monitor, "CSV_FILE", "")
+    monkeypatch.setattr(monitor, "DISABLE_LOGGING", False)
+    monkeypatch.setattr("sys.argv", ["steam_monitor.py", "--doctor", "--env-file", "none", "-b", str(csv_path), "-d"])
+
+    def record_doctor(**_kwargs):
+        seen["csv"] = monitor.CSV_FILE
+        seen["logging_disabled"] = monitor.DISABLE_LOGGING
+        return 0
+
+    monkeypatch.setattr(monitor, "run_doctor", record_doctor)
+
+    with pytest.raises(SystemExit):
+        monitor.main()
+
+    assert seen["csv"] == str(csv_path)
+    assert seen["logging_disabled"] is True
+
+
+
 # The user-visible strings that must read identically across the sibling tools, since users learn them once
 SHARED_CONTRACT = {
     "preflight_notice": "Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval.",

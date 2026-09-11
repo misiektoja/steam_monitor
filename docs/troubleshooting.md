@@ -12,7 +12,7 @@ It is **read-only**: it writes no files and says so before the first check runs.
 
 The Configuration section names the configuration and dotenv files in effect and reports **which secrets came from the dotenv file and which came from the environment**, by name only. No secret value is ever printed. It also reports whether [TLS verification](configuration.md#tls-verification) is on, and warns while it is off. Settings that control timing and counts, such as the check intervals and `SMTP_PORT`, are checked for usable values and every one that fails is named in a single row.
 
-It also names the **log and CSV files monitoring would write** and reports whether each one can be created. The log file name includes the Steam ID or `FILE_SUFFIX`, so it is only resolved when a target is given. Without one, the row reports the base path instead.
+It also names the **log and CSV files monitoring would write** and reports whether each one can be created, including the ones `-b` and `-d` asked for on the command line. The log file name includes the Steam ID or `FILE_SUFFIX`, so it is only resolved when a target is given. Without one, the row reports the base path instead.
 
 The Notifications section **signs in to the configured SMTP server** and validates webhook settings without sending anything. Each ready row lists the **alert categories** that channel would deliver.
 

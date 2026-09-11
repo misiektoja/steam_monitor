@@ -777,7 +777,7 @@ def test_the_wizard_transcript_holds_the_output_contract(tmp_path):
         "Dotenv:",
         "Steam profile URL or ID to monitor",
         "Write the normal per-target log file?",
-        "Optional CSV output path (blank disables it)",
+        "Write a CSV file of the changes?",
         "Optional status file path (blank uses the default name in the working directory)",
         "Setup summary",
         "Saved files",
@@ -797,7 +797,7 @@ def test_the_output_section_records_the_log_and_csv_choices(tmp_path, wizard_glo
     baseline = {name: value for name, value in vars(monitor).items() if name in monitor._config_allowed_names()}
     state = monitor.WizardSetupState(tmp_path / "steam_monitor.conf", tmp_path / ".env", baseline)
 
-    monitor._wizard_collect_output_section(state, input_func=scripted_input(["n", str(tmp_path / "activity.csv"), ""]))
+    monitor._wizard_collect_output_section(state, input_func=scripted_input(["n", "y", str(tmp_path / "activity.csv"), ""]))
 
     assert state.config_values["DISABLE_LOGGING"] is True
     assert state.config_values["CSV_FILE"] == str(tmp_path / "activity.csv")
@@ -817,7 +817,7 @@ def test_the_output_section_records_the_status_file_choice(tmp_path, wizard_glob
     baseline = {name: value for name, value in vars(monitor).items() if name in monitor._config_allowed_names()}
     state = monitor.WizardSetupState(tmp_path / "steam_monitor.conf", tmp_path / ".env", baseline)
 
-    monitor._wizard_collect_output_section(state, input_func=scripted_input(["y", "", str(tmp_path / "last_status.json")]))
+    monitor._wizard_collect_output_section(state, input_func=scripted_input(["y", "n", str(tmp_path / "last_status.json")]))
 
     assert state.config_values["STEAM_STATUS_FILE"] == str(tmp_path / "last_status.json")
 
@@ -827,7 +827,7 @@ def test_a_blank_csv_answer_disables_csv_output(tmp_path, wizard_globals):
     baseline = {name: value for name, value in vars(monitor).items() if name in monitor._config_allowed_names()}
     state = monitor.WizardSetupState(tmp_path / "steam_monitor.conf", tmp_path / ".env", baseline)
 
-    monitor._wizard_collect_output_section(state, input_func=scripted_input(["y", "", ""]))
+    monitor._wizard_collect_output_section(state, input_func=scripted_input(["y", "n", ""]))
 
     assert state.config_values["DISABLE_LOGGING"] is False
     assert state.config_values["CSV_FILE"] == ""
@@ -838,10 +838,10 @@ def test_the_csv_answer_gains_a_csv_extension_when_it_has_none(tmp_path, wizard_
     baseline = {name: value for name, value in vars(monitor).items() if name in monitor._config_allowed_names()}
     state = monitor.WizardSetupState(tmp_path / "steam_monitor.conf", tmp_path / ".env", baseline)
 
-    monitor._wizard_collect_output_section(state, input_func=scripted_input(["y", str(tmp_path / "activity"), ""]))
+    monitor._wizard_collect_output_section(state, input_func=scripted_input(["y", "y", str(tmp_path / "activity"), ""]))
     assert state.config_values["CSV_FILE"] == str(tmp_path / "activity.csv")
 
-    monitor._wizard_collect_output_section(state, input_func=scripted_input(["y", str(tmp_path / "activity.txt"), ""]))
+    monitor._wizard_collect_output_section(state, input_func=scripted_input(["y", "y", str(tmp_path / "activity.txt"), ""]))
     assert state.config_values["CSV_FILE"] == str(tmp_path / "activity.txt")
 
 
@@ -850,10 +850,10 @@ def test_the_status_file_answer_gains_a_json_extension_when_it_has_none(tmp_path
     baseline = {name: value for name, value in vars(monitor).items() if name in monitor._config_allowed_names()}
     state = monitor.WizardSetupState(tmp_path / "steam_monitor.conf", tmp_path / ".env", baseline)
 
-    monitor._wizard_collect_output_section(state, input_func=scripted_input(["y", "", str(tmp_path / "profile")]))
+    monitor._wizard_collect_output_section(state, input_func=scripted_input(["y", "n", str(tmp_path / "profile")]))
     assert state.config_values["STEAM_STATUS_FILE"] == str(tmp_path / "profile.json")
 
-    monitor._wizard_collect_output_section(state, input_func=scripted_input(["y", "", str(tmp_path / "profile.txt")]))
+    monitor._wizard_collect_output_section(state, input_func=scripted_input(["y", "n", str(tmp_path / "profile.txt")]))
     assert state.config_values["STEAM_STATUS_FILE"] == str(tmp_path / "profile.txt")
 
 
@@ -1478,3 +1478,20 @@ def test_the_effective_secret_follows_the_startup_precedence(tmp_path, monkeypat
     assert monitor.effective_secret_after_setup("SMTP_PASSWORD", env_path, {"SMTP_PASSWORD": "accepted"}) == ("exported", True)
     monkeypatch.delenv("SMTP_PASSWORD", raising=False)
     assert monitor.effective_secret_after_setup("SMTP_PASSWORD", tmp_path / "absent.env", {}) == ("from-config-file", False)
+
+
+# Verifies an explicit colour theme survives a config rebuild, since the template ships the setting commented out
+def test_a_rebuilt_config_keeps_an_explicit_color_theme():
+    values = dict(monitor._config_template_defaults())
+    values["COLOR_THEME"] = {"header": "bright_red"}
+
+    rendered = monitor.generate_config_with_current_values(values)
+
+    assert monitor.parse_config_content(rendered, "<generated>")["COLOR_THEME"] == {"header": "bright_red"}
+
+
+# Verifies the shipped default stays commented out, so a rebuild does not pin a theme the user never chose
+def test_a_rebuilt_config_leaves_the_default_theme_commented():
+    rendered = monitor.generate_config_with_current_values(dict(monitor._config_template_defaults()))
+
+    assert "\nCOLOR_THEME = {" not in rendered
