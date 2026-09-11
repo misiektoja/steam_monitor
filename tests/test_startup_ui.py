@@ -241,6 +241,28 @@ def test_links_in_sentences_are_coloured(colored):
     assert line == f"Guide: {colored['link']}{monitor.QUICK_START_GUIDE_URL}{monitor.ANSI_RESET}"
 
 
+class FakeStream:
+    """A stream stand-in that reports whatever the test needs isatty() to say."""
+
+    def __init__(self, interactive):
+        self.interactive = interactive
+
+    def isatty(self):
+        return self.interactive
+
+
+# Verifies the NO_COLOR convention is honoured on a terminal that would otherwise receive colour
+def test_no_color_in_the_environment_switches_colour_off(monkeypatch):
+    monkeypatch.setattr(monitor.sys, "stdin", FakeStream(True))
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    assert monitor._stream_supports_color(FakeStream(True)) is True
+
+    monkeypatch.setenv("NO_COLOR", "1")
+
+    assert monitor._stream_supports_color(FakeStream(True)) is False
+
+
 # Verifies a config written against the pre-rename 'steam_id' key still colours identifiers
 def test_legacy_theme_key_still_applies(monkeypatch):
     monkeypatch.setattr(monitor, "COLORED_OUTPUT", True)

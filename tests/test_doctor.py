@@ -729,7 +729,7 @@ def capture_doctor_pty(config_path, env="none", extra_arguments=()):
         *extra_arguments,
     ]
     controller, worker = pty.openpty()
-    process = subprocess.Popen(command, stdin=worker, stdout=worker, stderr=worker, cwd=str(REPO_ROOT), env={**os.environ, "STEAM_API_KEY": "A" * 32, "TERM": "xterm"})
+    process = subprocess.Popen(command, stdin=worker, stdout=worker, stderr=worker, cwd=str(REPO_ROOT), env={**os.environ, "STEAM_API_KEY": "A" * 32, "TERM": "xterm", "NO_COLOR": ""})
     os.close(worker)
     chunks = []
     try:
