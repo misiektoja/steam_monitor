@@ -345,7 +345,7 @@ def test_the_existing_file_refusal_points_at_the_configuration_file_section():
     advice = monitor.classify_recovery_error(context="file.exists")
 
     assert advice.code == "file.exists"
-    assert f"Guide: {monitor.CONFIG_FILE_GUIDE_URL}" in advice.fix
+    assert f"Guide: {monitor.CONFIG_GUIDE_URL}" in advice.fix
     assert advice.fix.rstrip().endswith("#configuration-file")
 
 

@@ -1054,7 +1054,7 @@ def test_a_disabled_config_destination_is_refused(tmp_path, capsys):
     assert code == 1
     assert "--setup has nowhere to write the configuration" in out
     assert "Replace '--config-file none' with a writable path, or drop the flag to write steam_monitor.conf in the current directory" in out
-    assert monitor.CONFIG_FILE_GUIDE_URL in out
+    assert monitor.CONFIG_GUIDE_URL in out
 
 
 # Verifies a dotenv destination switched off is refused with the flag to replace and the secrets guide

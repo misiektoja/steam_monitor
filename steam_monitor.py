@@ -465,9 +465,9 @@ DEFAULT_CONFIG_FILENAME = "steam_monitor.conf"
 PROJECT_URL = "https://github.com/misiektoja/steam_monitor"
 DOCS_BASE_URL = "https://misiektoja.github.io/steam_monitor"
 GUIDE_URL = f"{DOCS_BASE_URL}/"
-INSTALL_GUIDE_URL = f"{DOCS_BASE_URL}/installation/"
+INSTALLATION_GUIDE_URL = f"{DOCS_BASE_URL}/installation/"
 QUICK_START_GUIDE_URL = f"{DOCS_BASE_URL}/setup-and-first-run/"
-CONFIG_FILE_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#configuration-file"
+CONFIG_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#configuration-file"
 INTERVALS_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#check-intervals"
 STEAM_API_KEY_GUIDE_URL = f"{DOCS_BASE_URL}/setup-and-first-run/#steam-web-api-key"
 PRIVACY_GUIDE_URL = f"{DOCS_BASE_URL}/setup-and-first-run/#user-privacy-settings"
@@ -3001,7 +3001,7 @@ def recovery_fix_with_guide(fix, guide_url):
 
 # Returns the advice an optional library that is missing carries, naming what the run loses and how to install it
 def missing_dependency_advice(package, effect, install_command, alternative=""):
-    return make_recovery_advice("dependency.missing", f"{effect} because the optional '{package}' library is missing", recovery_fix_with_guide(f"Install it with: {install_command}" + (f". {alternative}" if alternative else ""), INSTALL_GUIDE_URL), False)
+    return make_recovery_advice("dependency.missing", f"{effect} because the optional '{package}' library is missing", recovery_fix_with_guide(f"Install it with: {install_command}" + (f". {alternative}" if alternative else ""), INSTALLATION_GUIDE_URL), False)
 
 
 # Returns the advice a cancelled secret entry reports, worded the same way by every one-shot secret command
@@ -3074,8 +3074,8 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
 
     if context == "config":
         if "does not exist" in message:
-            return advice("config.missing", safe_detail or "The configuration file was not found", f"Create one with '{render_command(['--generate-config', 'steam_monitor.conf'], include_paths=False)}' or correct the --config-file path", False, CONFIG_FILE_GUIDE_URL)
-        return advice("config.invalid", safe_detail or "The configuration file could not be read", f"Correct the reported line, or start from a fresh template with '{render_command(['--generate-config', 'steam_monitor.conf'], include_paths=False)}'", False, CONFIG_FILE_GUIDE_URL)
+            return advice("config.missing", safe_detail or "The configuration file was not found", f"Create one with '{render_command(['--generate-config', 'steam_monitor.conf'], include_paths=False)}' or correct the --config-file path", False, CONFIG_GUIDE_URL)
+        return advice("config.invalid", safe_detail or "The configuration file could not be read", f"Correct the reported line, or start from a fresh template with '{render_command(['--generate-config', 'steam_monitor.conf'], include_paths=False)}'", False, CONFIG_GUIDE_URL)
 
     if context == "secret.missing":
         return advice("secret.missing", safe_detail or "No Steam Web API key reached the tool", f"Save one with '{render_command(['--set-steam-api-key'])}', export STEAM_API_KEY or add it to a dotenv file", False, STEAM_API_KEY_GUIDE_URL)
@@ -3141,14 +3141,14 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
         return advice("file.unwritable", safe_detail or "A file the tool keeps could not be written", "Check that the directory exists and is writable, or choose another path", False, DIAGNOSTICS_GUIDE_URL)
 
     if context == "file.exists":
-        return advice("file.exists", safe_detail or "The destination file already exists", f"Re-run with --force to replace it after a timestamped backup, or write to a different path with '{render_command(['--generate-config', '<new-file>'], include_paths=False)}'", False, CONFIG_FILE_GUIDE_URL)
+        return advice("file.exists", safe_detail or "The destination file already exists", f"Re-run with --force to replace it after a timestamped backup, or write to a different path with '{render_command(['--generate-config', '<new-file>'], include_paths=False)}'", False, CONFIG_GUIDE_URL)
 
     if context == "file.unwritable":
         # The wizard reaches this either because a destination was switched off or because the path cannot be written
         if "nowhere to write the private settings" in message:
             return advice("file.unwritable", safe_detail or "--setup has nowhere to write the private settings", "Replace '--env-file none' with a writable path, or drop the flag to write .env in the current directory", False, SECRETS_GUIDE_URL)
         if "nowhere to write the configuration" in message:
-            return advice("file.unwritable", safe_detail or "--setup has nowhere to write the configuration", f"Replace '--config-file none' with a writable path, or drop the flag to write {DEFAULT_CONFIG_FILENAME} in the current directory", False, CONFIG_FILE_GUIDE_URL)
+            return advice("file.unwritable", safe_detail or "--setup has nowhere to write the configuration", f"Replace '--config-file none' with a writable path, or drop the flag to write {DEFAULT_CONFIG_FILENAME} in the current directory", False, CONFIG_GUIDE_URL)
         return advice("file.unwritable", safe_detail or "A file the tool keeps could not be written", "Check that the directory exists and is writable, or choose another path", False, DIAGNOSTICS_GUIDE_URL)
 
     # Runtime, which is the monitoring loop and every Steam Web API call it makes
@@ -3851,7 +3851,7 @@ def doctor_check_environment(version_info=None, spec_finder=None):
     if tuple(selected_version)[:2] >= MINIMUM_PYTHON_VERSION:
         checks.append(make_doctor_check("Environment", "PASS", f"Python {version_text} is supported", minimum_detail))
     else:
-        advice = make_recovery_advice("dependency.missing", f"Python {version_text} is unsupported", recovery_fix_with_guide(f"Install Python {MINIMUM_PYTHON_VERSION_TEXT} or newer then retry", INSTALL_GUIDE_URL), False)
+        advice = make_recovery_advice("dependency.missing", f"Python {version_text} is unsupported", recovery_fix_with_guide(f"Install Python {MINIMUM_PYTHON_VERSION_TEXT} or newer then retry", INSTALLATION_GUIDE_URL), False)
         checks.append(make_doctor_check("Environment", "FAIL", advice.summary, minimum_detail, advice))
 
     find_spec = importlib.util.find_spec if spec_finder is None else spec_finder
@@ -3867,26 +3867,26 @@ def doctor_check_environment(version_info=None, spec_finder=None):
         if module_present(module_name):
             checks.append(make_doctor_check("Environment", "PASS", f"Required dependency {package_name} is installed"))
         else:
-            advice = make_recovery_advice("dependency.missing", f"Required dependency {package_name} is missing", recovery_fix_with_guide(f'Install it with: pip3 install "{package_name}"', INSTALL_GUIDE_URL), False)
+            advice = make_recovery_advice("dependency.missing", f"Required dependency {package_name} is missing", recovery_fix_with_guide(f'Install it with: pip3 install "{package_name}"', INSTALLATION_GUIDE_URL), False)
             checks.append(make_doctor_check("Environment", "FAIL", advice.summary, advice=advice))
 
     if module_present("dotenv"):
         checks.append(make_doctor_check("Environment", "PASS", "Optional dependency python-dotenv is installed", "Used only for reading secrets from a dotenv file"))
     else:
-        advice = make_recovery_advice("dependency.missing", "Optional dependency python-dotenv is not installed", recovery_fix_with_guide("Install it with: pip3 install python-dotenv. Or export the secrets as environment variables", INSTALL_GUIDE_URL), False)
+        advice = make_recovery_advice("dependency.missing", "Optional dependency python-dotenv is not installed", recovery_fix_with_guide("Install it with: pip3 install python-dotenv. Or export the secrets as environment variables", INSTALLATION_GUIDE_URL), False)
         checks.append(make_doctor_check("Environment", "WARN", advice.summary, "Secrets can only come from environment variables or the configuration file. Every other feature is unaffected", advice))
 
     # The guarded import flag is checked rather than the module, because it reflects whether artwork actually works
     if NTFY_IMAGES_AVAILABLE:
         checks.append(make_doctor_check("Environment", "PASS", "Optional dependency Pillow is installed", "Used only for artwork attachments in ntfy alerts"))
     else:
-        advice = make_recovery_advice("dependency.missing", "Optional dependency Pillow is not installed", recovery_fix_with_guide(f"Install it with: {ntfy_images_install_command()}", INSTALL_GUIDE_URL), False)
+        advice = make_recovery_advice("dependency.missing", "Optional dependency Pillow is not installed", recovery_fix_with_guide(f"Install it with: {ntfy_images_install_command()}", INSTALLATION_GUIDE_URL), False)
         checks.append(make_doctor_check("Environment", "WARN", advice.summary, "ntfy alerts are delivered as text without artwork. Every other feature is unaffected", advice))
 
     if module_present("wcwidth"):
         checks.append(make_doctor_check("Environment", "PASS", "Optional dependency wcwidth is installed", "Used only to measure display width for screen truncation"))
     else:
-        advice = make_recovery_advice("dependency.missing", "Optional dependency wcwidth is not installed", recovery_fix_with_guide("Install it with: pip3 install wcwidth", INSTALL_GUIDE_URL), False)
+        advice = make_recovery_advice("dependency.missing", "Optional dependency wcwidth is not installed", recovery_fix_with_guide("Install it with: pip3 install wcwidth", INSTALLATION_GUIDE_URL), False)
         checks.append(make_doctor_check("Environment", "WARN", advice.summary, "Wide characters count as one column, so a line holding them can run past the limit. Every other feature is unaffected", advice))
 
     # A warning about a library that cannot affect this machine is noise, so the row is skipped off Windows
@@ -3894,7 +3894,7 @@ def doctor_check_environment(version_info=None, spec_finder=None):
         if module_present("colorama"):
             checks.append(make_doctor_check("Environment", "PASS", "Optional dependency colorama is installed", "Used only for coloured output in the older Windows Command Prompt"))
         else:
-            advice = make_recovery_advice("dependency.missing", "Optional dependency colorama is not installed", recovery_fix_with_guide("Install it with: pip3 install colorama. Or use Windows Terminal, which needs nothing extra", INSTALL_GUIDE_URL), False)
+            advice = make_recovery_advice("dependency.missing", "Optional dependency colorama is not installed", recovery_fix_with_guide("Install it with: pip3 install colorama. Or use Windows Terminal, which needs nothing extra", INSTALLATION_GUIDE_URL), False)
             checks.append(make_doctor_check("Environment", "WARN", advice.summary, "Coloured output may not render in the older Windows Command Prompt", advice))
     return checks
 
@@ -4070,7 +4070,7 @@ def prepare_configured_paths(args):
         # Cleared here so a run that starts with usable settings cannot inherit an earlier run's report
         DISCARDED_SETTING_ERRORS.clear()
         return
-    advice = make_recovery_advice("config.invalid", "Invalid settings: " + ". ".join(errors), recovery_fix_with_guide("Correct the named settings in the configuration file or command line", CONFIG_FILE_GUIDE_URL), False)
+    advice = make_recovery_advice("config.invalid", "Invalid settings: " + ". ".join(errors), recovery_fix_with_guide("Correct the named settings in the configuration file or command line", CONFIG_GUIDE_URL), False)
     # A monitoring run cannot continue on a value this broken, but doctor, the setup wizard and the secret
     # commands are how it gets corrected, so they fall back to the built-in values and report the setting
     if not command_reports_configuration(args):
@@ -4117,7 +4117,7 @@ def discard_invalid_shape_settings():
 def doctor_check_configuration(config_path=None, env_path=None, target_value=None):
     # Read before the unusable values are replaced, so each row names the value the user configured
     # Reported as ordinary rows so one malformed setting cannot hide the rest of the configuration report
-    checks = [make_doctor_check("Configuration", "FAIL", detail, advice=make_recovery_advice("config.invalid", detail, recovery_fix_with_guide("Correct the named setting in the configuration file", CONFIG_FILE_GUIDE_URL), False)) for detail in configuration_shape_errors()]
+    checks = [make_doctor_check("Configuration", "FAIL", detail, advice=make_recovery_advice("config.invalid", detail, recovery_fix_with_guide("Correct the named setting in the configuration file", CONFIG_GUIDE_URL), False)) for detail in configuration_shape_errors()]
     discard_invalid_shape_settings()
     if config_path:
         checks.append(make_doctor_check("Configuration", "PASS", "Configuration file loaded", f"Path: {config_path}"))
@@ -4125,7 +4125,7 @@ def doctor_check_configuration(config_path=None, env_path=None, target_value=Non
         checks.append(make_doctor_check("Configuration", "PASS", "No configuration file selected", "Using built-in defaults and command-line overrides"))
     if env_path and str(env_path) in DOTENV_STARTUP_ERRORS:
         detail, fix = DOTENV_STARTUP_ERRORS[str(env_path)]
-        advice = make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide(f"{fix}, then run Doctor again", CONFIG_FILE_GUIDE_URL), False)
+        advice = make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide(f"{fix}, then run Doctor again", CONFIG_GUIDE_URL), False)
         checks.append(make_doctor_check("Configuration", "FAIL", "Dotenv file could not be loaded", detail, advice))
     elif env_path and os.path.isfile(str(env_path)):
         checks.append(make_doctor_check("Configuration", "PASS", "Dotenv file loaded", f"Path: {env_path}"))
@@ -4150,12 +4150,12 @@ def doctor_check_configuration(config_path=None, env_path=None, target_value=Non
     numeric_errors = runtime_configuration_errors()
     if numeric_errors:
         numeric_detail = "Invalid numeric settings: " + "; ".join(numeric_errors)
-        advice = make_recovery_advice("config.invalid", "One or more numeric settings are invalid", recovery_fix_with_guide("Correct the reported settings in the configuration file", CONFIG_FILE_GUIDE_URL), False, numeric_detail)
+        advice = make_recovery_advice("config.invalid", "One or more numeric settings are invalid", recovery_fix_with_guide("Correct the reported settings in the configuration file", CONFIG_GUIDE_URL), False, numeric_detail)
         checks.append(make_doctor_check("Configuration", "FAIL", "One or more numeric settings are invalid", numeric_detail, advice))
     boolean_errors = runtime_boolean_errors()
     if boolean_errors:
         boolean_detail = "Invalid on/off settings: " + "; ".join(boolean_errors)
-        advice = make_recovery_advice("config.invalid", "One or more on/off settings are invalid", recovery_fix_with_guide("Set the reported settings to True or False in the configuration file", CONFIG_FILE_GUIDE_URL), False, boolean_detail)
+        advice = make_recovery_advice("config.invalid", "One or more on/off settings are invalid", recovery_fix_with_guide("Set the reported settings to True or False in the configuration file", CONFIG_GUIDE_URL), False, boolean_detail)
         checks.append(make_doctor_check("Configuration", "FAIL", "One or more on/off settings are invalid", boolean_detail, advice))
 
     checks.extend(doctor_output_destination_checks(target_value))
@@ -6495,7 +6495,7 @@ def display_recent_achievements(steamid, s_api, s_played, max_games=15, max_achi
             retry_note = f"try again in {display_time(steam_retry_after_seconds(exc.response, 60))}"
         advice = classify_recovery_error(exc, context="runtime", detail="Recent achievements are unavailable. The lookup was stopped")
         fix = "Wait for the reported delay then run the command again" if retry_note else "Correct the reported problem then run the command again"
-        print_recovery_advice(make_recovery_advice(advice.code, advice.summary, recovery_fix_with_guide(fix, CONFIG_FILE_GUIDE_URL), advice.retryable, advice.detail), retry_note=retry_note)
+        print_recovery_advice(make_recovery_advice(advice.code, advice.summary, recovery_fix_with_guide(fix, CONFIG_GUIDE_URL), advice.retryable, advice.detail), retry_note=retry_note)
         return False
 
     if not achievements:
@@ -8316,7 +8316,7 @@ def main():
             detail, fix = dotenv_load_problem(env_path, exc)
             DOTENV_STARTUP_ERRORS[str(env_path)] = (detail, fix)
             if not args.doctor:
-                print_recovery_advice(make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide(fix, CONFIG_FILE_GUIDE_URL), False))
+                print_recovery_advice(make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide(fix, CONFIG_GUIDE_URL), False))
                 if not command_reports_configuration(args):
                     sys.exit(1)
 
@@ -8376,7 +8376,7 @@ def main():
 
     configuration_errors = runtime_configuration_errors() + runtime_boolean_errors()
     if configuration_errors:
-        print_recovery_advice(make_recovery_advice("config.invalid", "Invalid settings: " + ". ".join(configuration_errors), recovery_fix_with_guide("Correct the reported settings in the configuration file or command line", CONFIG_FILE_GUIDE_URL), False))
+        print_recovery_advice(make_recovery_advice("config.invalid", "Invalid settings: " + ". ".join(configuration_errors), recovery_fix_with_guide("Correct the reported settings in the configuration file or command line", CONFIG_GUIDE_URL), False))
         sys.exit(1)
 
     if not check_internet():
