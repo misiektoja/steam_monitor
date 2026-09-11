@@ -46,9 +46,13 @@ steam_monitor
 
 [`--setup`](setup-and-first-run.md#guided-setup) asks whether to save the target. Declining leaves `TARGET_STEAM_ID` empty and the printed start commands include the profile instead.
 
+Path settings are validated before startup opens files. An invalid value names the setting to correct. Command-line path overrides still take precedence.
+
 ## SMTP Settings
 
 Private password entry preserves leading and trailing spaces. The exact value checked with the mail server is saved.
+
+Private entry preserves literal `${...}` text in saved passwords and other secrets. Assignments that need this protection carry a `# monitor:literal` comment. Keep that comment when editing the value. Unmarked assignments retain their existing interpolation behavior. The marker is read by this monitor. Other dotenv readers or shells may still interpolate the value.
 
 [`--setup`](setup-and-first-run.md#guided-setup) collects these for you. To configure them by hand, set the SMTP settings in the `steam_monitor.conf` file.
 
