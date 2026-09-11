@@ -2390,10 +2390,7 @@ def smtp_connect_and_login(use_ssl, smtp_timeout=15):
         smtp_login(smtp_object, SMTP_USER, SMTP_PASSWORD)
         return smtp_object
     except Exception:
-        try:
-            smtp_object.quit()
-        except Exception:
-            pass
+        smtp_quit_quietly(smtp_object)
         raise
 
 
@@ -2424,8 +2421,22 @@ def smtp_settings_problem():
     return None
 
 
+# Closes an SMTP session without changing the result of an accepted or failed message
+def smtp_quit_quietly(smtp_object):
+    if smtp_object is None:
+        return
+    try:
+        smtp_object.quit()
+    except Exception as quit_error:
+        debug_print("SMTP quit", outcome="failed", error=f"{type(quit_error).__name__}: {quit_error}")
+        try:
+            smtp_object.close()
+        except Exception as close_error:
+            debug_print("SMTP close", outcome="failed", error=f"{type(close_error).__name__}: {close_error}")
+
+
 # Sends email notification
-def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
+def send_email(subject, body, body_html, use_ssl, smtp_timeout=15, report_delivery=True):
     settings_problem = smtp_settings_problem()
     if settings_problem is not None:
         print_recovery_error(context="email", detail=settings_problem)
@@ -2440,6 +2451,7 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
         return 1
 
     debug_print("SMTP delivery", host=SMTP_HOST, port=SMTP_PORT, user=SMTP_USER, starttls=bool(use_ssl), timeout=f"{smtp_timeout}s")
+    smtpObj = None
     try:
         smtpObj = smtp_connect_and_login(use_ssl, smtp_timeout=smtp_timeout)
         email_msg = MIMEMultipart('alternative')
@@ -2458,13 +2470,15 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
             email_msg.attach(part2)
 
         smtpObj.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, email_msg.as_string())
-        smtpObj.quit()
     except Exception as e:
         debug_swallowed_exception("Sending email", e)
         print_recovery_error(e, context="email")
         return 1
+    finally:
+        smtp_quit_quietly(smtpObj)
     debug_print("SMTP delivery", host=SMTP_HOST, port=SMTP_PORT, recipient=RECEIVER_EMAIL, outcome="OK")
-    verbose_delivery_print(f"Email delivered to {RECEIVER_EMAIL}: '{subject}'")
+    if report_delivery:
+        verbose_delivery_print(f"Email sent to {RECEIVER_EMAIL}")
     return 0
 
 
@@ -3722,7 +3736,7 @@ def _retain_webhook_secrets(deliver):
 
 @_retain_webhook_secrets
 # Sends one webhook through an isolated bounded retry path
-def send_webhook(title, description, notification_type="status", force=False, sleeper=None, image_url="", ntfy_priority=0, ntfy_tags=""):
+def send_webhook(title, description, notification_type="status", force=False, sleeper=None, image_url="", ntfy_priority=0, ntfy_tags="", report_delivery=True):
     if not force and not webhook_event_enabled(notification_type):
         return 1
     destination = str(WEBHOOK_URL or "").strip()
@@ -3781,7 +3795,8 @@ def send_webhook(title, description, notification_type="status", force=False, sl
             retryable = response.status_code == 429 or 500 <= response.status_code <= 599
             debug_print("Webhook delivery", channel=provider, status=response.status_code, retryable=retryable)
             if 200 <= response.status_code <= 299:
-                verbose_delivery_print(f"Webhook delivered through {webhook_provider_display_name(provider)}: '{webhook_values['title']}'")
+                if report_delivery:
+                    verbose_delivery_print(f"Webhook sent through {webhook_provider_display_name(provider)}")
                 return 0
             if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
                 use_ntfy_image = False
@@ -4397,7 +4412,7 @@ def _doctor_offer_notification_tests(report):
     checks = []
     if report.email_ready:
         if _doctor_ask_yes_no("Send one test email now? This will deliver a real message"):
-            delivered = send_email("steam_monitor: doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "", SMTP_SSL, smtp_timeout=5) == 0
+            delivered = send_email("Steam Monitor doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "", SMTP_SSL, smtp_timeout=5, report_delivery=False) == 0
             if delivered:
                 check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", "Doctor test email delivered", "One real test email was sent after confirmation")
             else:
@@ -4412,7 +4427,7 @@ def _doctor_offer_notification_tests(report):
     if report.webhook_ready:
         provider = webhook_provider_display_name()
         if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
-            delivered = send_webhook("steam_monitor: doctor test webhook", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", "status", force=True) == 0
+            delivered = send_webhook("Steam Monitor doctor test webhook", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", "status", force=True, report_delivery=False) == 0
             if delivered:
                 check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", f"Doctor test webhook through {provider} delivered", "One real test webhook was sent after confirmation")
             else:
@@ -7073,10 +7088,10 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 time.sleep(TRANSIENT_RETRY_SECONDS)
                 continue
             if advice.code == "auth.api_key_invalid":
-                m_subject = f"steam_monitor: API key error! (user: {username})"
+                m_subject = f"Steam API key error! (user: {username})"
                 m_body = f"{advice.summary}{nl_ch}{nl_ch}To fix: {advice.fix}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
             else:
-                m_subject = f"steam_monitor: monitoring error (user: {username})"
+                m_subject = f"Steam monitoring error (user: {username})"
                 m_body = f"{advice.summary}{nl_ch}{nl_ch}To fix: {advice.fix}{nl_ch}{nl_ch}Steam Monitor will retry in {display_time(sleep_interval)}.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
             # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
             alert_due = not advice.retryable or int(time.time()) - outage.since >= ERROR_ALERT_AFTER_SECONDS
@@ -8301,7 +8316,7 @@ def main():
             sys.exit(1)
         print("* Sending test email notification ...\n")
         debug_print("Test email", sender=SENDER_EMAIL, recipient=RECEIVER_EMAIL)
-        if send_email("steam_monitor: test email", "This test email was sent by --send-test-email. Your SMTP settings work.", "", SMTP_SSL, smtp_timeout=5) == 0:
+        if send_email("Steam Monitor test email", "This test email was sent by --send-test-email. Your SMTP settings work.", "", SMTP_SSL, smtp_timeout=5, report_delivery=False) == 0:
             print("* Email sent successfully !")
         else:
             sys.exit(1)
@@ -8313,7 +8328,7 @@ def main():
             sys.exit(1)
         print("* Sending test webhook notification ...\n")
         debug_print("Test webhook", channel=normalized_webhook_provider() or "an unset provider", host=webhook_destination_host())
-        if send_webhook("steam_monitor: test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.", "status", force=True) == 0:
+        if send_webhook("Steam Monitor test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.", "status", force=True, report_delivery=False) == 0:
             print("* Webhook sent successfully !")
         else:
             sys.exit(1)

@@ -371,7 +371,7 @@ class WebhookNotificationTests(unittest.TestCase):
             steam_monitor.main()
 
         self.assertEqual(exit_info.exception.code, 0)
-        delivery.assert_called_once_with("steam_monitor: test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.", "status", force=True)
+        delivery.assert_called_once_with("Steam Monitor test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.", "status", force=True, report_delivery=False)
 
     # Verifies long ntfy messages stay below the server attachment boundary with a visible truncation marker
     def test_ntfy_message_stays_below_attachment_boundary(self):
@@ -391,8 +391,8 @@ class WebhookNotificationTests(unittest.TestCase):
                 steam_monitor.main()
             self.assertEqual(exit_info.exception.code, 0)
 
-        self.assertEqual(email.call_args.args[:2], ("steam_monitor: test email", "This test email was sent by --send-test-email. Your SMTP settings work."))
-        self.assertEqual(webhook.call_args.args[:2], ("steam_monitor: test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work."))
+        self.assertEqual(email.call_args.args[:2], ("Steam Monitor test email", "This test email was sent by --send-test-email. Your SMTP settings work."))
+        self.assertEqual(webhook.call_args.args[:2], ("Steam Monitor test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work."))
 
     # Verifies a delivery test checks the settings before it announces an attempt it cannot make
     def test_a_delivery_test_checks_the_settings_before_it_announces(self):

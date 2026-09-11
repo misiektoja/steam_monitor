@@ -501,7 +501,7 @@ def test_a_failure_that_cannot_clear_itself_is_alerted_at_once(tmp_path, monkeyp
     run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=http_error(403), stop_after_sleeps=2, error_notifications=True)
 
     assert len(deliveries) == 1
-    assert deliveries[0].startswith("steam_monitor: API key error!")
+    assert deliveries[0].startswith("Steam API key error!")
 
 
 # Verifies a retry that reaches the screen on a quiet cycle still ends with a timestamp

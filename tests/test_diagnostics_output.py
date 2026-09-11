@@ -248,7 +248,7 @@ def test_a_delivered_email_is_confirmed_in_verbose(capsys, monkeypatch, diagnost
     monkeypatch.setattr(monitor.smtplib, "SMTP", FakeSMTP)
 
     assert monitor.send_email("subject", "body", "", True, smtp_timeout=1) == 0
-    assert "* Email delivered to receiver@example.com: 'subject'" in capsys.readouterr().out
+    assert "* Email sent to receiver@example.com" in capsys.readouterr().out
 
 
 # Verifies every webhook attempt, status code and retry delay is visible in debug
@@ -285,7 +285,7 @@ def test_a_delivered_webhook_is_confirmed_in_verbose(capsys, monkeypatch, diagno
     assert monitor.send_webhook("title", "body", "status", force=True, sleeper=lambda _seconds: None) == 0
 
     output = capsys.readouterr().out
-    assert "* Webhook delivered through Discord: 'title'" in output
+    assert "* Webhook sent through Discord" in output
     # The status belongs to the technical trace, so verbose keeps the alert readable and debug keeps the code
     assert "status=204, retryable=False" in output
 
@@ -319,8 +319,8 @@ def test_delivery_confirmations_can_be_turned_off(capsys, monkeypatch, diagnosti
     assert monitor.send_webhook("title", "body", "status", force=True, sleeper=lambda _seconds: None) == 0
 
     output = capsys.readouterr().out
-    assert "Email delivered" not in output
-    assert "Webhook delivered" not in output
+    assert "Email sent to" not in output
+    assert "Webhook sent through" not in output
     assert "status=204, retryable=False" in output
 
 
