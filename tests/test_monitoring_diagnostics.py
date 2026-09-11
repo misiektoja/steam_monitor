@@ -467,6 +467,19 @@ def test_a_retryable_failure_is_alerted_once_the_outage_has_lasted(tmp_path, mon
     assert deliveries == expected
 
 
+# Verifies one outage earns one alert per channel however the failure changes, since alternating categories used
+# to forget the delivered alert on every transition and send one per cycle
+def test_alternating_failure_categories_deliver_one_alert(tmp_path, monkeypatch):
+    deliveries = []
+    monkeypatch.setattr(monitor, "send_notification_channels", lambda *args, **kwargs: deliveries.append(args[1]) or (True, True))
+
+    # A rejected key is alerted at once while an unavailable service waits five minutes, so each return to the
+    # rejected key used to look like a fresh failure and earn another alert
+    run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=lambda polls: http_error(403 if polls % 2 else 503), stop_after_sleeps=5, error_notifications=True)
+
+    assert len(deliveries) == 1
+
+
 # Verifies a failure nothing here can retry away is alerted on the first cycle, since waiting would change nothing
 def test_a_failure_that_cannot_clear_itself_is_alerted_at_once(tmp_path, monkeypatch):
     deliveries = []

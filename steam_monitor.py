@@ -6320,7 +6320,6 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     alive_since = int(time.time())
     check_count = 0
     error_alert = ErrorAlertState()
-    error_delivery_code = None
 
     m_subject = m_body = ""
 
@@ -6415,11 +6414,6 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             advice = classify_recovery_error(e, context="runtime")
             response = e.response if isinstance(e, req.exceptions.HTTPError) else None
             debug_print("Completed check", check=f"#{check_count}", user=steamid, outcome="failed", code=advice.code, error=f"{type(e).__name__}: {e}")
-            # A failure that changes family is a different failure, so each channel earns a new alert for it, while an
-            # internet outage that flaps between a timeout and an unreachable host stays one failure
-            if outage_family(advice.code) != outage_family(error_delivery_code):
-                error_alert.reset()
-                error_delivery_code = advice.code
             # A failure that has not changed is left to the liveness cadence rather than repeated every check
             outage_outcome = outage.failed(advice)
             delivery_reported = False
@@ -6488,7 +6482,6 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             alive_since = int(time.time())
         transient_retry_used = False
         error_alert.reset()
-        error_delivery_code = None
 
         # A tracked feature that returned nothing cannot raise its alert, which is invisible without these lines
         unavailable_features = {}
