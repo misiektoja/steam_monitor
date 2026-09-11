@@ -36,6 +36,7 @@ and again before anything is published to PyPI.
 
 | File | Area under test |
 | --- | --- |
+| `test_smtp_error_privacy.py` | Short and escaped passwords in rejected SMTP sign-ins through commands, setup, Doctor and delivery |
 | `test_setup_resolution_regressions.py` | Saved dotenv destinations, empty secrets, export precedence and recovery paths |
 | `test_dotenv_quoted_keys.py` | Quoted dotenv keys, export prefixes, multiline values and duplicate removal |
 | `test_documentation_layout.py` | Unique anchors, main screenshot placement and matching entry-page feature summaries |
