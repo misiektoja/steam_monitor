@@ -36,6 +36,7 @@ and again before anything is published to PyPI.
 
 | File | Area under test |
 | --- | --- |
+| `test_release_boundaries.py` | Real HTTP retries, Discord mention safety, SMTP password round trips and split terminal writes |
 | `test_compact_commands.py` | Literal short command prefixes, real help output and dependency hints |
 | `test_release_safety.py` | Credential preservation, private errors, timing checks, saved-state compatibility and real Steam rate limits |
 | `test_recovery_safety.py` | Real dotenv reloads, setup backups, oversized counts and provider-error privacy |

@@ -48,6 +48,8 @@ steam_monitor
 
 ## SMTP Settings
 
+Private password entry preserves leading and trailing spaces. The exact value checked with the mail server is saved.
+
 [`--setup`](setup-and-first-run.md#guided-setup) collects these for you. To configure them by hand, set the SMTP settings in the `steam_monitor.conf` file.
 
 Verify your SMTP settings by using `--send-test-email` flag (the tool will try to send a test email notification):
@@ -57,6 +59,8 @@ steam_monitor --send-test-email
 ```
 
 ## Webhook Settings
+
+A delivery keeps its original destination and credentials for every retry. Reloaded settings apply to the next delivery. Discord templates must produce a JSON object. Dictionary templates and JSON strings are supported, including strings with escaped format braces. Mentions remain disabled in every template.
 
 Steam Monitor supports Discord webhooks and native ntfy topics. Webhook alerts are independent from email, so either channel can be enabled alone or both can receive the same event.
 

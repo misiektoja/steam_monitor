@@ -100,3 +100,7 @@ Timing values must be finite and within the documented range. Normal startup che
 If a saved status or games-library file has an invalid structure, monitoring stops before replacing it. Correct the named file or move it aside to start a fresh baseline. Keep a copy if you need the old history. Older valid records and extra trailing metadata remain accepted.
 
 An incomplete or inaccessible Steam games response leaves the previous library snapshot intact. Achievement lookups stop on rate limits or connection failures and report how to retry, instead of continuing through the rest of the library.
+
+Malformed path settings and color-theme values are reported by Doctor with the setting name. Invalid color values are ignored while rendering help so you can still find the configuration commands.
+
+Saved status timestamps more than five minutes in the future are invalid. Check the system clock then correct the named history file or move it aside to start fresh. Monitoring preserves the invalid file instead of replacing it.
