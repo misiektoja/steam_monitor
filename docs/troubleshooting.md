@@ -65,7 +65,7 @@ steam_monitor <steam_target> --verbose
 [DEBUG 23:47:21] Polling Steam: steamid=76561197960435530, personastate=0, outcome=OK
 ```
 
-Traced operations include configuration loading, the connectivity probe, every Steam Web API call each polling cycle makes, SMTP delivery, each webhook attempt with its HTTP status and retry decision, and the state files being read and written. Every operation that makes an outbound call reports its result as `outcome=OK` or `outcome=failed` with an `error=` field, so a trace never stops at what was attempted:
+Debug traces cover configuration loading, connectivity, monitoring API calls, notification delivery and file operations. Coverage varies by operation. One-shot lookups and calls made internally by dependencies do not always have matching result lines:
 
 ```sh
 steam_monitor <steam_target> --debug
@@ -92,3 +92,11 @@ If `pip` reports an externally managed environment, follow the pipx steps in [In
 If the tool cannot import a dependency, install the dependencies with the same Python interpreter that runs the script. On macOS or Linux use `python3 -m pip install -r requirements.txt`. On Windows use `python -m pip install -r requirements.txt`. Match the requirements file to your downloaded script.
 
 If a new terminal cannot find your saved settings, return to the directory used during setup or pass both `--config-file` and `--env-file` explicitly. Run `steam_monitor --doctor <steam_target>` to see which settings are loaded.
+
+## Invalid saved settings and state
+
+Timing values must be finite and within the documented range. Normal startup checks effective timing settings before monitoring. A configuration syntax error reports its file, line number and parser message without echoing source text that may contain credentials.
+
+If a saved status or games-library file has an invalid structure, monitoring stops before replacing it. Correct the named file or move it aside to start a fresh baseline. Keep a copy if you need the old history. Older valid records and extra trailing metadata remain accepted.
+
+An incomplete or inaccessible Steam games response leaves the previous library snapshot intact. Achievement lookups stop on rate limits or connection failures and report how to retry, instead of continuing through the rest of the library.

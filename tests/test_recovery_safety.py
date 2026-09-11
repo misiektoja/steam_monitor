@@ -99,11 +99,9 @@ def test_large_external_count_is_printable(monitor, monkeypatch):
 
 # Reports an unusable SMTP port instead of raising a conversion exception
 def test_invalid_smtp_port_is_reported(monitor, monkeypatch):
-    if not hasattr(monitor, "email_settings_problem"):
-        pytest.skip("This monitor uses a separate SMTP validator")
     monkeypatch.setattr(monitor, "SMTP_HOST", "smtp.example.com")
     monkeypatch.setattr(monitor, "SMTP_PORT", None)
-    assert monitor.email_settings_problem() is not None
+    assert monitor.smtp_settings_problem() is not None
 
 
 # Keeps ordinary configuration recoverable without copying replaced inline credentials during setup

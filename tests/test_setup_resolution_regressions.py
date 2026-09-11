@@ -112,7 +112,9 @@ def test_doctor_handles_quoted_liveness_before_arithmetic(monkeypatch, tmp_path)
 def test_post_save_uses_saved_empty_value_and_real_exports(monkeypatch, tmp_path, exported):
     env = tmp_path / "private.env"
     env.write_text('SMTP_PASSWORD=""\n', encoding="utf-8")
-    state = monitor.WizardSetupState(tmp_path / "settings.conf", env, {"SMTP_PASSWORD": "synthetic-config"})
+    config = tmp_path / "settings.conf"
+    config.write_text('SMTP_PASSWORD="synthetic-config"\n', encoding="utf-8")
+    state = monitor.WizardSetupState(config, env, {"SMTP_PASSWORD": "synthetic-config"})
     if exported:
         monkeypatch.setenv("SMTP_PASSWORD", "synthetic-export")
     monitor._wizard_apply_saved_values(state)

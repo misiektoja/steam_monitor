@@ -173,7 +173,9 @@ def test_malformed_config_redacts_the_complete_secret_value(tmp_path, capsys, re
     output = capsys.readouterr().out
     assert "top" not in output
     assert "secret value" not in output
-    assert "SMTP_PASSWORD = <redacted>" in output
+    assert "Source:" not in output
+    assert "broken.conf" in output
+    assert "line 1" in output.lower()
 
 
 # Verifies the fix is rendered whenever this printer runs, since its caller only reaches it on a new failure

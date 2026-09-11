@@ -368,7 +368,7 @@ COLORED_OUTPUT = True
 # Can also be enabled via the --verbose flag, which turns it on regardless of this setting
 VERBOSE_MODE = False
 
-# Whether to print timestamped diagnostic detail, including every outbound call,
+# Whether to print timestamped diagnostic detail, including outbound calls,
 # each notification delivery attempt and the technical cause of failures
 # Independent of VERBOSE_MODE, so enable both to see everything
 # Can also be enabled via the --debug flag, which turns it on regardless of this setting
@@ -880,11 +880,13 @@ def migrate_legacy_state_files(steamid, username):
     if not STEAM_STATUS_FILE:
         pairs.insert(0, (f"steam_{username}_last_status.json", default_status_file(steamid)))
     for legacy, current in pairs:
+        if Path(legacy).parent != Path(".") or Path(legacy).is_symlink():
+            continue
         if not os.path.isfile(legacy) or os.path.exists(current):
             continue
         try:
             os.replace(legacy, current)
-            print(f"* Saved state file '{legacy}' was renamed to '{current}'")
+            print(f"* Saved state file '{sanitize_untrusted_text(legacy)}' was renamed to '{sanitize_untrusted_text(current)}'")
         except OSError as e:
             print_recovery_error(e, context="file.unwritable", detail=f"Cannot rename '{legacy}' to '{current}': {e}")
 
@@ -910,6 +912,158 @@ def write_json_atomic(destination, payload, mode=None):
     return str(destination_path)
 
 
+# Returns a source node's end without requiring Python 3.8 AST position metadata
+def config_node_end(node, text):
+    import io
+    import tokenize
+    end_line = getattr(node, "end_lineno", None)
+    end_column = getattr(node, "end_col_offset", None)
+    if end_line is not None and end_column is not None:
+        return end_line, end_column
+    lines = text.splitlines(keepends=True)
+    start = (node.lineno, len(lines[node.lineno - 1].encode("utf-8")[:node.col_offset].decode("utf-8")))
+    end = start
+    depth = 0
+    for token in tokenize.generate_tokens(io.StringIO(text).readline):
+        if token.start < start:
+            continue
+        if token.type in (tokenize.NEWLINE, tokenize.ENDMARKER):
+            break
+        if token.type in (tokenize.NL, tokenize.COMMENT, tokenize.INDENT, tokenize.DEDENT):
+            continue
+        if token.type == tokenize.OP:
+            if token.string in (")", "]", "}"):
+                if depth == 0:
+                    break
+                depth -= 1
+            elif token.string in ("(", "[", "{"):
+                depth += 1
+            elif token.string == ";" and depth == 0:
+                break
+        end = token.end
+    return end[0], len(lines[end[0] - 1][:end[1]].encode("utf-8"))
+
+
+# Accepts finite numeric values without overflowing on unusually large integers
+def finite_number(value):
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+# Validates a saved timestamp before any date conversion or duration calculation
+def valid_state_timestamp(value):
+    if not finite_number(value) or value < 0:
+        return False
+    try:
+        datetime.fromtimestamp(value)
+    except (ValueError, OverflowError, OSError):
+        return False
+    return True
+
+
+# Reads legacy or current status records without adopting malformed state
+def read_status_record(path):
+    with open(path, "r", encoding="utf-8") as source:
+        record = json.load(source)
+    if not isinstance(record, list) or len(record) < 2:
+        raise ValueError("expected a status list containing a timestamp and a status number")
+    if not valid_state_timestamp(record[0]):
+        raise ValueError("the saved status timestamp must be finite, nonnegative and representable")
+    if not isinstance(record[1], int) or isinstance(record[1], bool) or not 0 <= record[1] < len(steam_personastates):
+        raise ValueError("the saved status number must be an integer from 0 through 6")
+    if len(record) > 2 and record[2] is not None and not valid_state_timestamp(record[2]):
+        raise ValueError("the saved activity timestamp must be null or a finite nonnegative timestamp")
+    return record
+
+
+# Validates one games-library snapshot before it replaces remembered user state
+def games_library_snapshot(payload, saved=False):
+    if saved:
+        if not isinstance(payload, dict):
+            raise ValueError("expected a games-library object")
+        count = payload.get("game_count")
+        ids = payload.get("appids")
+    else:
+        response = payload.get("response") if isinstance(payload, dict) else None
+        if not isinstance(response, dict) or ("games" not in response and response.get("game_count") != 0):
+            raise ValueError("Steam did not return a complete games library")
+        games = response.get("games", [])
+        if not isinstance(games, list) or any(not isinstance(game, dict) for game in games):
+            raise ValueError("Steam returned an invalid games list")
+        count = response.get("game_count", len(games))
+        ids = [game.get("appid") for game in games]
+    if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+        raise ValueError("the game count must be a nonnegative integer")
+    if not isinstance(ids, list) or any(not isinstance(appid, int) or isinstance(appid, bool) or appid <= 0 for appid in ids):
+        raise ValueError("game IDs must be a list of positive integers")
+    appids = set(ids)
+    if count != len(appids):
+        raise ValueError("the game count does not match the complete set of game IDs")
+    return count, appids
+
+
+# Applies the same command-line settings before preflight checks and normal monitoring
+def apply_runtime_cli_overrides(args):
+    for argument, setting in (("check_interval", "STEAM_CHECK_INTERVAL"), ("active_interval", "STEAM_ACTIVE_CHECK_INTERVAL")):
+        value = getattr(args, argument, None)
+        if value is not None:
+            globals()[setting] = value
+    for argument, setting in (("csv_file", "CSV_FILE"), ("profile_csv_file", "PROFILE_CSV_FILE"), ("status_file", "STEAM_STATUS_FILE"), ("file_suffix", "FILE_SUFFIX")):
+        value = getattr(args, argument, None)
+        if value:
+            globals()[setting] = value
+    for setting in ("CSV_FILE", "PROFILE_CSV_FILE", "STEAM_STATUS_FILE"):
+        if isinstance(globals()[setting], str) and globals()[setting]:
+            globals()[setting] = os.path.expanduser(globals()[setting])
+    for argument, setting in (("disable_logging", "DISABLE_LOGGING"), ("notify_active_inactive", "ACTIVE_INACTIVE_NOTIFICATION"), ("notify_game_change", "GAME_CHANGE_NOTIFICATION"), ("notify_status", "STATUS_NOTIFICATION"), ("notify_name_change", "NAME_CHANGE_NOTIFICATION"), ("notify_level_xp", "STEAM_LEVEL_XP_NOTIFICATION"), ("notify_friends", "FRIENDS_NOTIFICATION"), ("notify_games", "GAMES_LIBRARY_NOTIFICATION"), ("check_level_xp", "STEAM_LEVEL_XP_CHECK"), ("check_friends", "FRIENDS_CHECK"), ("check_games", "GAMES_LIBRARY_CHECK")):
+        if getattr(args, argument, None) is True:
+            globals()[setting] = True
+    if getattr(args, "notify_errors", None) is False:
+        globals()["ERROR_NOTIFICATION"] = False
+
+
+# Recognizes the provider's specific response for a game without achievement statistics
+def game_has_no_stats(error):
+    response = error.response
+    if response is None or response.status_code != 400:
+        return False
+    try:
+        payload = response.json()
+    except ValueError:
+        return False
+    stats = payload.get("playerstats") if isinstance(payload, dict) else None
+    return isinstance(stats, dict) and stats.get("success") is False and stats.get("error") == "Requested app has no stats"
+
+
+# Preserves inline credentials privately before setup replaces their only saved source
+def preserve_inline_config_secrets(config_path, env_path):
+    from dotenv import dotenv_values
+    source = Path(config_path).expanduser()
+    if not source.is_file():
+        return None
+    original = {}
+    if not load_config_file(source, namespace=original, report_errors=False):
+        raise ValueError("Existing configuration could not be read before preserving its inline secrets")
+    defaults = _config_template_defaults()
+    destination = Path(env_path).expanduser()
+    saved = dotenv_values(str(destination), interpolate=False) if destination.exists() else {}
+    updates = {}
+    for key in SECRET_KEYS:
+        value = original.get(key)
+        if isinstance(value, str) and value and value != defaults.get(key) and saved.get(key) is None:
+            updates[key] = value
+    if not updates:
+        return None
+    try:
+        return update_dotenv_file(destination, updates)
+    except Exception as exc:
+        raise OSError(f"Could not preserve inline secrets in '{destination}'. The original configuration was not replaced") from exc
+
+
 # Removes inline secret assignments from a setup backup while preserving other configuration text
 def redact_config_backup(content):
     import ast
@@ -930,12 +1084,17 @@ def redact_config_backup(content):
         targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
         if any(isinstance(target, ast.Name) and target.id in SECRET_KEYS for target in targets):
             value = statement.value
-            if value is not None and value.end_lineno is not None and value.end_col_offset is not None:
+            if value is not None:
                 start = offsets[value.lineno - 1] + value.col_offset
-                end = offsets[value.end_lineno - 1] + value.end_col_offset
+                end_line, end_column = config_node_end(value, text)
+                end = offsets[end_line - 1] + end_column
                 replacements.append((start, end))
-                if isinstance(value, ast.Constant) and isinstance(value.value, str) and value.value:
-                    secret_values.add(value.value)
+                try:
+                    literal = ast.literal_eval(value)
+                except (ValueError, TypeError):
+                    literal = None
+                if isinstance(literal, str) and literal:
+                    secret_values.add(literal)
     for start, end in sorted(replacements, reverse=True):
         content = content[:start] + b'""' + content[end:]
     import io
@@ -2168,9 +2327,9 @@ def smtp_settings_problem():
 
     try:
         port = int(SMTP_PORT)
-        if not (1 <= port <= 65535):
+        if isinstance(SMTP_PORT, bool) or not (1 <= port <= 65535):
             raise ValueError
-    except ValueError:
+    except (TypeError, ValueError, OverflowError):
         return "The SMTP settings are incorrect (invalid port number in SMTP_PORT)"
 
     if not email_re.search(str(SENDER_EMAIL)) or not email_re.search(str(RECEIVER_EMAIL)):
@@ -3605,7 +3764,7 @@ def doctor_secret_sources(env_path=None):
 
 # Returns the source each configured secret resolved from, so a debug run and the doctor cannot disagree
 def secret_source_labels(env_path=None):
-    grouped = zip(("dotenv file", "environment", "configuration file", "command line"), doctor_secret_sources(env_path), strict=True)
+    grouped = zip(("dotenv file", "environment", "configuration file", "command line"), doctor_secret_sources(env_path))
     labels = {name: source for source, names in grouped for name in names}
     return {name: labels[name] for name in SECRET_KEYS if name in labels}
 
@@ -3686,13 +3845,11 @@ def doctor_output_destination_checks(target_value=None):
 # Names every on/off setting holding something other than True or False, since a string such as "false" would count as on
 def runtime_boolean_errors():
     errors = []
-    for statement in ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec").body:
-        if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name) and isinstance(statement.value, ast.Constant) and isinstance(statement.value.value, bool):
-            value = globals().get(statement.targets[0].id)
-            if not isinstance(value, bool):
-                errors.append(f"{statement.targets[0].id} must be True or False, not {value!r}")
+    for name, default in _config_template_defaults().items():
+        value = globals().get(name)
+        if isinstance(default, bool) and not isinstance(value, bool):
+            errors.append(f"{name} must be True or False, not {value!r}")
     return errors
-
 
 # Returns all type and range errors in settings that control runtime timing or counts
 def runtime_configuration_errors():
@@ -3700,10 +3857,10 @@ def runtime_configuration_errors():
     positive_numbers = (("STEAM_CHECK_INTERVAL", STEAM_CHECK_INTERVAL), ("STEAM_ACTIVE_CHECK_INTERVAL", STEAM_ACTIVE_CHECK_INTERVAL), ("CHECK_INTERNET_TIMEOUT", CHECK_INTERNET_TIMEOUT))
     nonnegative_numbers = (("OFFLINE_INTERRUPT", OFFLINE_INTERRUPT), ("STEAM_AWAY_INACTIVITY_THRESHOLD", STEAM_AWAY_INACTIVITY_THRESHOLD), ("STEAM_SNOOZE_INACTIVITY_THRESHOLD", STEAM_SNOOZE_INACTIVITY_THRESHOLD), ("LIVENESS_CHECK_INTERVAL", LIVENESS_CHECK_INTERVAL))
     for name, value in positive_numbers:
-        if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
+        if not finite_number(value) or value <= 0:
             errors.append(f"{name} must be a number greater than zero, not {value!r}")
     for name, value in nonnegative_numbers:
-        if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+        if not finite_number(value) or value < 0:
             errors.append(f"{name} must be a number zero or greater, not {value!r}")
     if not isinstance(SMTP_PORT, int) or isinstance(SMTP_PORT, bool) or not 1 <= SMTP_PORT <= 65535:
         errors.append(f"SMTP_PORT must be an integer from 1 through 65535, not {SMTP_PORT!r}")
@@ -3726,7 +3883,7 @@ def doctor_check_configuration(config_path=None, env_path=None, target_value=Non
         checks.append(make_doctor_check("Configuration", "PASS", "No dotenv file selected", "Using environment variables and other configured sources"))
     checks.extend(doctor_secret_checks(env_path))
 
-    if isinstance(STEAM_ACTIVE_CHECK_INTERVAL, (int, float)) and not isinstance(STEAM_ACTIVE_CHECK_INTERVAL, bool) and 0 < STEAM_ACTIVE_CHECK_INTERVAL < DOCTOR_MIN_SAFE_ACTIVE_INTERVAL:
+    if not runtime_configuration_errors() and 0 < STEAM_ACTIVE_CHECK_INTERVAL < DOCTOR_MIN_SAFE_ACTIVE_INTERVAL:
         intervals = f"{display_time(STEAM_CHECK_INTERVAL)} while offline, {display_time(STEAM_ACTIVE_CHECK_INTERVAL)} while online"
         advice = make_recovery_advice("steam.rate_limited", "Check intervals are short enough to be rate limited", recovery_fix_with_guide(f"Raise STEAM_ACTIVE_CHECK_INTERVAL to at least {DOCTOR_MIN_SAFE_ACTIVE_INTERVAL} seconds", INTERVALS_GUIDE_URL), True)
         checks.append(make_doctor_check("Configuration", "WARN", "Check intervals are short", intervals, advice))
@@ -4225,7 +4382,7 @@ def generate_config_with_current_values(config_values):
         # value such as WEBHOOK_TEMPLATE is not collapsed into one unreadable line by a wizard that changed nothing
         if name in template_defaults and config_values[name] == template_defaults[name] and type(config_values[name]) is type(template_defaults[name]):
             continue
-        replacements[name] = (statement.lineno, getattr(statement, "end_lineno", statement.lineno), repr(config_values[name]))
+        replacements[name] = (statement.lineno, config_node_end(statement, CONFIG_BLOCK)[0], repr(config_values[name]))
     lines = CONFIG_BLOCK.strip("\n").split("\n")
     # The template keeps its own leading blank line, so template line numbers are one ahead of this list
     offset = 1 if CONFIG_BLOCK.startswith("\n") else 0
@@ -5060,11 +5217,12 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
 
     # Everything above only filled the state, so this is the first and only point anything reaches disk
     try:
+        preserved_dotenv = preserve_inline_config_secrets(state.config_path, state.env_path)
         config_result = write_config_file(state.config_path, generate_config_with_current_values(state.config_values), redact_secrets=True)
     except Exception as exc:
         print_recovery_error(exc, context="file", detail=f"Could not write the configuration to '{state.config_path}'")
         return 1
-    dotenv_result = None
+    dotenv_result = preserved_dotenv
     if state.secret_updates:
         try:
             dotenv_result = update_dotenv_file(state.env_path, state.secret_updates)
@@ -5126,14 +5284,17 @@ def _wizard_apply_saved_values(state, env_path=None):
     except (OSError, UnicodeError, ValueError) as exc:
         print_recovery_error(exc, context="file", detail=f"Could not read saved secrets from '{selected_path}'")
         raise SystemExit(1) from None
-    globals().update(state.config_values)
+    saved_config = _config_template_defaults()
+    if not load_config_file(state.config_path, namespace=saved_config):
+        raise SystemExit(1)
+    globals().update(saved_config)
     for key in SECRET_KEYS:
         if key in exported:
             value, source = exported[key], "environment"
         elif saved.get(key) is not None:
             value, source = saved[key], "dotenv file"
         else:
-            value, source = state.config_values.get(key), "configuration file"
+            value, source = saved_config.get(key), "configuration file"
         globals()[key] = value
         if source == "dotenv file":
             os.environ[key] = str(value)
@@ -5713,7 +5874,7 @@ def apply_early_output_config():
 
 # Keeps argparse from colouring its own help, so the help screen is coloured by this tool alone and --no-color is
 # not left with a second palette to silence. From Python 3.14 argparse colours the help by default on a terminal
-def argparse_color_kwargs() -> dict[str, Any]:
+def argparse_color_kwargs() -> Dict[str, Any]:
     return {"color": False} if sys.version_info >= (3, 14) else {}
 
 
@@ -5840,8 +6001,6 @@ def load_config_file(config_path, namespace=None, report_errors=True):
         detail = f"Config file '{config_path}' has invalid Python syntax"
         if exc.lineno is not None:
             detail += f" at line {exc.lineno}"
-        if exc.text:
-            detail += f" | Source: {exc.text.rstrip()}"
         detail += f" | Parser: {exc.msg}"
     # Checked before ValueError because UnicodeDecodeError derives from it
     except UnicodeDecodeError:
@@ -5883,30 +6042,27 @@ def fetch_recent_achievements(steamid, s_api, s_played, max_games=15, max_achiev
 
     # Fallback: if recently played games are hidden or empty, or if force_use_owned_games is True, try owned games
     if not games or force_use_owned_games:
-        try:
-            # Call GetOwnedGames with all parameters that the steam.webapi wrapper
-            # considers required, to avoid local validation errors before the HTTP call.
-            owned = s_api.call(
-                "IPlayerService.GetOwnedGames",
-                steamid=steamid,
-                include_appinfo=1,
-                include_played_free_games=1,
-                appids_filter=[],          # empty list → no filtering, all games
-                include_free_sub=0,        # 0 = do not include free subscriptions
-                include_extended_appinfo=0,  # keep response small, we only need playtime/name
-                language="en",
+        # Call GetOwnedGames with all parameters that the steam.webapi wrapper
+        # considers required, to avoid local validation errors before the HTTP call.
+        owned = s_api.call(
+            "IPlayerService.GetOwnedGames",
+            steamid=steamid,
+            include_appinfo=1,
+            include_played_free_games=1,
+            appids_filter=[],          # empty list → no filtering, all games
+            include_free_sub=0,        # 0 = do not include free subscriptions
+            include_extended_appinfo=0,  # keep response small, we only need playtime/name
+            language="en",
+        )
+        owned_games = owned.get("response", {}).get("games", []) if isinstance(owned, dict) else []
+        if owned_games:
+            # Sort by total playtime (most played first) as a heuristic for relevance
+            games = sorted(
+                owned_games,
+                key=lambda g: g.get("playtime_forever", 0),
+                reverse=True,
             )
-            owned_games = owned.get("response", {}).get("games", []) if isinstance(owned, dict) else []
-            if owned_games:
-                # Sort by total playtime (most played first) as a heuristic for relevance
-                games = sorted(
-                    owned_games,
-                    key=lambda g: g.get("playtime_forever", 0),
-                    reverse=True,
-                )
-                games_from_owned = True
-        except Exception:
-            games = []
+            games_from_owned = True
 
     if not games:
         return achievements
@@ -5928,9 +6084,10 @@ def fetch_recent_achievements(steamid, s_api, s_played, max_games=15, max_achiev
                 steamid=steamid,
                 appid=appid,
             )
-        except Exception:
-            # Game may not have achievements or the API might not support it
-            continue
+        except req.HTTPError as exc:
+            if game_has_no_stats(exc):
+                continue
+            raise
 
         playerstats = stats.get("playerstats", {}) if isinstance(stats, dict) else {}
         ach_list = playerstats.get("achievements", []) if isinstance(playerstats, dict) else []
@@ -5964,7 +6121,16 @@ def fetch_recent_achievements(steamid, s_api, s_played, max_games=15, max_achiev
 # Fetches and displays recent achievements for a Steam user
 def display_recent_achievements(steamid, s_api, s_played, max_games=15, max_achievements=10, force_use_owned_games=False):
     print(f"\n* Fetching recent achievements...")
-    achievements = fetch_recent_achievements(steamid, s_api, s_played, max_games=max_games, max_achievements=max_achievements, force_use_owned_games=force_use_owned_games)
+    try:
+        achievements = fetch_recent_achievements(steamid, s_api, s_played, max_games=max_games, max_achievements=max_achievements, force_use_owned_games=force_use_owned_games)
+    except Exception as exc:
+        retry_note = ""
+        if isinstance(exc, req.HTTPError) and exc.response is not None and exc.response.status_code == 429:
+            retry_note = f"try again in {display_time(steam_retry_after_seconds(exc.response, 60))}"
+        advice = classify_recovery_error(exc, context="runtime", detail="Recent achievements are unavailable. The lookup was stopped")
+        fix = "Wait for the reported delay then run the command again" if retry_note else "Correct the reported problem then run the command again"
+        print_recovery_advice(make_recovery_advice(advice.code, advice.summary, recovery_fix_with_guide(fix, CONFIG_FILE_GUIDE_URL), advice.retryable, advice.detail), retry_note=retry_note)
+        return False
 
     if not achievements:
         print("* No recent achievements found or access is restricted by the user's privacy settings.")
@@ -6052,7 +6218,8 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
         sys.exit(1)
 
     try:
-        username = sanitize_untrusted_text(s_user["response"]["players"][0].get("personaname"))
+        raw_username = s_user["response"]["players"][0].get("personaname")
+        username = sanitize_untrusted_text(raw_username)
     except Exception as exc:
         print_recovery_error(exc, context="target", detail=f"Steam returned no profile for Steam64 ID {steamid}")
         sys.exit(1)
@@ -6071,13 +6238,12 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
     last_status_ts = 0
 
     if status == 0:
-        migrate_legacy_state_files(steamid, username)
+        migrate_legacy_state_files(steamid, raw_username)
         steam_last_status_file = resolve_status_file(steamid)
 
         if os.path.isfile(steam_last_status_file):
             try:
-                with open(steam_last_status_file, 'r', encoding="utf-8") as f:
-                    last_status_read = json.load(f)
+                last_status_read = read_status_record(steam_last_status_file)
                 if last_status_read:
                     last_status_ts = last_status_read[0]
                     # Read for its length check only: a truncated file must fall through to the defaults below
@@ -6226,7 +6392,7 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
 
     if show_achievements:
         max_ach = achievements_count if isinstance(achievements_count, int) and achievements_count > 0 else 10
-        display_recent_achievements(steamid, s_api, s_played, max_games=15, max_achievements=max_ach, force_use_owned_games=achievements_use_owned_games)
+        return display_recent_achievements(steamid, s_api, s_played, max_games=15, max_achievements=max_ach, force_use_owned_games=achievements_use_owned_games)
 
 
 # Main function that monitors gaming activity of the specified Steam user
@@ -6275,7 +6441,8 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         sys.exit(1)
 
     try:
-        username = sanitize_untrusted_text(s_user["response"]["players"][0].get("personaname"))
+        raw_username = s_user["response"]["players"][0].get("personaname")
+        username = sanitize_untrusted_text(raw_username)
     except Exception as exc:
         print_recovery_error(exc, context="target", detail=f"Steam returned no profile for Steam64 ID {steamid}")
         sys.exit(1)
@@ -6298,7 +6465,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         status_online_start_ts = status_ts_old
         status_online_start_ts_old = status_online_start_ts
 
-    migrate_legacy_state_files(steamid, username)
+    migrate_legacy_state_files(steamid, raw_username)
     steam_last_status_file = resolve_status_file(steamid)
     steam_games_file = default_games_file(steamid)
     last_status_read = []
@@ -6308,10 +6475,10 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     if os.path.isfile(steam_last_status_file):
         try:
             debug_print("Reading the last status file", path=steam_last_status_file)
-            with open(steam_last_status_file, 'r', encoding="utf-8") as f:
-                last_status_read = json.load(f)
+            last_status_read = read_status_record(steam_last_status_file)
         except Exception as e:
-            print_recovery_error(e, context="file", detail=f"Cannot load the last status from '{steam_last_status_file}' file: {e}")
+            print_recovery_error(e, context="file", detail=f"Cannot load the last status from '{steam_last_status_file}': {e}. Correct the record or move the file aside to start fresh")
+            raise SystemExit(1)
         if last_status_read:
             last_status_ts = last_status_read[0]
             last_status = last_status_read[1]
@@ -6344,14 +6511,11 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             debug_print("Reading the games library file", path=steam_games_file)
             with open(steam_games_file, 'r', encoding="utf-8") as f:
                 games_data = json.load(f)
-            if isinstance(games_data, dict):
-                last_games_count = games_data.get("game_count")
-                appids_list = games_data.get("appids")
-                if appids_list is not None:
-                    last_games_appids = set(appids_list)
+            last_games_count, last_games_appids = games_library_snapshot(games_data, saved=True)
             debug_print("Reading the games library file", path=steam_games_file, games=last_games_count, outcome="OK")
         except Exception as e:
-            print_recovery_error(e, context="file", detail=f"Cannot load the games library from '{steam_games_file}': {e}")
+            print_recovery_error(e, context="file", detail=f"Cannot load the games library from '{steam_games_file}': {e}. Correct the record or move the file aside to start fresh")
+            raise SystemExit(1)
 
     if last_status_ts > 0 and status != last_status:
         last_status_to_save = []
@@ -6450,9 +6614,8 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 include_extended_appinfo=0,
                 language="en",
             )
-            games_list = owned.get("response", {}).get("games", []) if isinstance(owned, dict) else []
-            current_count = len(games_list)
-            current_appids = sorted(set(g.get("appid") for g in games_list if g.get("appid")))
+            current_count, owned_appids = games_library_snapshot(owned)
+            current_appids = sorted(owned_appids)
             print(f"\nGames in library:\t\t{current_count}")
             last_games_count = current_count
             last_games_appids = set(current_appids)
@@ -6462,7 +6625,8 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             except Exception as e:
                 print_recovery_error(e, context="file", detail=f"Cannot save games library to '{steam_games_file}'")
         except Exception as e:
-            print(f"\nGames in library:\tN/A ({e})")
+            print("\nGames in library:\tN/A")
+            print_recovery_error(e, context="runtime", detail="The games library is unavailable. The saved snapshot was kept")
 
     if last_status_ts == 0:
         if lastlogoff and status == 0:
@@ -6595,9 +6759,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                         include_extended_appinfo=0,
                         language="en",
                     )
-                    games_list = owned.get("response", {}).get("games", []) if isinstance(owned, dict) else []
-                    current_games_count = len(games_list)
-                    current_games_appids = set(g.get("appid") for g in games_list if g.get("appid"))
+                    current_games_count, current_games_appids = games_library_snapshot(owned)
                 except Exception as exc:
                     current_games_count = None
                     current_games_appids = None
@@ -7833,21 +7995,18 @@ def main():
         setup_target = args.resolve_community_url or args.steam64_id or TARGET_STEAM_ID
         sys.exit(run_setup_wizard(initial_target=setup_target, config_file=args.config_file or cfg_path, env_file=args.env_file))
 
+    apply_runtime_cli_overrides(args)
     if args.doctor:
-        # Applied before the report so the log destination it names is the one monitoring would open
-        if args.file_suffix:
-            FILE_SUFFIX = args.file_suffix
-        # Doctor exits before monitoring applies these, so they are resolved here too and the output rows
-        # describe the run that was actually asked for. Nothing is written, only reported
-        if args.csv_file:
-            CSV_FILE = os.path.expanduser(args.csv_file)
-        if args.disable_logging is True:
-            DISABLE_LOGGING = True
         doctor_target = args.resolve_community_url or args.steam64_id or TARGET_STEAM_ID
         doctor_exit = run_doctor(target_value=doctor_target, config_path=cfg_path, env_path=env_path)
         # A target the config file already carries is left out, so the command stays as short as the wizard's
         print_doctor_next_steps(doctor_target, TARGET_STEAM_ID, doctor_exit)
         sys.exit(doctor_exit)
+
+    configuration_errors = runtime_configuration_errors() + runtime_boolean_errors()
+    if configuration_errors:
+        print_recovery_advice(make_recovery_advice("config.invalid", "Invalid settings: " + ". ".join(configuration_errors), recovery_fix_with_guide("Correct the reported settings in the configuration file or command line", CONFIG_FILE_GUIDE_URL), False))
+        sys.exit(1)
 
     if not check_internet():
         sys.exit(1)
@@ -7882,18 +8041,12 @@ def main():
         print_recovery_error(context="secret.missing", detail="No Steam Web API key is configured")
         sys.exit(1)
 
-    if args.check_interval:
-        STEAM_CHECK_INTERVAL = args.check_interval
-
     # The interval can come from a config file, so the reminder is settled once every layer has been applied
     numeric_errors = [] if isinstance(LIVENESS_CHECK_INTERVAL, (int, float)) else [f"LIVENESS_CHECK_INTERVAL must be a number, not {LIVENESS_CHECK_INTERVAL!r}"]
     if numeric_errors and not getattr(args, "doctor", False):
         print_recovery_error(context="config", detail="Invalid numeric settings: " + ", ".join(numeric_errors))
         raise SystemExit(1)
     LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if not numeric_errors and LIVENESS_CHECK_INTERVAL > 0 else 0
-
-    if args.active_interval:
-        STEAM_ACTIVE_CHECK_INTERVAL = args.active_interval
 
     s_id = 0
     try:
@@ -7911,12 +8064,6 @@ def main():
         print_recovery_error(context="target", detail="No Steam profile target was given")
         sys.exit(1)
 
-    if args.csv_file:
-        CSV_FILE = os.path.expanduser(args.csv_file)
-    else:
-        if CSV_FILE:
-            CSV_FILE = os.path.expanduser(CSV_FILE)
-
     if CSV_FILE:
         try:
             with open(CSV_FILE, 'a', newline='', buffering=1, encoding="utf-8") as _:
@@ -7924,12 +8071,6 @@ def main():
         except Exception as e:
             print_recovery_error(e, context="file.unwritable", detail=f"CSV file '{CSV_FILE}' cannot be opened for writing")
             sys.exit(1)
-
-    if args.profile_csv_file:
-        PROFILE_CSV_FILE = os.path.expanduser(args.profile_csv_file)
-    else:
-        if PROFILE_CSV_FILE:
-            PROFILE_CSV_FILE = os.path.expanduser(PROFILE_CSV_FILE)
 
     if PROFILE_CSV_FILE:
         try:
@@ -7939,15 +8080,7 @@ def main():
             print_recovery_error(e, context="file.unwritable", detail=f"Profile CSV file '{PROFILE_CSV_FILE}' cannot be opened for writing")
             sys.exit(1)
 
-    if args.status_file:
-        STEAM_STATUS_FILE = os.path.expanduser(args.status_file)
-    elif STEAM_STATUS_FILE:
-        STEAM_STATUS_FILE = os.path.expanduser(STEAM_STATUS_FILE)
-
-    # A configured FILE_SUFFIX is documented as replacing the Steam ID, so only an unset value falls back to it
-    if args.file_suffix:
-        FILE_SUFFIX = args.file_suffix
-    elif not FILE_SUFFIX:
+    if not FILE_SUFFIX:
         FILE_SUFFIX = str(s_id)
 
     if args.no_color is True:
@@ -7958,9 +8091,6 @@ def main():
     except ValueError as e:
         print_recovery_error(e, context="config")
         sys.exit(1)
-
-    if args.disable_logging is True:
-        DISABLE_LOGGING = True
 
     TRUNCATE_CHARS = resolve_truncate_chars(args.truncate, TRUNCATE_CHARS, DISABLE_LOGGING)
 
@@ -7980,36 +8110,9 @@ def main():
 
     # Handle info mode - display user information once and exit
     if args.info:
-        display_user_info(s_id, list_friends=getattr(args, "list_friends", False), show_name_history=getattr(args, "show_name_history", False), show_achievements=getattr(args, "show_achievements", False), achievements_count=getattr(args, "achievements_count", None), achievements_use_owned_games=getattr(args, "achievements_use_owned_games", False))
+        info_result = display_user_info(s_id, list_friends=getattr(args, "list_friends", False), show_name_history=getattr(args, "show_name_history", False), show_achievements=getattr(args, "show_achievements", False), achievements_count=getattr(args, "achievements_count", None), achievements_use_owned_games=getattr(args, "achievements_use_owned_games", False))
         sys.stdout = stdout_bck
-        sys.exit(0)
-
-    if args.notify_active_inactive is True:
-        ACTIVE_INACTIVE_NOTIFICATION = True
-
-    if args.notify_game_change is True:
-        GAME_CHANGE_NOTIFICATION = True
-
-    if args.notify_status is True:
-        STATUS_NOTIFICATION = True
-
-    if args.notify_name_change is True:
-        NAME_CHANGE_NOTIFICATION = True
-
-    if args.notify_errors is False:
-        ERROR_NOTIFICATION = False
-    if args.check_level_xp is True:
-        STEAM_LEVEL_XP_CHECK = True
-    if args.notify_level_xp is True:
-        STEAM_LEVEL_XP_NOTIFICATION = True
-    if args.check_friends is True:
-        FRIENDS_CHECK = True
-    if args.notify_friends is True:
-        FRIENDS_NOTIFICATION = True
-    if getattr(args, "check_games", None) is True:
-        GAMES_LIBRARY_CHECK = True
-    if getattr(args, "notify_games", None) is True:
-        GAMES_LIBRARY_NOTIFICATION = True
+        sys.exit(1 if info_result is False else 0)
 
     if SMTP_HOST.startswith("your_smtp_server_"):
         verbose_print("Email notifications are off because SMTP_HOST is still the shipped placeholder")
