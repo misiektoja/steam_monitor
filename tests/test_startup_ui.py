@@ -807,6 +807,56 @@ def test_a_link_inside_a_styled_span_is_not_recoloured(monkeypatch):
     assert monitor.apply_color_to_text("Guide: https://example.test/page") == f"Guide: {monitor.colorize('link', 'https://example.test/page')}"
 
 
+# Verifies a line the caller already styled keeps that style, so the whole-line rules never wrap it twice
+def test_an_already_styled_line_is_not_wrapped_again(colored):
+    styled = monitor.colorize("error", "  1 check(s) failed, 1 warning(s). Fix the failures above.")
+
+    assert monitor.apply_color_to_text(styled) == styled
+
+
+# Verifies a quoted command inside a styled span keeps the span's colour instead of being cut in half by a reset
+def test_a_quoted_name_inside_a_styled_span_is_not_recoloured(colored):
+    styled = monitor.colorize("info", "To fix: Save one with 'steam_monitor.py --set-steam-api-key', or export it")
+
+    assert monitor.apply_color_to_text(styled) == styled
+
+
+# Verifies the warnings printed while the configuration is resolved are coloured like every later line,
+# which is what the stream installed before argparse is for
+def test_the_early_stream_colours_a_warning_printed_before_the_log_opens(colored, monkeypatch):
+    monkeypatch.setattr(monitor, "TRUNCATE_CHARS", 0)
+    buffer = StringIO()
+
+    monitor.ColorStream(buffer, truncate=False).write("* Warning: Configured webhook provider did not match the URL. Using Discord.\n")
+
+    assert buffer.getvalue() == f"{colored['warning']}* Warning: Configured webhook provider did not match the URL. Using Discord.{monitor.ANSI_RESET}\n"
+
+
+# Verifies the early stream leaves lines at full width, since truncation is only resolved once arguments are parsed
+def test_the_early_stream_does_not_truncate(monkeypatch):
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", False)
+    monkeypatch.setattr(monitor, "TRUNCATE_CHARS", 10)
+    early, resolved = StringIO(), StringIO()
+
+    monitor.ColorStream(early, truncate=False).write("a line that is well past ten columns\n")
+    monitor.ColorStream(resolved).write("a line that is well past ten columns\n")
+
+    assert early.getvalue() == "a line that is well past ten columns\n"
+    assert resolved.getvalue() == "a line tha\n"
+
+
+# Verifies the log file writer reaches the real terminal, so replacing the early stream never colours a line twice
+def test_the_logger_unwraps_the_early_stream(monkeypatch, tmp_path):
+    terminal = StringIO()
+    monkeypatch.setattr(sys, "stdout", monitor.ColorStream(monitor.ColorStream(terminal, truncate=False)))
+
+    logger = monitor.Logger(str(tmp_path / "steam_monitor.log"))
+    try:
+        assert logger.terminal is terminal
+    finally:
+        logger.logfile.close()
+
+
 # Verifies the TLS row colours its state word, the one setting whose off state weakens a security property
 def test_the_tls_row_colours_its_state(colored):
     on_row = monitor._colorize_line("* TLS verification:             On")

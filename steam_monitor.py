@@ -1649,22 +1649,22 @@ def _colorize_line(line, notification_summary=False):
     def _dur_repl(mo):
         return colorize("duration", mo.group(0))
 
-    line = _DURATION_RE.sub(_dur_repl, line)
+    line = _sub_outside_color(_DURATION_RE, _dur_repl, line)
 
     # Highlight long date strings (info mode, account creation date, etc.)
-    line = _LONG_DATE_RE.sub(lambda mo: colorize("date", mo.group(0)), line)
+    line = _sub_outside_color(_LONG_DATE_RE, lambda mo: colorize("date", mo.group(0)), line)
     # Highlight short date ranges in parentheses, e.g. '(Sat 22 Nov 16:54 - 17:58)'
-    line = _SHORT_RANGE_DATE_RE.sub(lambda mo: colorize("date_range", mo.group(0)), line)
+    line = _sub_outside_color(_SHORT_RANGE_DATE_RE, lambda mo: colorize("date_range", mo.group(0)), line)
     # Highlight date ranges without year, e.g. 'Sat 22 Nov 03:24 - 08:28'
-    line = _DATE_RANGE_RE.sub(lambda mo: colorize("date_range", mo.group(0)), line)
+    line = _sub_outside_color(_DATE_RANGE_RE, lambda mo: colorize("date_range", mo.group(0)), line)
 
     # Highlight game names in quotes
-    line = _QUOTED_CONTENT_RE.sub(_colorize_quoted_name, line)
+    line = _sub_outside_color(_QUOTED_CONTENT_RE, _colorize_quoted_name, line)
 
     # Highlight boolean values first
-    line = _BOOLEAN_TRUE_RE.sub(lambda mo: colorize("boolean_true", mo.group(0)), line)
-    line = _BOOLEAN_FALSE_RE.sub(lambda mo: colorize("boolean_false", mo.group(0)), line)
-    line = _ANSWER_VALUE_RE.sub(lambda mo: f"{mo.group(1)}{colorize('boolean_true' if mo.group(2) == 'Yes' else 'boolean_false', mo.group(2))}", line)
+    line = _sub_outside_color(_BOOLEAN_TRUE_RE, lambda mo: colorize("boolean_true", mo.group(0)), line)
+    line = _sub_outside_color(_BOOLEAN_FALSE_RE, lambda mo: colorize("boolean_false", mo.group(0)), line)
+    line = _sub_outside_color(_ANSWER_VALUE_RE, lambda mo: f"{mo.group(1)}{colorize('boolean_true' if mo.group(2) == 'Yes' else 'boolean_false', mo.group(2))}", line)
 
     # Highlight online/offline keywords
     def _offline_repl(mo):
@@ -1678,8 +1678,13 @@ def _colorize_line(line, notification_summary=False):
 
     row_match = _SUMMARY_ROW_LABEL_RE.match(line)
     label, body = row_match.groups() if row_match else ("", line)
-    body = _ONLINE_WORD_RE.sub(lambda mo: colorize("status_online", mo.group(0)), body)
-    line = label + _OFFLINE_WORD_RE.sub(_offline_repl, body)
+    body = _sub_outside_color(_ONLINE_WORD_RE, lambda mo: colorize("status_online", mo.group(0)), body)
+    line = label + _sub_outside_color(_OFFLINE_WORD_RE, _offline_repl, body)
+
+    # A line the caller already styled carries the colours it was meant to have, so the whole-line rules
+    # below leave it alone rather than wrapping it in a second style
+    if ANSI_RESET in original:
+        return line
 
     # Errors / warnings (avoid colouring summary lines like 'errors = False')
     lowered = original.lower()
@@ -1798,7 +1803,9 @@ def resolve_truncate_chars(cli_value, configured_value, logging_disabled):
 # Logger class to output messages to stdout and log file
 class Logger(object):
     def __init__(self, filename, strip_ansi=True):
-        self.terminal = sys.stdout
+        # The early colouring stream is unwrapped so each line is coloured exactly once. Writing through it
+        # would colour the output a second time and the second pass no longer sees the labels it already styled
+        self.terminal = unwrap_terminal_stream(sys.stdout)
         self.logfile = open(filename, "a", buffering=1, encoding="utf-8")
         self.strip_ansi = strip_ansi
 
@@ -1870,14 +1877,16 @@ class Logger(object):
         return "".join(output)
 
 
-# Simple colour-aware stdout wrapper used when logging is disabled
+# Simple colour-aware stdout wrapper used before the log file is opened and whenever logging is disabled
 # Applies the same line-based colouring rules as Logger, but does not write anything to a log file
+# Truncation is off for the early instance, since the setting is only resolved once the arguments are parsed
 class ColorStream(object):
-    def __init__(self, stream):
+    def __init__(self, stream, truncate=True):
         self.terminal = stream
+        self.truncate = truncate
 
     def write(self, message):
-        terminal_message = truncate_string_per_line(message, TRUNCATE_CHARS) if TRUNCATE_CHARS else message
+        terminal_message = truncate_string_per_line(message, TRUNCATE_CHARS) if self.truncate and TRUNCATE_CHARS else message
         self.terminal.write(apply_color_to_text(terminal_message))
         self.terminal.flush()
 
@@ -1891,6 +1900,17 @@ class ColorStream(object):
 
     def flush(self):
         self.terminal.flush()
+
+    # Forwards the remaining stream attributes, so code reaching for buffer, encoding or isatty still finds them
+    def __getattr__(self, name):
+        return getattr(self.terminal, name)
+
+
+# Returns the real terminal behind any number of colouring stream wrappers
+def unwrap_terminal_stream(stream):
+    while isinstance(stream, ColorStream):
+        stream = stream.terminal
+    return stream
 
 
 # Help screen parts. argparse measures its column layout on the plain text, so the palette is applied to the
@@ -1919,13 +1939,6 @@ def _apply_style_nested(line, style_name):
     if line.endswith(f"{ANSI_RESET}{start_style}"):
         line = line[:-len(start_style)]
     return line
-
-
-# Returns the terminal behind any number of colouring stream wrappers
-def _help_output_stream(stream):
-    while isinstance(stream, ColorStream):
-        stream = stream.terminal
-    return stream
 
 
 # Colours the links and the default notes inside one line of help prose
@@ -2016,7 +2029,7 @@ class ColoredHelpParser(argparse.ArgumentParser):
         if not message:
             return
         stream = sys.stderr if file is None else file
-        target = _help_output_stream(stream)
+        target = unwrap_terminal_stream(stream)
         target.write(message)
         flush = getattr(target, "flush", None)
         if callable(flush):
@@ -7768,6 +7781,11 @@ def main():
         globals()["COLORED_OUTPUT"] = False
 
     init_color_output(stdout_bck)
+
+    # Installed before argparse runs, so the warnings printed while the configuration is resolved reach the
+    # terminal with the same colours as the monitoring output
+    if not isinstance(sys.stdout, ColorStream):
+        sys.stdout = ColorStream(stdout_bck, truncate=False)
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
