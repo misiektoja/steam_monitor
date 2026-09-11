@@ -226,6 +226,7 @@ def test_setup_backup_keeps_settings_with_short_secret(monitor, tmp_path):
     assert 'SMTP_PASSWORD = "" # previous: <redacted>' in content
     assert "UNRELATED = 1800" in content
 
+@pytest.mark.skipif(not hasattr(signal, "SIGHUP"), reason="SIGHUP is POSIX-only")
 # Leaves unrelated environment assignments unchanged when the project reloads secrets only
 def test_secret_reload_leaves_other_environment_values(monitor, monkeypatch, tmp_path):
     path = tmp_path / "private.env"
