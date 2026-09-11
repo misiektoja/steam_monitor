@@ -10,17 +10,17 @@ Before monitoring anything, `--doctor` checks whether the setup is actually read
 steam_monitor --doctor <steam_target>
 ```
 
-It is **read-only**: it writes no files and says so before the first check runs. It opens with the detected install method, then groups checks into **Environment**, **Configuration**, **Authentication**, **Connectivity**, **Target** and **Notifications**. Each row is marked `[PASS]`, `[WARN]`, `[FAIL]` or `[SKIP]`, colour-coded by status when colour output is on. Every `[WARN]` and `[FAIL]` row carries an indented `To fix:` line under its marker, plus a `Guide:` link when a documentation page covers that row. A `[SKIP]` row names a check that could not run and says why.
+Doctor writes no files. It checks **Environment**, **Configuration**, **Authentication**, **Connectivity**, **Target** and **Notifications**. Results use `[PASS]`, `[WARN]`, `[FAIL]` or `[SKIP]`. Follow the `To fix:` actions and guide links for warnings and failures.
 
-The Configuration section names the configuration and dotenv files in effect and reports **which secrets came from the dotenv file and which came from the environment**, by name only. No secret value is ever printed. It also reports whether [TLS verification](configuration.md#tls-verification) is on, and warns while it is off. Settings that control timing and counts, such as the check intervals and `SMTP_PORT`, are checked for usable values and every one that fails is named in a single row.
+Configuration checks cover the selected files, secret sources, timing settings and [TLS verification](configuration.md#tls-verification). Secret values are not displayed.
 
-It also names the **log and CSV files monitoring would write** and reports whether each one can be created, including the ones `-b` and `-d` asked for on the command line. The log file name includes the Steam ID or `FILE_SUFFIX`, so it is only resolved when a target is given. Without one, the row reports the base path instead.
+Doctor checks whether the log and CSV destinations are writable.
 
 The Notifications section **signs in to the configured SMTP server** and validates webhook settings without sending anything. Each ready row lists the **alert categories** that channel would deliver.
 
-When email or webhook alerts validate and you are at a terminal, doctor then offers to send **one real test message per channel**, each behind its own confirmation. Declining is the default. Nothing is sent without an explicit `y`, so a scripted or containerized run stays message-free. The `Summary` line is printed after the tests finish and counts their results, so the sentence and the exit code always describe the same run.
+In an interactive terminal, Doctor offers one real test message per ready channel. Each needs separate approval and defaults to No. Noninteractive runs send no test messages.
 
-The report ends with a **Next steps** block naming the command that starts monitoring, carrying the same `--config-file` and `--env-file` this run checked. It carries the target this run used, leaves it out when the configuration file already supplies one and otherwise shows `<steam_target>` for you to replace. While a check is failing it asks for the failures first.
+Follow the report's **Next steps** after correcting any failed checks. The printed start command uses the configuration and dotenv files you checked.
 
 It exits `0` when every check passed and `1` when any check or approved delivery test failed, so it can be used as a container healthcheck or a CI smoke test:
 
@@ -46,7 +46,9 @@ Startup uses the same shape. Starting without a profile to watch reports the mis
 
 Adding `--debug` appends a `Technical detail:` line with the underlying exception, unless that exception is the line already printed above it. That detail is for a bug report. The `To fix:` line is the one to act on. Secret values are redacted from all three.
 
-The banner that says nothing changed prints in any mode: `* Monitoring healthy for <steam_id>` with what was checked, followed by `Liveness check, timestamp:`. It is timed rather than counted in checks, so it appears once per `LIVENESS_CHECK_INTERVAL` of quiet, measured from the last thing the run printed. That setting defaults to 86400 seconds, a day. Set it to 0 to switch the banner off. A monitoring failure is reported as `* Error: <what failed> (retrying in <time>)`, with the `To fix:` paragraph under it the first time that category appears. Every monitor in this family prints that same line. A failure the tool can retry away, such as a Steam outage or a lost connection, is reported once the short retry has failed too, so a blip of a single check prints nothing. A failure that needs you, such as a rejected API key, is reported on the first check. With `--verbose` every first failing check is reported. During a long outage the failure is reported in full once, then the tool stays quiet and reminds you once an hour with `* Monitoring degraded for <steam_id>`, the summary of what is still failing, when it started and how many checks have failed so far, so a two-day outage is a handful of lines rather than one block per check. The reminder has its own clock and does not depend on `LIVENESS_CHECK_INTERVAL`, so it keeps coming when the banner is off. When the failure clears, `* Monitoring recovered for <steam_id>` reports how long it lasted. An outage that starts failing differently is still one outage: a lost connection that reads as a timeout on one check and as an unreachable host on the next prints nothing new, a change to another kind of failure that clears on its own is one line, `* Monitoring failure changed for <steam_id>. <what fails now>`, and a change to a failure that needs you is reported in full. A failure that is worth retrying, such as a timeout or a Steam outage, gets one short retry before the tool falls back to waiting a full polling interval. A rate limit waits for the period Steam asked for, and a rejected API key is not retried at all.
+During quiet monitoring, `* Monitoring healthy for <steam_id>` confirms the tool is still running. `LIVENESS_CHECK_INTERVAL` defaults to 86400 seconds (24 hours). Set it to `0` to disable this reminder.
+
+Failures show an error and a `To fix:` action. A continuing outage produces a `* Monitoring degraded` reminder once an hour, even when liveness reminders are disabled. `* Monitoring recovered` marks recovery. Follow any new instructions if the failure changes. Temporary failures get one short retry before normal polling resumes. Rate limits use Steam's requested wait. Rejected API keys need correction. Use `--verbose` to see the first failed check.
 
 ## Verbose and Debug Output
 
@@ -73,7 +75,7 @@ Debug traces cover configuration loading, connectivity, monitoring API calls, no
 steam_monitor <steam_target> --debug
 ```
 
-The two modes are independent, so pass both to see everything. Either one on its own expands the startup summary, adding the detected install method, which secrets came from where and the diagnostic state. The same view names the webhook service alerts go to and whether that channel is switched on, plus the mail server that sends them with the recipient address masked. Each channel's own settings are indented under it. It also reports whether the delivery confirmations are printed and the process id, Python version and operating system the run is on.
+Verbose and debug modes can be used together. Either expands the startup summary with all settings, secret sources, notification details and runtime information.
 
 Either mode can also be turned on permanently with the `VERBOSE_MODE` and `DEBUG_MODE` configuration settings. Set `DELIVERY_CONFIRMATIONS = False` to keep verbose mode without the `* Email sent to ...` and `* Webhook sent through ...` lines, which is worth doing when alerts are frequent. A flag on the command line always wins, so `--debug` still applies when the configuration file sets `DEBUG_MODE = False`.
 
@@ -98,6 +100,8 @@ If the tool cannot import a dependency, install the dependencies with the same P
 If a new terminal cannot find your saved settings, return to the directory used during setup or pass both `--config-file` and `--env-file` explicitly. Run `steam_monitor --doctor <steam_target>` to see which settings are loaded.
 
 ## Invalid saved settings and state
+
+If setup fails while saving, the configuration may already have changed. Correct the reported destination problem, rerun `--setup` with the same `--config-file` and `--env-file` paths then run `--doctor` before monitoring. The configuration backup restores non-secret settings only.
 
 Timing values must be finite and within the documented range. Normal startup checks effective timing settings before monitoring. A configuration syntax error reports its file, line number and parser message without echoing source text that may contain credentials.
 

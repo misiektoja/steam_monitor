@@ -64,7 +64,7 @@ steam_monitor --send-test-email
 
 ## Webhook Settings
 
-A delivery keeps its original destination and credentials for every retry. Reloaded settings apply to the next delivery. Discord templates must produce a JSON object. Dictionary templates and JSON strings are supported, including strings with escaped format braces. Unknown fields such as `{descripton}` and placeholders the alert cannot fill are reported with the template text that failed, before delivery. Legacy JSON strings with doubled object braces still work. Alert text is expanded once, so quotes and braces in a title remain literal text. Mentions remain disabled in every template.
+Discord templates must produce a JSON object. Dictionary templates and JSON strings are supported, including legacy strings with doubled object braces. Unsupported placeholders are reported before delivery. Alert text is kept literal and mentions are disabled. Reloaded settings apply to the next delivery.
 
 Steam Monitor supports Discord webhooks and native ntfy topics. Webhook alerts are independent from email, so either channel can be enabled alone or both can receive the same event.
 
@@ -74,7 +74,7 @@ Steam Monitor supports Discord webhooks and native ntfy topics. Webhook alerts a
 steam_monitor --set-webhook-url
 ```
 
-The command validates the URL and atomically stores only the private `WEBHOOK_URL` in `.env` without sending a message. Use a custom dotenv destination with `--env-file PATH`. Select the provider and event switches in `steam_monitor.conf`:
+The command checks the URL and saves `WEBHOOK_URL` to `.env` without sending a message. Use `--env-file PATH` for another destination. Select the provider and event switches in `steam_monitor.conf`:
 
 ```python
 WEBHOOK_ENABLED = True
@@ -146,9 +146,9 @@ WEBHOOK_URL="https://discord.com/api/webhooks/..."
 NTFY_ACCESS_TOKEN="your_ntfy_access_token"
 ```
 
-Prefer `steam_monitor --set-smtp-password` for `SMTP_PASSWORD`: the value is entered through a hidden prompt and the mail server has to accept it before it is saved. Incomplete mail settings are reported before anything is typed, so a password is never entered against a server that was never configured. An exported `SMTP_PASSWORD` wins over the saved one at startup, so the command says so after saving rather than leaving you with a value the next run will not read.
+Use `steam_monitor --set-smtp-password` after configuring the other SMTP settings. It checks sign-in before saving and keeps input hidden. An exported `SMTP_PASSWORD` overrides the saved value at startup.
 
-Saving a secret with `--set-steam-api-key`, `--set-smtp-password` or `--set-webhook-url` rewrites the dotenv file atomically with owner-only permissions and keeps no backup, so the replaced secret is not left behind in a `.bak` file. A secret you switch off, such as the ntfy access token in the setup wizard, has its line removed rather than left as an empty value.
+Secret commands save the dotenv file with owner-only permissions and leave the original intact if writing fails. Replaced secrets are not backed up.
 
 By default the tool will auto-search for dotenv file named `.env` in current directory and then upward from it.
 
@@ -175,7 +175,18 @@ A forgotten `export` can shadow the dotenv file invisibly, so `--debug` names ev
 
 A secret still holding its `your_...` placeholder counts as unset and is left out, and a run with no secret anywhere says so on one line. A length appears only for the secrets whose length the provider issues, never for a password you chose.
 
-When a `--set-*` command or the setup wizard replaces a secret, it rewrites that one assignment in place and leaves every other line alone. A line you wrote as `export NAME=...` keeps its `export`, so a dotenv file you also source in a shell still exports it. A value you clear has its line removed rather than left empty.
+Secret commands update the selected value without changing other dotenv settings. Clearing a value removes its assignment.
+
+### Reloading secrets and backup contents
+
+On systems with SIGHUP, reloading applies changes from the selected dotenv file. Removing a file-owned
+assignment restores its independently configured fallback or clears the value when no fallback exists.
+A read or parsing failure keeps the last usable credentials and reports how to correct the file.
+Values exported when the process started continue to take precedence during reload.
+
+Setup keeps the saved `DOTENV_FILE` unless you choose another path with `--env-file`. When you move it, review the private settings before saving. Kept credentials are copied to the new destination and the old file stays intact. Values already in the new dotenv file take precedence unless you replace them. At startup, a nonempty exported secret overrides the dotenv file. A dotenv value, including an empty one, overrides the configuration.
+
+Setup moves retained credentials from older configuration files into the selected dotenv file unless that file already defines the same key. It leaves the original configuration in place if it cannot preserve those credentials. Setup creates a timestamped configuration backup with inline secrets removed. General `--generate-config` backups can contain inline credentials. Replaced dotenv secrets are not backed up.
 
 ## TLS Verification
 
@@ -197,16 +208,3 @@ steam_monitor <steam_target> -k 30 -c 120
 * `STEAM_CHECK_INTERVAL`, `-c`: check interval when the user is offline (seconds)
 
 An active interval below 30 seconds invites the Steam rate limiter, which stops the tool seeing anything. `--doctor` warns when the configured interval is that short.
-
-
-### Reloading secrets and backup contents
-
-On systems with SIGHUP, reloading applies changes from the selected dotenv file. Removing a file-owned
-assignment restores its independently configured fallback or clears the value when no fallback exists.
-A read or parsing failure keeps the last usable credentials and reports how to correct the file.
-Values exported when the process started continue to take precedence during reload.
-
-
-Setup's configuration backup blanks inline secret assignments from older configurations while retaining
-other settings and comments. General `--generate-config` backups remain exact copies and can contain
-inline credentials. The dotenv file is not backed up during secret replacement.

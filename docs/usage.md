@@ -13,7 +13,7 @@ Examples use the PyPI command. For a downloaded script, run commands from the di
 
 For example, `steam_monitor --setup` becomes `python3 steam_monitor.py --setup` on macOS or Linux. Use `python` on Windows. Replace placeholders such as `<steam_target>` with a Steam64 ID or complete Steam community profile URL.
 
-The manual-script examples assume the current directory contains `steam_monitor.py`. Commands printed by setup, Doctor and recovery messages use the running interpreter and the full script path. Packaged installations use the running interpreter with `-m steam_monitor`.
+Activate the tool's virtual environment before running these commands. For a downloaded script, run them from the directory containing `steam_monitor.py`.
 
 For first-time configuration, follow [Setup & First Run](setup-and-first-run.md). Use [Doctor Preflight](troubleshooting.md#doctor-preflight) to check a setup before monitoring.
 
@@ -221,7 +221,7 @@ To disable sending an email on errors (enabled by default):
 steam_monitor <steam_target> -e
 ```
 
-An error alert goes out once the same failure has lasted **5 minutes**, so a short outage or one lost request reaches nobody, while a failure that cannot clear on its own, such as a rejected API key, is alerted at once. Each kind of failure alerts once per channel. A channel that could not deliver is tried again on a later failing check, after **5 minutes** at first and then after twice the previous wait, up to an hour. A run that recovered alerts again when it fails later. The same rule governs the webhook error alert.
+Email and webhook error alerts are sent after **5 minutes** of a continuing failure. Problems that need your action, such as a rejected API key, alert immediately. Each kind of failure alerts once per channel. Failed deliveries are retried after 5 minutes, with increasing waits up to an hour. Alerts can fire again after monitoring recovers.
 
 Make sure you have configured your [SMTP settings](configuration.md#smtp-settings) first.
 
@@ -290,7 +290,7 @@ The tool saves the timestamp and last status after every change, so the last sta
 steam_monitor <steam_target> --status-file ~/steam/last_status.json
 ```
 
-The status file is written through a temporary file in the same directory, so an interrupted run cannot leave a half-written file behind. A saved timestamp more than five minutes ahead of the machine clock is not used as history: the run warns, keeps the saved entry and starts timing it again. Versions before 2.0 named the file after the Steam display name. A file with that name is renamed to the Steam64 ID form once, on the first start, so the saved status is kept.
+Interrupted writes leave the previous status file intact. If a saved timestamp is more than five minutes ahead of the machine clock, monitoring warns and starts timing that status again. Files named after the Steam display name by versions before 2.0 are renamed to use the Steam64 ID on first start.
 
 ## Signal Controls (macOS/Linux/Unix)
 
@@ -340,7 +340,7 @@ On Windows, install [colorama](https://pypi.org/project/colorama/) for colours i
 
 Each part of the output has a logical name. `COLOR_THEME` in the config file overrides only the names it lists. Combine attributes with spaces or `+`, for example `"bright_cyan bold"` or `"red underline"`. Valid colours are `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white` and their `bright_` variants, plus the `bold`, `dim`, `underline` and `blink` attributes. An empty string leaves that part uncoloured.
 
-Generated configuration files ship this block commented out, so the built-in defaults apply and a later change to them reaches you. Overrides you added are written back as a real block when setup rebuilds the file, so they are not lost. A configuration file written before v2.0 sets every colour explicitly and therefore keeps the old ones: delete its `COLOR_THEME` block to follow the current defaults or edit the values you want to keep. Such a file still loads unchanged. The old `steam_id` key is still read as `id`.
+The built-in colours apply unless you set `COLOR_THEME`. Older configurations may set every colour explicitly. Remove that block to use current defaults or edit individual values to keep a custom theme. The old `steam_id` key is still accepted as `id`.
 
 ```python
 COLOR_THEME = {
