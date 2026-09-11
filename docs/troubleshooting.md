@@ -105,4 +105,4 @@ An incomplete or inaccessible Steam games response leaves the previous library s
 
 Malformed path settings and color-theme values are reported by Doctor with the setting name. Invalid color values are ignored while rendering help so you can still find the configuration commands.
 
-Saved status timestamps more than five minutes in the future are invalid. Check the system clock then correct the named history file or move it aside to start fresh. Monitoring preserves the invalid file instead of replacing it.
+A saved timestamp more than five minutes ahead of the machine clock is not used as history, because the tool wrote that file itself and a clock moved backwards is the usual reason. Monitoring warns, keeps the saved entry and times it from the moment it starts, so the run continues. Check the system clock if the warning repeats.

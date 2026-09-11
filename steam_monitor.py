@@ -525,6 +525,9 @@ CLI_CONFIG_PATH = None
 # Set when --config-file none switches discovery off, so no later lookup can find a file the run rejected
 CONFIG_DISCOVERY_DISABLED = False
 
+# The settings a configuration file actually assigned, so a built-in default is never mistaken for a choice
+CONFIGURED_SETTING_NAMES = set()
+
 # Secret names already present in the process environment before dotenv loading
 EXPORTED_SECRET_KEYS = frozenset()
 
@@ -964,15 +967,25 @@ def finite_number(value):
         return False
 
 
+# How far ahead of this machine's clock a saved timestamp may be before the tool stops timing against it
+STATE_FUTURE_TOLERANCE_SECONDS = 300
+
+
 # Validates a saved timestamp before any date conversion or duration calculation
 def valid_state_timestamp(value):
-    if not finite_number(value) or value < 0 or value > time.time() + 300:
+    if not finite_number(value) or value < 0:
         return False
     try:
         datetime.fromtimestamp(value)
     except (ValueError, OverflowError, OSError):
         return False
     return True
+
+
+# Reports whether a saved timestamp is far enough ahead of this machine's clock to be untrustworthy. The tool
+# wrote the file itself, so a clock moved backwards is the usual cause and is not a reason to refuse to run
+def state_timestamp_ahead(value):
+    return finite_number(value) and value > time.time() + STATE_FUTURE_TOLERANCE_SECONDS
 
 
 # Reads legacy or current status records without adopting malformed state
@@ -982,12 +995,27 @@ def read_status_record(path):
     if not isinstance(record, list) or len(record) < 2:
         raise ValueError("expected a status list containing a timestamp and a status number")
     if not valid_state_timestamp(record[0]):
-        raise ValueError("the saved status timestamp must be finite, nonnegative, representable and no more than five minutes in the future")
+        raise ValueError("the saved status timestamp must be finite, nonnegative and representable")
     if not isinstance(record[1], int) or isinstance(record[1], bool) or not 0 <= record[1] < len(steam_personastates):
         raise ValueError("the saved status number must be an integer from 0 through 6")
     if len(record) > 2 and record[2] is not None and not valid_state_timestamp(record[2]):
-        raise ValueError("the saved activity timestamp must be null or a finite nonnegative timestamp no more than five minutes in the future")
+        raise ValueError("the saved activity timestamp must be null or a finite nonnegative representable timestamp")
     return record
+
+
+# Replaces a saved timestamp this machine's clock cannot support, so only the timing restarts and the saved
+# entry itself is kept. A file this tool wrote must not be able to stop the next run over a corrected clock
+def reconcile_status_record(record, path):
+    if not record or not (state_timestamp_ahead(record[0]) or (len(record) > 2 and state_timestamp_ahead(record[2]))):
+        return record
+    print(f"* Warning: The saved status in '{path}' is dated ahead of this machine's clock.")
+    print(f"  Keeping the saved status {str(steam_personastates[record[1]]).upper()} and timing it from now. Check the system clock if this repeats.")
+    now = int(time.time())
+    reconciled = [now if state_timestamp_ahead(record[0]) else record[0], *record[1:]]
+    # The activity timestamp comes from the same clock, so it cannot outlive the status it belongs to
+    if len(reconciled) > 2 and state_timestamp_ahead(reconciled[2]):
+        reconciled[2] = now
+    return reconciled
 
 
 # Validates one games-library snapshot before it replaces remembered user state
@@ -1807,6 +1835,9 @@ class Logger(object):
 
     # Limits the terminal line across separate writes while leaving the log complete
     def _truncate_terminal(self, message):
+        # The limit is fixed once at startup, so with truncation off there is no column to keep track of
+        if not TRUNCATE_CHARS:
+            return message
         try:
             from wcwidth import wcwidth
         except ImportError:
@@ -3739,8 +3770,6 @@ def send_webhook(title, description, notification_type="status", force=False, sl
                     response = post_webhook_request(destination=destination, data=ntfy_image, params=image_params, headers=dict(request_headers, **{"Content-Type": "image/jpeg", "X-Filename": NTFY_IMAGE_FILENAME}))
                 else:
                     response = post_webhook_request(destination=destination, data=ntfy_message.encode("utf-8"), params=ntfy_params, headers=request_headers)
-            elif isinstance(discord_payload, str):
-                response = post_webhook_request(destination=destination, data=discord_payload, headers=request_headers)
             else:
                 response = post_webhook_request(destination=destination, json=discord_payload, headers=request_headers)
             retryable = response.status_code == 429 or 500 <= response.status_code <= 599
@@ -5946,9 +5975,16 @@ DOTENV_RELOAD_STATE = {}
 # Resolves dotenv references while keeping explicitly marked private values literal
 def resolve_dotenv_values(content, override=False, interpolate=True):
     from io import StringIO
-    from dotenv.main import with_warn_for_invalid_lines
-    from dotenv.parser import parse_stream
-    from dotenv.variables import parse_variables
+    try:
+        from dotenv.main import with_warn_for_invalid_lines
+        from dotenv.parser import parse_stream
+        from dotenv.variables import parse_variables
+    # A python-dotenv without these internals still reads the file, only without the literal marker. Writing a
+    # value that needs the marker then fails its own read-back check rather than saving something unreadable
+    except ImportError:
+        from dotenv.main import DotEnv
+        debug_print("Dotenv literal markers are unavailable in the installed python-dotenv", outcome="skipped")
+        return DotEnv(dotenv_path=None, stream=StringIO(content), override=override, interpolate=interpolate).dict()
     values = {}
     for binding in with_warn_for_invalid_lines(parse_stream(StringIO(content))):
         if binding.key is None:
@@ -6196,6 +6232,9 @@ def load_config_file(config_path, namespace=None, report_errors=True):
         # Parsed as data rather than executed, so a config file picked up from the working directory cannot run code
         parsed_values = parse_config_content(content, str(config_path), retired_settings)
         selected_namespace.update(parsed_values)
+        # Only a load that reaches the module settings records a choice, not a copy read for the wizard or a report
+        if selected_namespace is globals():
+            CONFIGURED_SETTING_NAMES.update(parsed_values)
         if report_errors:
             debug_print("Configuration applied", path=config_path, settings=len(parsed_values))
         if retired_settings and report_errors:
@@ -6447,7 +6486,7 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
 
         if os.path.isfile(steam_last_status_file):
             try:
-                last_status_read = read_status_record(steam_last_status_file)
+                last_status_read = reconcile_status_record(read_status_record(steam_last_status_file), steam_last_status_file)
                 if last_status_read:
                     last_status_ts = last_status_read[0]
                     # Read for its length check only: a truncated file must fall through to the defaults below
@@ -6679,7 +6718,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     if os.path.isfile(steam_last_status_file):
         try:
             debug_print("Reading the last status file", path=steam_last_status_file)
-            last_status_read = read_status_record(steam_last_status_file)
+            last_status_read = reconcile_status_record(read_status_record(steam_last_status_file), steam_last_status_file)
         except Exception as e:
             print_recovery_error(e, context="file", detail=f"Cannot load the last status from '{steam_last_status_file}': {e}. Correct the record or move the file aside to start fresh")
             raise SystemExit(1)
@@ -7551,7 +7590,12 @@ def apply_webhook_cli_overrides(args, parser):
         configured_provider = normalized_webhook_provider()
         if detected_provider and detected_provider != configured_provider:
             WEBHOOK_PROVIDER = detected_provider
-            print(f"* Warning: Configured webhook provider did not match the URL. Using {webhook_provider_display_name(detected_provider)}.")
+            # The built-in default is not a choice anyone made, so detection there is the documented behaviour
+            # rather than a mismatch. Only a provider the configuration actually sets is worth warning about
+            if "WEBHOOK_PROVIDER" in CONFIGURED_SETTING_NAMES:
+                print(f"* Warning: Configured webhook provider did not match the URL. Using {webhook_provider_display_name(detected_provider)}.")
+            else:
+                verbose_print(f"Webhook provider detected from the URL: {webhook_provider_display_name(detected_provider)}")
 
 
 # Names one argument the way the user would have typed it, so a refused combination points at a real option

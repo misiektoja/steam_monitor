@@ -92,7 +92,7 @@ WEBHOOK_ERROR_NOTIFICATION = True
 
 A `WEBHOOK_URL` left unset, or left at its `your_webhook_url` placeholder, switches webhook alerts off at startup instead of failing at the first alert. `--verbose` reports why.
 
-For Discord, copy the URL from **Edit Channel -> Integrations -> Webhooks**. For ntfy, use a complete private topic URL such as `https://ntfy.sh/your-private-topic`. Protected ntfy topics can use `NTFY_ACCESS_TOKEN` from an environment variable or dotenv file.
+For Discord, copy the URL from **Edit Channel -> Integrations -> Webhooks**. For ntfy, use a complete private topic URL such as `https://ntfy.sh/your-private-topic`. The service is detected from the URL. While `WEBHOOK_PROVIDER` is left at its default, that detection is silent and `--verbose` reports it. A warning appears only when your configuration file sets a provider the URL disagrees with. Protected ntfy topics can use `NTFY_ACCESS_TOKEN` from an environment variable or dotenv file.
 
 Verify delivery without starting monitoring:
 

@@ -290,7 +290,7 @@ The tool saves the timestamp and last status after every change, so the last sta
 steam_monitor <steam_target> --status-file ~/steam/last_status.json
 ```
 
-The status file is written through a temporary file in the same directory, so an interrupted run cannot leave a half-written file behind. Versions before 2.0 named the file after the Steam display name. A file with that name is renamed to the Steam64 ID form once, on the first start, so the saved status is kept.
+The status file is written through a temporary file in the same directory, so an interrupted run cannot leave a half-written file behind. A saved timestamp more than five minutes ahead of the machine clock is not used as history: the run warns, keeps the saved entry and starts timing it again. Versions before 2.0 named the file after the Steam display name. A file with that name is renamed to the Steam64 ID form once, on the first start, so the saved status is kept.
 
 ## Signal Controls (macOS/Linux/Unix)
 

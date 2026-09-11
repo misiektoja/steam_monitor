@@ -344,7 +344,7 @@ class WebhookNotificationTests(unittest.TestCase):
             webhook_errors=None,
         )
         parser = Mock()
-        with patch("builtins.print") as output:
+        with patch("builtins.print") as output, patch.object(steam_monitor, "CONFIGURED_SETTING_NAMES", {"WEBHOOK_PROVIDER"}):
             steam_monitor.apply_webhook_cli_overrides(args, parser)
 
         self.assertEqual(steam_monitor.WEBHOOK_PROVIDER, "ntfy")

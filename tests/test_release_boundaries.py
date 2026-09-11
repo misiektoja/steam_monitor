@@ -1,8 +1,10 @@
 """Exercise delivery and output boundaries with real HTTP clients and log streams."""
 
+import argparse
 import contextlib
 import io
 import json
+import time
 
 from smtplib import SMTP as RealSMTP
 
@@ -179,7 +181,7 @@ def test_rotated_delivery_errors_keep_the_old_token_private(delivery, monkeypatc
 
 
 # Rejects impossible history while accepting legacy records with trailing metadata
-@pytest.mark.parametrize("timestamp", ["yesterday", -1, {"seconds": 1}, 253402214400])
+@pytest.mark.parametrize("timestamp", ["yesterday", -1, {"seconds": 1}])
 def test_status_reader_preserves_invalid_timestamps(tmp_path, timestamp):
     path = tmp_path / "status.json"
     path.write_text(json.dumps([timestamp, 1]))
@@ -228,3 +230,102 @@ def test_screen_truncation_still_applies_without_wcwidth(monkeypatch):
     line = "x" * 40 + "\n"
     assert monitor.truncate_string_per_line(line, 10) == "x" * 10 + "\n"
     assert logger._truncate_terminal(line) == "x" * 10 + "\n"
+
+
+# Reads a record this tool wrote whose timestamp the clock cannot support, rather than refusing the whole file
+def test_status_reader_accepts_a_timestamp_the_clock_cannot_support(tmp_path):
+    path = tmp_path / "status.json"
+    record = [253402214400, 1]
+    path.write_text(json.dumps(record))
+    assert monitor.read_status_record(str(path)) == record
+    assert monitor.state_timestamp_ahead(253402214400) is True
+    assert monitor.state_timestamp_ahead(time.time()) is False
+
+
+# Restarts the timing of a record dated ahead of the clock while keeping the saved entry and its extra fields
+def test_reconcile_keeps_the_saved_entry_and_restarts_its_timing(capsys):
+    record = [253402214400, 1, 253402214400]
+    reconciled = monitor.reconcile_status_record(record, "status.json")
+    output = capsys.readouterr().out
+    assert reconciled[1] == record[1]
+    assert abs(reconciled[2] - time.time()) < 5
+    assert abs(reconciled[0] - time.time()) < 5
+    assert "dated ahead of this machine's clock" in output
+
+
+# Leaves an ordinary record untouched and silent, so only a clock problem produces the warning
+def test_reconcile_leaves_a_current_record_alone(capsys):
+    record = [1600000000, 1]
+    assert monitor.reconcile_status_record(record, "status.json") == record
+    assert capsys.readouterr().out == ""
+
+
+# Supplies an argument namespace where nothing was typed, so only the saved settings drive the detection
+class _ProviderArgs(argparse.Namespace):
+    def __getattr__(self, name):
+        return None
+
+
+# Verifies a provider the configuration file actually set is reported when the URL disagrees with it
+def test_a_configured_provider_that_disagrees_is_reported(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "WEBHOOK_URL", "https://ntfy.sh/private-topic")
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "discord")
+    monkeypatch.setattr(monitor, "CONFIGURED_SETTING_NAMES", {"WEBHOOK_PROVIDER"})
+
+    monitor.apply_webhook_cli_overrides(_ProviderArgs(), argparse.ArgumentParser())
+
+    assert monitor.WEBHOOK_PROVIDER == "ntfy"
+    assert "did not match the URL" in capsys.readouterr().out
+
+
+# Verifies the documented setup is silent, because the built-in default is not a provider anyone chose
+def test_the_default_provider_follows_the_url_without_a_warning(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "WEBHOOK_URL", "https://ntfy.sh/private-topic")
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "discord")
+    monkeypatch.setattr(monitor, "CONFIGURED_SETTING_NAMES", set())
+    monkeypatch.setattr(monitor, "VERBOSE_MODE", False)
+
+    monitor.apply_webhook_cli_overrides(_ProviderArgs(), argparse.ArgumentParser())
+
+    assert monitor.WEBHOOK_PROVIDER == "ntfy"
+    assert "did not match the URL" not in capsys.readouterr().out
+
+
+# Verifies the same detection is still reported to anyone who asked for the operational detail
+def test_verbose_mode_reports_the_detected_provider(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "WEBHOOK_URL", "https://ntfy.sh/private-topic")
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "discord")
+    monkeypatch.setattr(monitor, "CONFIGURED_SETTING_NAMES", set())
+    monkeypatch.setattr(monitor, "VERBOSE_MODE", True)
+
+    monitor.apply_webhook_cli_overrides(_ProviderArgs(), argparse.ArgumentParser())
+
+    assert "Webhook provider detected from the URL: ntfy" in capsys.readouterr().out
+
+
+# Reads a dotenv file through the public reader when the installed python-dotenv lacks the parser internals
+def test_dotenv_values_fall_back_to_the_public_reader(monkeypatch):
+    import builtins
+
+    real_import = builtins.__import__
+
+    # Hides only the private parser modules, the way a later python-dotenv release could
+    def blocked(name, *args, **kwargs):
+        if name in ("dotenv.parser", "dotenv.variables"):
+            raise ImportError(name)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", blocked)
+
+    assert monitor.resolve_dotenv_values('SMTP_PASSWORD="plain-value"\n') == {"SMTP_PASSWORD": "plain-value"}
+
+
+# Verifies a configuration read for the wizard or a report is not mistaken for the settings this run uses
+def test_only_a_load_into_the_module_records_a_configured_setting(tmp_path, monkeypatch):
+    path = tmp_path / "scoped.conf"
+    path.write_text('WEBHOOK_PROVIDER = "ntfy"\n')
+    monkeypatch.setattr(monitor, "CONFIGURED_SETTING_NAMES", set())
+
+    monitor.load_config_file(str(path), namespace={}, report_errors=False)
+
+    assert "WEBHOOK_PROVIDER" not in monitor.CONFIGURED_SETTING_NAMES
