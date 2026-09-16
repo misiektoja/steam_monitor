@@ -1,5 +1,6 @@
 """Tests for VERIFY_SSL: which requests honor it, what is reported while it is off and its shipped default."""
 
+import ast
 import ssl
 from pathlib import Path
 from types import SimpleNamespace
@@ -212,3 +213,43 @@ def test_private_key_entry_applies_the_configured_setting(tls_setting, tmp_path,
         monitor.main()
 
     assert observed["verify"] is False
+
+
+HTTP_METHODS = frozenset(("get", "post", "put", "patch", "delete", "head", "options", "request"))
+# The expressions that carry the TLS decision, so a call passing anything else is a second opinion
+VERIFY_ARGUMENTS = frozenset(("VERIFY_SSL",))
+# A guard against the sweep silently matching nothing after a rename: the tool has 6 call sites today
+MINIMUM_HTTP_CALL_SITES = 6
+
+
+# Returns every name the module binds to a requests session, so a session added later is swept without editing this
+def session_receivers():
+    return {node.targets[0].id for node in ast.walk(ast.parse(SOURCE)) if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name) and isinstance(node.value, ast.Call) and ast.unparse(node.value.func).endswith("Session")}
+
+
+# Returns every outbound HTTP call in the module as a line number paired with its keyword arguments
+def http_call_sites():
+    receivers = {"req", "requests"} | session_receivers()
+    for node in ast.walk(ast.parse(SOURCE)):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        receiver = node.func.value
+        if node.func.attr in HTTP_METHODS and isinstance(receiver, ast.Name) and receiver.id in receivers:
+            yield node.lineno, {keyword.arg: keyword.value for keyword in node.keywords}
+
+
+# Verifies every outbound request passes the setting, so a call site added later cannot keep verifying while it is off
+def test_every_outbound_request_passes_the_setting():
+    calls = list(http_call_sites())
+
+    assert len(calls) >= MINIMUM_HTTP_CALL_SITES, f"the sweep found {len(calls)} HTTP calls, so it no longer matches how requests are made"
+    missing = [line for line, keywords in calls if "verify" not in keywords or ast.unparse(keywords["verify"]) not in VERIFY_ARGUMENTS]
+    assert not missing, f"steam_monitor.py lines {missing} make an HTTP call that does not pass the TLS setting"
+
+
+# Verifies every outbound request carries a deadline, since a call without one hangs the monitoring loop indefinitely
+def test_every_outbound_request_carries_a_deadline():
+    # A call forwarding **kwargs takes its deadline from the helper that fills them in, which is not readable here
+    missing = [line for line, keywords in http_call_sites() if "timeout" not in keywords and None not in keywords]
+
+    assert not missing, f"steam_monitor.py lines {missing} make an HTTP call without a timeout"
