@@ -2,7 +2,7 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 2.0 (TBD)
+# Changes in 2.0 (18 Sep 2026)
 
 Version **2.0** adds **guided setup**, a read-only **Doctor preflight check** and **private SMTP password entry**. **Coloured output**, startup summaries and verbose/debug modes make monitoring easier to follow. It protects saved history and credentials, improves error alerts and adds verifiable downloads. **ntfy artwork is now optional** and needs an extra dependency.
 
