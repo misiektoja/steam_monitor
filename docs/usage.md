@@ -1,6 +1,6 @@
 # Usage
 
-<a id="command-format"></a>
+<a id="command-format-by-installation-method"></a>
 ## Command Format by Installation Method
 
 Examples use the PyPI command. For a downloaded script, run commands from the directory containing `steam_monitor.py` and keep the same arguments:
@@ -19,7 +19,8 @@ For first-time configuration, follow [Setup & First Run](setup-and-first-run.md)
 
 The tool has two modes. **Monitoring mode** watches a profile continuously and sends alerts as things change. **User information mode** prints a detailed profile snapshot once and exits.
 
-## Detailed User Information Display Mode
+<a id="user-information-display-mode"></a>
+## User Information Display Mode
 
 To display comprehensive Steam profile information for a user without starting monitoring, pass a Steam64 ID, Steam3 identifier, vanity name or full profile URL as `steam_target` and use the `-i` / `--info` flag:
 
@@ -82,6 +83,7 @@ The visibility of achievements depends on the user's Steam privacy settings for 
 
 The tool displays this information and then exits (does not start monitoring).
 
+<a id="monitoring-mode"></a>
 ## Monitoring Mode
 
 To monitor specific user activity, pass a Steam64 ID, Steam3 identifier, vanity name or full profile URL:
@@ -110,10 +112,6 @@ steam_monitor -r "https://steamcommunity.com/id/steam_username/"
 
 When monitoring starts, the tool displays user information including Steam64 ID, display name, real name (if available), country/region, current status, profile visibility, account creation date and profile URL.
 
-By default, the tool looks for a configuration file named `steam_monitor.conf` in:
- - current directory
- - home directory (`~`)
- - script directory
 
  If you generated a configuration file as described in [Configuration](configuration.md), but saved it under a different name or in a different directory, you can specify its location using the `--config-file` flag:
 
@@ -147,6 +145,41 @@ To track changes in the user's **games library** (game count and added/removed g
 
 The user's **display (persona) name** is tracked automatically with no extra configuration. Whenever it changes, the tool logs the old and new name and (when a profile CSV is configured) records a `name_change` row. To also receive an email on such changes use `--notify-name-change` (see [Email Notifications](#email-notifications)).
 
+<a id="terminal-output"></a>
+## Terminal Output
+
+Use `--help` for examples grouped by task and matched to your installation.
+
+Monitoring mode prints the settings that are actually in effect before the first check.
+
+Optional features appear once you switch them on.
+
+Use `--verbose` or `--debug` for the full startup summary, including output paths, notification settings, secret sources and runtime information.
+
+Use `--truncate N` or `TRUNCATE_CHARS` to limit screen line width. Set it to `999` to detect the terminal width automatically. Truncation does not change log files and is ignored when logging is disabled with `-d`.
+
+The tool clears the terminal when monitoring starts. Set `CLEAR_SCREEN` to `False` to keep whatever is already on the screen.
+
+The screen is never cleared when output is redirected to a file or a pipe, in debug mode, or for a command that prints a result and exits, such as `--doctor`, `--help` and the test senders.
+
+Two settings add detail to what a run prints. `VERBOSE_MODE` adds the decisions the run made and `DEBUG_MODE` adds timestamped technical traces. Both are off by default, both are independent of each other and both have a flag that wins over the file, `--verbose` and `--debug`. `DELIVERY_CONFIRMATIONS` is on by default and controls whether verbose mode confirms each delivered email and webhook alert. See [Verbose and Debug Output](troubleshooting.md#verbose-and-debug-output).
+
+<a id="coloured-terminal-output"></a>
+### Coloured Terminal Output
+
+Steam Monitor colours live terminal output and help by default. Saved log files stay plain text.
+
+Turn colour off for one run with `--no-color` or permanently with `COLORED_OUTPUT = False`. Colour is also disabled for redirected output, `NO_COLOR` or an unsupported terminal. See [Terminal Colours](configuration.md#terminal-colours) for details and Windows support.
+
+Override individual colours with `COLOR_THEME`. It is merged over the built-in theme, so you only name the parts you want to change:
+
+```ini
+COLOR_THEME = { "game": "bright_magenta bold", "username": "green" }
+```
+
+See [Terminal Colours](configuration.md#terminal-colours) for every theme key and the accepted colour and style names.
+
+<a id="email-notifications"></a>
 ## Email Notifications
 
 To enable email notifications when a user gets online or offline:
@@ -231,6 +264,7 @@ Example email:
    <img src="https://raw.githubusercontent.com/misiektoja/steam_monitor/refs/heads/main/assets/steam_monitor_email_notifications.png" alt="steam_monitor_email_notifications" width="85%"/>
 </p>
 
+<a id="webhook-notifications"></a>
 ## Webhook Notifications
 
 Webhook event switches mirror the email choices while remaining independent:
@@ -263,6 +297,7 @@ steam_monitor --webhook-provider ntfy --webhook-url "https://ntfy.sh/your-privat
 
 A URL passed on the command line may remain visible in shell history or process listings. Prefer `--set-webhook-url` for persistent private destinations.
 
+<a id="csv-export"></a>
 ## CSV Export
 
 If you want to save all reported activities of the Steam user to a CSV file, set `CSV_FILE` or use `-b` flag:
@@ -281,6 +316,7 @@ steam_monitor <steam_target> --profile-csv-file steam_user_id_profile.csv
 
 Each row contains a timestamp, event type and associated values (for example: old/new Steam level or XP, friends count delta or one friend per row for added/removed friends, when available).
 
+<a id="status-file"></a>
 ## Status File
 
 The tool saves the timestamp and last status after every change, so the last status is available after a restart. By default it uses `steam_<steam64_id>_last_status.json` in the current directory. Set `STEAM_STATUS_FILE` or use the `--status-file` flag to keep it somewhere else:
@@ -291,6 +327,34 @@ steam_monitor <steam_target> --status-file ~/steam/last_status.json
 
 Interrupted writes leave the previous status file intact. If a saved timestamp is more than five minutes ahead of the machine clock, monitoring warns and starts timing that status again. Files named after the Steam display name by versions before 2.0 are renamed to use the Steam64 ID on first start.
 
+<a id="check-intervals"></a>
+## Check Intervals
+
+If you want to customize the polling intervals, use the `-k` and `-c` flags (or the corresponding configuration options):
+
+```sh
+steam_monitor <steam_target> -k 30 -c 120
+```
+
+* `STEAM_ACTIVE_CHECK_INTERVAL`, `-k`: check interval when the user is online, away or snooze (seconds)
+* `STEAM_CHECK_INTERVAL`, `-c`: check interval when the user is offline (seconds)
+
+An active interval below 30 seconds invites the Steam rate limiter, which stops the tool seeing anything. `--doctor` warns when the configured interval is that short.
+<a id="liveness-reminder"></a>
+### Liveness Reminder
+
+While nothing changes, the tool prints one reminder that it is still running:
+
+```
+* Monitoring healthy for <steam_target>. The user is online with no status or game change since the last check
+Liveness check, timestamp:	Mon 08 Sep 2026, 09:15:05
+```
+
+The reminder is timed in seconds, so it arrives at the same rate whichever check interval is in use. Set `LIVENESS_CHECK_INTERVAL` to change it (default: 86400, i.e. 24 hours), or to 0 to switch it off.
+
+Anything the tool prints about the target restarts the countdown, so a busy run stays quiet.
+
+<a id="signal-controls-macoslinuxunix"></a>
 ## Signal Controls (macOS/Linux/Unix)
 
 The tool has several signal handlers implemented which allow to change behavior of the tool without a need to restart it with new configuration options / flags.
@@ -319,74 +383,7 @@ pkill -USR1 -f "steam_monitor <steam_target>"
 
 As Windows supports limited number of signals, this functionality is available only on Linux/Unix/macOS.
 
-## Terminal Colours
-
-Terminal output is coloured by default. `COLORED_OUTPUT` and `COLOR_THEME` apply to monitoring output and to the `--setup`, `--doctor` and `--help` screens. `--no-color` turns colour off for all of them.
-
-The `--help` screen is coloured too. Group headings, option names, the values those options take, the example commands and the comments above them each get their own colour, so the screen can be scanned instead of read.
-
-Turn it off for one run:
-
-```sh
-steam_monitor <steam_target> --no-color
-```
-
-Turn it off permanently in the config file:
-
-```python
-COLORED_OUTPUT = False
-```
-
-On Windows, install [colorama](https://pypi.org/project/colorama/) for colours in the older Command Prompt. Windows Terminal needs nothing extra.
-
-Each part of the output has a logical name. `COLOR_THEME` in the config file overrides only the names it lists. Combine attributes with spaces or `+`, for example `"bright_cyan bold"` or `"red underline"`. Valid colours are `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white` and their `bright_` variants, plus the `bold`, `dim`, `underline` and `blink` attributes. An empty string leaves that part uncoloured.
-
-The built-in colours apply unless you set `COLOR_THEME`. Older configurations may set every colour explicitly. Remove that block to use current defaults or edit individual values to keep a custom theme. The old `steam_id` key is still accepted as `id`.
-
-```python
-COLOR_THEME = {
-    "game": "bright_magenta bold",
-    "duration": "cyan",
-}
-```
-
-The four presence colours apply where the tool reports a state, such as a `Status:` row, a status change line or a capitalised state like `*** User got OFFLINE !`. A sentence that only mentions a state, such as the liveness line `The user is offline with no status or game change since the last check`, stays in the default colour. The two boolean colours apply to a `Yes` or `No` that is the whole value of a labelled row, not to the word inside a sentence.
-
-| Theme key | Default | What it colours |
-| --- | --- | --- |
-| `header` | `bright_cyan` | Report and wizard headings, plus the ASCII banner |
-| `section` | `bright_white` | Section names and every command the tool tells you to run |
-| `username` | `bright_cyan underline` | The monitored account name and the detected install method |
-| `id` | `bright_magenta` | The Steam64 ID |
-| `status_online` | `green` | An online presence |
-| `status_offline` | `red` | An offline presence |
-| `status_away` | `yellow` | An away presence |
-| `status_snooze` | `magenta` | A snooze presence |
-| `status_other` | `white` | A presence value the tool does not recognise |
-| `game` | `bright_yellow` | Game titles |
-| `duration` | `green` | Time spans such as `3 hours, 21 minutes` |
-| `timestamp_label` | *(empty)* | The `Timestamp:` label, left uncoloured by default |
-| `timestamp_value` | `cyan` | The timestamp itself |
-| `info` | `cyan` | `To fix:` lines, notes, prompts and `[SKIP]` rows |
-| `warning` | `yellow` | `* Warning:` lines and `[WARN]` rows |
-| `error` | `red` | `* Error:` lines and `[FAIL]` rows |
-| `signal` | `yellow` | `* Signal ... received` lines |
-| `email` | `bright_cyan` | Lines reporting an email being sent |
-| `webhook` | `bright_blue` | Lines reporting a webhook being sent |
-| `date` | `magenta` | Single dates and times |
-| `date_range` | `magenta` | Date and time ranges |
-| `boolean_true` | `green` | `True`, `Enabled`, `On`, a `Yes` answer and `[PASS]` rows |
-| `boolean_false` | `red` | `False`, `Disabled`, `Off` and a `No` answer |
-| `link` | `blue underline` | URLs |
-| `help_heading` | `bright_cyan bold` | The `--help` group headings and example task names |
-| `help_usage` | `bright_white bold` | The `usage:` label |
-| `help_option` | `bright_green` | Option names such as `--doctor` |
-| `help_metavar` | `yellow` | The value each option takes, such as a path or a number of seconds |
-| `help_placeholder` | `bright_magenta` | Values to replace in the help examples |
-| `help_command` | `bright_white` | The commands in the help examples |
-| `help_comment` | `bright_black` | The `#` comment above each help example |
-| `help_default` | `bright_black` | The `(default: ...)` notes |
-
+<a id="coloring-log-output-with-grc"></a>
 ## Coloring Log Output with GRC
 
 The tool colours the terminal itself, but you can also use [GRC](https://github.com/garabik/grc) to colour logs.
