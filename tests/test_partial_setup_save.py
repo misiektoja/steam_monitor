@@ -67,10 +67,7 @@ def fault(event,args):
         env.parent.chmod(0o500)
 sys.addaudithook(fault)
 kwargs={"config_file":str(config),"env_file":str(env),"input_func":answer,"getpass_func":secret,"interactive":True}
-if name=="lol_monitor":
-    kwargs.update(initial_riot_id="ReviewUser#EUW",initial_region="euw1")
-else:
-    kwargs["initial_target"]="76561201960435530" if name=="steam_monitor" else "review-user"
+kwargs["initial_target"]="76561201960435530"
 try:
     with patch.object(socket.socket,"connect",offline),patch.object(socket.socket,"connect_ex",offline):
         result=gm.run_setup_wizard(**kwargs)
