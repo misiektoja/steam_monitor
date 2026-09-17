@@ -2209,7 +2209,7 @@ def normalize_steam_target(value):
             return int(candidate.as_64), None
         raise ValueError(STEAM_TARGET_INPUT_ERROR)
 
-    # A Steam3 identifier such as [U:1:22202] pasted straight out of a console or a profile page
+    # A Steam3 identifier such as [U:1:4000022202] pasted straight out of a console or a profile page
     if text.startswith("[") and text.endswith("]"):
         candidate = steam.steamid.SteamID(text)
         if candidate.is_valid() and candidate.type == steam.steamid.EType.Individual:
@@ -2657,7 +2657,7 @@ def validate_steam_api_key(api_key, timeout=10):
     if not isinstance(api_key, str) or not re.fullmatch(r"[A-Fa-f0-9]{32}", api_key.strip()):
         return False
     try:
-        response = req.get("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/", params={"key": api_key.strip(), "steamids": "76561197960287930"}, timeout=timeout, verify=VERIFY_SSL)
+        response = req.get("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/", params={"key": api_key.strip(), "steamids": "76561201960287930"}, timeout=timeout, verify=VERIFY_SSL)
         if response.status_code != 200:
             return False
         payload = response.json()
