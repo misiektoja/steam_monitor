@@ -16,7 +16,7 @@ import steam_monitor as monitor
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-STEAM64 = 76561197960435530
+STEAM64 = 76561201960435530
 API_KEY = "A" * 32
 WEBHOOK_URL = "https://discord.com/api/webhooks/123456789/verysecrettokenvalue"
 
@@ -132,10 +132,10 @@ def test_every_target_form_normalizes_to_one_id(value):
 
 # Verifies a Steam3 identifier is accepted, since it is what a console or profile page shows
 def test_a_steam3_identifier_is_accepted():
-    steam64, vanity = monitor.normalize_steam_target("[U:1:22202]")
+    steam64, vanity = monitor.normalize_steam_target("[U:1:4000022202]")
 
     assert vanity is None
-    assert steam64 == int(monitor.steam.steamid.SteamID("[U:1:22202]").as_64)
+    assert steam64 == int(monitor.steam.steamid.SteamID("[U:1:4000022202]").as_64)
 
 
 # Verifies a vanity name is handed back for resolution rather than guessed at
@@ -236,7 +236,7 @@ def test_editing_one_section_keeps_the_others(tmp_path, monkeypatch, wizard_glob
 
 # Verifies editing the target section asks for it again rather than keeping the previous answer
 def test_editing_the_target_section_asks_again(tmp_path, monkeypatch, wizard_globals, capsys):
-    other_id = "76561197960287930"
+    other_id = "76561201960287930"
     answers = [
         str(STEAM64), "y", "5m", "45s", "n", "n", "y", "", "",
         "2", "1", other_id, "y",   # review, choose Target, give a different profile, persist it
@@ -756,7 +756,7 @@ def capture_wizard_pty(tmp_path, script):
 def test_the_wizard_transcript_holds_the_output_contract(tmp_path):
     # Target, persist it, both intervals, keep the existing key, no email, no webhook,
     # save, decline doctor, which also removes the launch offer
-    raw = capture_wizard_pty(tmp_path, b"76561197960435530\ny\n5m\n45s\nn\nn\nn\ny\n\nlast_status.json\n1\nn\n")
+    raw = capture_wizard_pty(tmp_path, b"76561201960435530\ny\n5m\n45s\nn\nn\nn\ny\n\nlast_status.json\n1\nn\n")
     text = re.sub(r"\x1B\[[0-9;]*[A-Za-z]", "", raw)
     # The transcript ends with the blank line that closes the Next steps block, so only the body is checked
     lines = [line[:-1] if line.endswith("\r") else line for line in text.rstrip("\r\n").split("\n")]

@@ -31,7 +31,7 @@ def write_config(directory, extra=""):
 
 
 # Drives the real command line and returns the diagnostic state observed inside the config loader and the connectivity check
-def run_startup(monkeypatch, argv, config_path, env_path="none", exported_api_key="test-api-key-value", target: Optional[str] = "76561197960435530"):
+def run_startup(monkeypatch, argv, config_path, env_path="none", exported_api_key="test-api-key-value", target: Optional[str] = "76561201960435530"):
     observed = {}
     real_load_config_file = monitor.load_config_file
 
@@ -251,7 +251,7 @@ def test_connectivity_check_honors_the_configured_url_and_timeout(tmp_path, monk
 ])
 def test_positional_vanity_forms_are_resolved_before_monitoring(tmp_path, monkeypatch, restored_globals, target, expected_url):
     config = write_config(tmp_path)
-    resolved = 76561197960435530
+    resolved = 76561201960435530
     monkeypatch.setattr(monitor, "resolve_steam_community_url", lambda url, _key: resolved if url == expected_url else pytest.fail("unexpected URL"))
 
     observed = run_startup(monkeypatch, [], config, target=target)
@@ -286,13 +286,13 @@ def test_an_unset_file_suffix_falls_back_to_the_steam_id(tmp_path, monkeypatch, 
 
     run_startup(monkeypatch, [], config)
 
-    assert f"Output:{'':<23}{tmp_path / 'steam_monitor_76561197960435530.log'}" in capsys.readouterr().out
+    assert f"Output:{'':<23}{tmp_path / 'steam_monitor_76561201960435530.log'}" in capsys.readouterr().out
 
 
 # Verifies the legacy -r URL option still reaches the same monitoring consumer
 def test_legacy_resolve_url_option_remains_supported(tmp_path, monkeypatch, restored_globals):
     config = write_config(tmp_path)
-    resolved = 76561197960435530
+    resolved = 76561201960435530
     profile_url = "https://steamcommunity.com/id/misiektoja/"
     monkeypatch.setattr(monitor, "resolve_steam_community_url", lambda url, _key: resolved if url == profile_url else pytest.fail("unexpected URL"))
 
@@ -370,7 +370,7 @@ def test_a_run_with_no_secrets_says_nothing_was_resolved(tmp_path, monkeypatch, 
     config = write_config(tmp_path)
 
     monkeypatch.setattr(monitor, "check_internet", lambda *args, **kwargs: True)
-    monkeypatch.setattr("sys.argv", ["steam_monitor.py", "76561197960435530", "--debug", "--doctor", "--env-file", "none", "--config-file", str(config)])
+    monkeypatch.setattr("sys.argv", ["steam_monitor.py", "76561201960435530", "--debug", "--doctor", "--env-file", "none", "--config-file", str(config)])
     with pytest.raises(SystemExit):
         monitor.main()
 
@@ -421,7 +421,7 @@ def test_only_debug_mode_keeps_the_screen(tmp_path, monkeypatch, restored_global
 
 
 # Verifies the one-shot commands keep whatever is already on the screen, so their output stays scrollable
-@pytest.mark.parametrize(("argv", "expected"), ((["steam_monitor", "--doctor"], True), (["steam_monitor", "--set-steam-api-key"], True), (["steam_monitor", "--send-test-email"], True), (["steam_monitor", "--help"], True), (["steam_monitor", "76561198000000000"], False)))
+@pytest.mark.parametrize(("argv", "expected"), ((["steam_monitor", "--doctor"], True), (["steam_monitor", "--set-steam-api-key"], True), (["steam_monitor", "--send-test-email"], True), (["steam_monitor", "--help"], True), (["steam_monitor", "76561202000000000"], False)))
 def test_one_shot_commands_keep_the_terminal_history(monkeypatch, argv, expected):
     monkeypatch.setattr(monitor.sys, "argv", argv)
 
@@ -462,7 +462,7 @@ def test_startup_records_an_argument_supplied_key_as_a_command_line_secret(monke
 
     assert monitor.COMMAND_LINE_SECRET_KEYS == frozenset({"STEAM_API_KEY"})
     assert monitor.doctor_secret_sources(None)[3] == ["STEAM_API_KEY"]
-    assert [row.value for row in monitor.build_startup_summary("76561197960435530") if row.label == "Secrets from command line"] == ["STEAM_API_KEY"]
+    assert [row.value for row in monitor.build_startup_summary("76561201960435530") if row.label == "Secrets from command line"] == ["STEAM_API_KEY"]
 
 
 # Verifies the doctor reports that secret under the command line rather than the configuration file
@@ -504,8 +504,8 @@ def test_the_default_status_file_is_named_after_the_steam64_id(monkeypatch, tmp_
 
     run_startup(monkeypatch, [], config)
 
-    assert monitor.resolve_status_file(76561197960435530) == "steam_76561197960435530_last_status.json"
-    assert monitor.default_games_file(76561197960435530) == "steam_76561197960435530_games.json"
+    assert monitor.resolve_status_file(76561201960435530) == "steam_76561201960435530_last_status.json"
+    assert monitor.default_games_file(76561201960435530) == "steam_76561201960435530_games.json"
 
 
 # Verifies the state files an earlier release named after the persona are renamed once, so the upgrade resumes from them
@@ -515,14 +515,14 @@ def test_legacy_state_files_are_renamed_to_the_steam64_id(monkeypatch, tmp_path,
     (tmp_path / "steam_Persona_last_status.json").write_text("{}", encoding="utf-8")
     (tmp_path / "steam_Persona_games.json").write_text("{}", encoding="utf-8")
 
-    monitor.migrate_legacy_state_files(76561197960435530, "Persona")
+    monitor.migrate_legacy_state_files(76561201960435530, "Persona")
 
-    assert (tmp_path / "steam_76561197960435530_last_status.json").is_file()
-    assert (tmp_path / "steam_76561197960435530_games.json").is_file()
+    assert (tmp_path / "steam_76561201960435530_last_status.json").is_file()
+    assert (tmp_path / "steam_76561201960435530_games.json").is_file()
     assert not (tmp_path / "steam_Persona_last_status.json").exists()
     out = capsys.readouterr().out
-    assert "* Saved state file 'steam_Persona_last_status.json' was renamed to 'steam_76561197960435530_last_status.json'" in out
-    assert "* Saved state file 'steam_Persona_games.json' was renamed to 'steam_76561197960435530_games.json'" in out
+    assert "* Saved state file 'steam_Persona_last_status.json' was renamed to 'steam_76561201960435530_last_status.json'" in out
+    assert "* Saved state file 'steam_Persona_games.json' was renamed to 'steam_76561201960435530_games.json'" in out
 
 
 # Verifies a file already saved under the new name wins and a configured status path leaves the legacy status file alone
@@ -531,12 +531,12 @@ def test_legacy_state_files_never_replace_current_ones(monkeypatch, tmp_path, ca
     monkeypatch.setattr(monitor, "STEAM_STATUS_FILE", str(tmp_path / "chosen.json"))
     (tmp_path / "steam_Persona_last_status.json").write_text("legacy", encoding="utf-8")
     (tmp_path / "steam_Persona_games.json").write_text("legacy", encoding="utf-8")
-    (tmp_path / "steam_76561197960435530_games.json").write_text("current", encoding="utf-8")
+    (tmp_path / "steam_76561201960435530_games.json").write_text("current", encoding="utf-8")
 
-    monitor.migrate_legacy_state_files(76561197960435530, "Persona")
-    monitor.migrate_legacy_state_files(76561197960435530, "")
+    monitor.migrate_legacy_state_files(76561201960435530, "Persona")
+    monitor.migrate_legacy_state_files(76561201960435530, "")
 
     assert (tmp_path / "steam_Persona_last_status.json").is_file()
     assert (tmp_path / "steam_Persona_games.json").read_text(encoding="utf-8") == "legacy"
-    assert (tmp_path / "steam_76561197960435530_games.json").read_text(encoding="utf-8") == "current"
+    assert (tmp_path / "steam_76561201960435530_games.json").read_text(encoding="utf-8") == "current"
     assert capsys.readouterr().out == ""

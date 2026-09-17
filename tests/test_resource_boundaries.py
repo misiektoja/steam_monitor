@@ -21,7 +21,7 @@ def test_optional_network_work_stops_on_resource_exhaustion(monkeypatch, capsys)
     monkeypatch.setattr(HTTPAdapter, "send", exhausted_requests)
 
     with pytest.raises(SystemExit) as stopped:
-        monitor.fetch_persona_name_history("76561198000000000")
+        monitor.fetch_persona_name_history("76561202000000000")
     assert stopped.value.code == 1
     assert len(calls) == 1
     assert "file descriptors" in capsys.readouterr().out

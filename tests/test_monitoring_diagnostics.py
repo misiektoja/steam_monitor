@@ -12,7 +12,7 @@ import pytest
 import steam_monitor as monitor
 
 
-STEAM_ID = 76561197960435530
+STEAM_ID = 76561201960435530
 
 
 PLAYER_SUMMARY = {
@@ -130,8 +130,8 @@ def test_a_healthy_cycle_names_its_steam_calls(tmp_path, monkeypatch, capsys):
     api, sleeps = run_one_cycle(tmp_path, monkeypatch)
 
     output = capsys.readouterr().out
-    assert "Opening the Steam Web API: steamid=76561197960435530, key=" in output
-    assert "Polling Steam: steamid=76561197960435530" in output
+    assert "Opening the Steam Web API: steamid=76561201960435530, key=" in output
+    assert "Polling Steam: steamid=76561201960435530" in output
     assert "Next check: due_in=1 minute, reason=user is offline" in output
     assert "IPlayerService.GetOwnedGames" in api.called
     assert sleeps[0] == 60
@@ -319,7 +319,7 @@ def test_the_reminder_survives_where_the_banner_is_off(tmp_path, monkeypatch, ca
 
     output = capsys.readouterr().out
     assert output.count("* Error: The Steam Web API is temporarily unavailable") == 1
-    assert output.count("* Monitoring degraded for 76561197960435530. ") == 2
+    assert output.count("* Monitoring degraded for 76561201960435530. ") == 2
     assert output.count("To fix: ") == 1
 
 
@@ -332,7 +332,7 @@ def test_a_continuing_outage_is_carried_by_the_hourly_reminder(tmp_path, monkeyp
     output = capsys.readouterr().out
     assert output.count("To fix: ") == 1
     assert output.count("The Steam Web API is temporarily unavailable") == 2
-    assert "* Monitoring degraded for 76561197960435530. The Steam Web API is temporarily unavailable since " in output
+    assert "* Monitoring degraded for 76561201960435530. The Steam Web API is temporarily unavailable since " in output
     assert ", 6 failed checks\n" in output
     assert output.count("Liveness check, timestamp:") == 1
     assert "Monitoring healthy" not in output
@@ -343,7 +343,7 @@ def test_a_cleared_outage_reports_its_recovery(tmp_path, monkeypatch, capsys):
     _api, _sleeps = run_one_cycle(tmp_path, monkeypatch, poll_error=http_error(503), stop_after_sleeps=3, healthy_after=2)
 
     output = capsys.readouterr().out
-    assert "* Monitoring recovered for 76561197960435530 after " in output
+    assert "* Monitoring recovered for 76561201960435530 after " in output
 
 
 # Verifies a check that reported the end of an outage restarts the quiet clock, since the banner speaks for a
@@ -352,7 +352,7 @@ def test_a_check_that_reported_a_recovery_does_not_claim_it_was_quiet(tmp_path, 
     _api, _sleeps = run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=http_error(503), stop_after_sleeps=6, healthy_after=3, liveness_seconds=180)
 
     output = capsys.readouterr().out
-    assert "* Monitoring recovered for 76561197960435530 after " in output, "the check under test reported no recovery"
+    assert "* Monitoring recovered for 76561201960435530 after " in output, "the check under test reported no recovery"
     assert "Monitoring healthy" not in output
 
 
@@ -523,8 +523,8 @@ def test_a_healthy_cycle_reports_its_poll_outcome(tmp_path, monkeypatch, capsys)
     run_one_cycle(tmp_path, monkeypatch)
 
     output = capsys.readouterr().out
-    assert "Polling Steam: steamid=76561197960435530, endpoints=ISteamUser.GetPlayerSummaries" in output
-    assert "Polling Steam: steamid=76561197960435530, personastate=0, outcome=OK" in output
+    assert "Polling Steam: steamid=76561201960435530, endpoints=ISteamUser.GetPlayerSummaries" in output
+    assert "Polling Steam: steamid=76561201960435530, personastate=0, outcome=OK" in output
 
 
 # Verifies a quiet cycle leaves verbose silent, since one line per check buries the events worth reading
@@ -541,7 +541,7 @@ def test_a_quiet_cycle_records_the_completed_check_in_debug(tmp_path, monkeypatc
     run_one_cycle(tmp_path, monkeypatch)
 
     output = capsys.readouterr().out
-    assert "Completed check: check=#1, user=76561197960435530, outcome=OK" in output
+    assert "Completed check: check=#1, user=76561201960435530, outcome=OK" in output
 
 
 # Verifies a failed cycle is recorded like a healthy one, so a trace never ends without saying how the check went
@@ -549,7 +549,7 @@ def test_a_failed_cycle_records_its_outcome_in_debug(tmp_path, monkeypatch, caps
     run_one_cycle(tmp_path, monkeypatch, poll_error=http_error(403), stop_after_sleeps=3)
 
     output = capsys.readouterr().out
-    assert "Completed check: check=#1, user=76561197960435530, outcome=failed, code=auth.api_key_invalid, error=HTTPError: " in output
+    assert "Completed check: check=#1, user=76561201960435530, outcome=failed, code=auth.api_key_invalid, error=HTTPError: " in output
 
 
 # Verifies every wait a failing check leads into says how long it is and what it is waiting for, since the three
@@ -573,7 +573,7 @@ def test_the_liveness_banner_explains_itself(tmp_path, monkeypatch, capsys):
     run_one_cycle(tmp_path, monkeypatch, liveness_seconds=60)
 
     output = capsys.readouterr().out
-    assert "Monitoring healthy for 76561197960435530. The user is offline with no status or game change since the last check" in output
+    assert "Monitoring healthy for 76561201960435530. The user is offline with no status or game change since the last check" in output
     assert "Liveness check, timestamp:" in output
 
 
@@ -582,7 +582,7 @@ def test_the_liveness_banner_explains_itself_without_diagnostics(tmp_path, monke
     run_one_cycle(tmp_path, monkeypatch, liveness_seconds=60, diagnostics=False)
 
     output = capsys.readouterr().out
-    assert "* Monitoring healthy for 76561197960435530. The user is offline with no status or game change since the last check" in output
+    assert "* Monitoring healthy for 76561201960435530. The user is offline with no status or game change since the last check" in output
     assert "Liveness check, timestamp:" in output
 
 
@@ -598,7 +598,7 @@ def test_the_liveness_banner_reports_an_online_target(tmp_path, monkeypatch, cap
     run_one_cycle(tmp_path, monkeypatch, liveness_seconds=30, persona_state=1)
 
     output = capsys.readouterr().out
-    assert "Monitoring healthy for 76561197960435530. The user is online with no status or game change since the last check" in output
+    assert "Monitoring healthy for 76561201960435530. The user is online with no status or game change since the last check" in output
     assert "Liveness check, timestamp:" in output
 
 
@@ -633,7 +633,7 @@ def test_a_failure_confirmed_by_the_short_retry_is_reported(tmp_path, monkeypatc
     output = capsys.readouterr().out
     assert output.count("* Error: The Steam Web API is temporarily unavailable (retrying in 1 minute)") == 1
     assert "(retrying in 5 seconds)" not in output, "the first failing poll is the one the short retry confirms in silence"
-    assert "* Monitoring recovered for 76561197960435530 after 1 minute, 5 seconds" in output
+    assert "* Monitoring recovered for 76561201960435530 after 1 minute, 5 seconds" in output
 
 
 # Verifies verbose is the mode that wants every decision, so it sees the first failing poll and its recovery
@@ -642,7 +642,7 @@ def test_verbose_reports_the_first_failing_poll(tmp_path, monkeypatch, capsys):
 
     output = capsys.readouterr().out
     assert output.count("* Error: The Steam Web API is temporarily unavailable (retrying in 5 seconds)") == 1
-    assert "* Monitoring recovered for 76561197960435530 after 5 seconds" in output
+    assert "* Monitoring recovered for 76561201960435530 after 5 seconds" in output
 
 
 # Verifies a failure nothing here can retry away gains nothing from a confirming poll, so it is reported at once
@@ -675,7 +675,7 @@ def test_a_second_failure_category_is_noted_in_one_line(tmp_path, monkeypatch, c
 
     lines = capsys.readouterr().out.splitlines()
     reports = [line for line in lines if line.startswith("* Error:")]
-    changes = [number for number, line in enumerate(lines) if line.startswith("* Monitoring failure changed for 76561197960435530. ")]
+    changes = [number for number, line in enumerate(lines) if line.startswith("* Monitoring failure changed for 76561201960435530. ")]
     assert len(reports) == 1 and "temporarily unavailable" in reports[0]
     assert len(changes) == 1 and lines[changes[0]].endswith("The Steam Web API request timed out")
     assert lines[changes[0] + 1].startswith("Timestamp:")

@@ -92,7 +92,7 @@ def test_doctor_reports_invalid_dotenv_encoding(tmp_path, monkeypatch, capsys):
 def test_secret_commands_use_selected_configuration(tmp_path, monkeypatch, flag, runner):
     config = tmp_path / "selected.conf"
     env = tmp_path / "selected.env"
-    config.write_text("VERIFY_SSL=False\nTARGET_STEAM_ID='76561197960435530'\n", encoding="utf-8")
+    config.write_text("VERIFY_SSL=False\nTARGET_STEAM_ID='76561201960435530'\n", encoding="utf-8")
     monkeypatch.setattr(sys, "argv", [monitor.__file__, "--config-file", str(config), "--env-file", str(env), flag])
     reached = []
 

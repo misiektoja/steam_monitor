@@ -105,7 +105,7 @@ def test_generate_config_output_is_machine_friendly():
 
 # Verifies a refused combination names the option as it was typed rather than as argparse stores it
 def test_a_refused_combination_names_the_positional_by_its_metavar():
-    result = run_cli("--set-steam-api-key", "76561198000000000")
+    result = run_cli("--set-steam-api-key", "76561202000000000")
 
     assert result.returncode != 0
     assert "--set-steam-api-key cannot be combined with STEAM_TARGET" in result.stderr
@@ -152,8 +152,8 @@ def test_startup_rows_colour_a_switched_feature(colored, value, part):
 # Verifies a sentence that only mentions a presence state or answers with an English "no" stays plain, so a
 # healthy report does not read as a failure
 @pytest.mark.parametrize("line", [
-    "* Monitoring healthy for 76561198128683189. The user is offline with no status or game change since the last check",
-    "* Monitoring healthy for 76561198128683189. The user is online with no status or game change since the last check",
+    "* Monitoring healthy for 76561202128683189. The user is offline with no status or game change since the last check",
+    "* Monitoring healthy for 76561202128683189. The user is online with no status or game change since the last check",
     "* No .env file found, reloading exported environment variables only",
     "* No recent achievements found or access is restricted by the user's privacy settings.",
     "* Polling intervals:           60 seconds while offline, 30 seconds while online",
@@ -189,8 +189,8 @@ def test_startup_banner_uses_only_its_own_colours(colored, capsys):
 
 # Verifies every identity value is coloured for what it is: an id, a name or a link
 def test_identity_values_are_coloured_by_their_kind(colored):
-    assert monitor._colorize_line("* Target:                       76561198128683189") == f"* Target:                       {colored['id']}76561198128683189{monitor.ANSI_RESET}"
-    assert monitor._colorize_line("Steam64 ID:\t\t\t76561198128683189") == f"Steam64 ID:\t\t\t{colored['id']}76561198128683189{monitor.ANSI_RESET}"
+    assert monitor._colorize_line("* Target:                       76561202128683189") == f"* Target:                       {colored['id']}76561202128683189{monitor.ANSI_RESET}"
+    assert monitor._colorize_line("Steam64 ID:\t\t\t76561202128683189") == f"Steam64 ID:\t\t\t{colored['id']}76561202128683189{monitor.ANSI_RESET}"
     assert monitor._colorize_line("Display name:\t\t\tmisiektoja") == f"Display name:\t\t\t{colored['username']}misiektoja{monitor.ANSI_RESET}"
     assert monitor._colorize_line("Profile URL:\t\t\thttps://steamcommunity.com/id/misiektoja") == f"Profile URL:\t\t\t{colored['link']}https://steamcommunity.com/id/misiektoja{monitor.ANSI_RESET}"
 
@@ -401,7 +401,7 @@ def test_rows_are_routed_independently(summary_globals):
 
 # Verifies the real summary hides the diagnostic rows until the full view is asked for
 def test_the_real_summary_hides_diagnostics_until_asked(summary_globals):
-    rows = monitor.build_startup_summary("76561198000000000", "tool.conf", None, "tool.log")
+    rows = monitor.build_startup_summary("76561202000000000", "tool.conf", None, "tool.log")
 
     concise = rendered_summary(rows, show_full=False)
     full = rendered_summary(rows, show_full=True)
@@ -418,7 +418,7 @@ def test_the_real_summary_hides_diagnostics_until_asked(summary_globals):
 
 # Verifies the concise view points at the diagnostic modes and stops once one of them is on
 def test_the_concise_summary_points_at_the_diagnostic_modes(summary_globals):
-    rows = monitor.build_startup_summary("76561198000000000", "tool.conf", None, "tool.log")
+    rows = monitor.build_startup_summary("76561202000000000", "tool.conf", None, "tool.log")
 
     concise = rendered_summary(rows, show_full=False)
     full = rendered_summary(rows, show_full=True)
@@ -435,7 +435,7 @@ def test_the_notification_rollups_name_their_categories(monkeypatch, summary_glo
     monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", False)
     monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", False)
 
-    concise = rendered_summary(monitor.build_startup_summary("76561198000000000", "tool.conf", None, "tool.log"), show_full=False)
+    concise = rendered_summary(monitor.build_startup_summary("76561202000000000", "tool.conf", None, "tool.log"), show_full=False)
 
     assert "Notifications (email)" in concise
     assert "On (online and offline changes, game changes)" in concise
@@ -535,14 +535,14 @@ def test_rows_are_verbose_only_by_default():
 def test_a_feature_row_is_concise_only_when_it_is_on(monkeypatch, summary_globals, enabled):
     monkeypatch.setattr(monitor, "FRIENDS_CHECK", enabled)
 
-    concise = rendered_summary(monitor.build_startup_summary("76561198000000000", "tool.conf", None, None), show_full=False)
+    concise = rendered_summary(monitor.build_startup_summary("76561202000000000", "tool.conf", None, None), show_full=False)
 
     assert ("Friends tracking" in concise) is enabled
 
 
 # Verifies the concise view ends by naming the flags that reveal the rest
 def test_the_concise_view_points_at_the_verbose_flags(summary_globals):
-    concise = rendered_summary(monitor.build_startup_summary("76561198000000000", "tool.conf", None, None), show_full=False)
+    concise = rendered_summary(monitor.build_startup_summary("76561202000000000", "tool.conf", None, None), show_full=False)
 
     assert concise.rstrip().endswith("use --verbose or --debug")
 
@@ -755,16 +755,16 @@ SHARED_ROW_ORDER = ("Target", "Polling intervals", "Notifications (email)", "Ema
 def test_the_status_file_row_names_the_file_the_run_will_use(monkeypatch, summary_globals):
     monkeypatch.setattr(monitor, "STEAM_STATUS_FILE", "")
 
-    named = [row.value for row in monitor.build_startup_summary("76561198000000000", "tool.conf", None, "tool.log") if row.label == "Status file"]
+    named = [row.value for row in monitor.build_startup_summary("76561202000000000", "tool.conf", None, "tool.log") if row.label == "Status file"]
     unknown = [row.value for row in monitor.build_startup_summary(None, "tool.conf", None, "tool.log") if row.label == "Status file"]
 
-    assert named == ["steam_76561198000000000_last_status.json"]
+    assert named == ["steam_76561202000000000_last_status.json"]
     assert unknown == ["None"]
 
 
 # Verifies the shared rows keep the order and the label column width every sibling monitor prints
 def test_the_shared_summary_rows_match_the_sibling_tools(summary_globals):
-    rows = monitor.build_startup_summary("76561198000000000", "tool.conf", ".env", "tool.log")
+    rows = monitor.build_startup_summary("76561202000000000", "tool.conf", ".env", "tool.log")
 
     assert [row.label for row in rows if row.label in SHARED_ROW_ORDER] == list(SHARED_ROW_ORDER)
     # The renderer pads "<label>:" into a 30-character column, so a longer label swallows the separating space

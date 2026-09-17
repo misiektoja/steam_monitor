@@ -75,7 +75,7 @@ class WebhookNotificationTests(unittest.TestCase):
     def test_startup_notification_summaries_use_compact_rollups(self):
         for setting in ("ACTIVE_INACTIVE_NOTIFICATION", "STATUS_NOTIFICATION", "GAME_CHANGE_NOTIFICATION", "STEAM_LEVEL_XP_NOTIFICATION", "FRIENDS_NOTIFICATION", "GAMES_LIBRARY_NOTIFICATION", "NAME_CHANGE_NOTIFICATION", "ERROR_NOTIFICATION", "WEBHOOK_ENABLED", "WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_GAME_CHANGE_NOTIFICATION", "WEBHOOK_LEVEL_XP_NOTIFICATION", "WEBHOOK_FRIENDS_NOTIFICATION", "WEBHOOK_GAMES_NOTIFICATION", "WEBHOOK_NAME_CHANGE_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION"):
             setattr(steam_monitor, setting, True)
-        rows = {row.label: row.value for row in steam_monitor.build_startup_summary(target="76561197960287930")}
+        rows = {row.label: row.value for row in steam_monitor.build_startup_summary(target="76561201960287930")}
         expected = "On (online and offline changes, all status changes, game changes, level and XP changes, friends list changes, games library changes, name changes, errors)"
         self.assertEqual(rows["Notifications (email)"], expected)
         self.assertEqual(rows["Notifications (webhook)"], expected)
@@ -83,7 +83,7 @@ class WebhookNotificationTests(unittest.TestCase):
     # Verifies webhook categories remain off while the master switch is disabled
     def test_startup_webhook_summary_respects_master_switch(self):
         steam_monitor.WEBHOOK_ENABLED = False
-        rows = {row.label: row.value for row in steam_monitor.build_startup_summary(target="76561197960287930")}
+        rows = {row.label: row.value for row in steam_monitor.build_startup_summary(target="76561201960287930")}
         self.assertEqual(rows["Notifications (webhook)"], "Off")
 
     # Verifies notification rows color only their state without turning error categories red

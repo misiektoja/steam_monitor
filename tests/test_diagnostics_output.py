@@ -359,7 +359,7 @@ def test_a_failed_name_history_fetch_is_named(capsys, monkeypatch, diagnostics_o
 
     monkeypatch.setattr(monitor.req, "get", refuse_request)
 
-    assert monitor.fetch_persona_name_history(76561197960435530) == []
+    assert monitor.fetch_persona_name_history(76561201960435530) == []
     assert "Fetching the persona name history: outcome=failed, error=HTTPError" in capsys.readouterr().out
 
 
@@ -421,7 +421,7 @@ def test_tls_verification_reaches_every_outbound_request(monkeypatch, restored_g
     # Each call is expected to fail, since the point is only to capture the verify argument it sent
     for outbound_call in (
         lambda: monitor.check_internet("https://example.invalid/probe", 1),
-        lambda: monitor.fetch_persona_name_history(76561197960435530),
+        lambda: monitor.fetch_persona_name_history(76561201960435530),
         lambda: monitor.validate_steam_api_key("A" * 32),
         lambda: monitor.resolve_steam_community_url("https://steamcommunity.com/id/someone/", "A" * 32),
         lambda: monitor.send_webhook("t", "b", "status", force=True, sleeper=lambda _seconds: None),

@@ -50,7 +50,7 @@ def test_persistent_rate_limit_delivers_one_error_alert(tmp_path, monkeypatch, f
             payload = interfaces
         elif "GetPlayerSummaries" in path:
             state["profiles"] += 1
-            payload = {"response": {"players": [{"steamid": "76561197960435530", "personaname": "TestPlayer", "personastate": 0, "communityvisibilitystate": 3}]}}
+            payload = {"response": {"players": [{"steamid": "76561201960435530", "personaname": "TestPlayer", "personastate": 0, "communityvisibilitystate": 3}]}}
             if state["profiles"] > 1:
                 if failure == "descriptor":
                     raise OSError(24, "Too many open files")
@@ -79,12 +79,12 @@ def test_persistent_rate_limit_delivers_one_error_alert(tmp_path, monkeypatch, f
         monkeypatch.setattr(monitor, "WEBHOOK_SESSION", session)
         if failure == "descriptor":
             with pytest.raises(SystemExit) as stopped:
-                monitor.steam_monitor_user(76561197960435530, None)
+                monitor.steam_monitor_user(76561201960435530, None)
             assert stopped.value.code == 1
             assert state["deliveries"] == []
             return
         with pytest.raises(PollingFinished):
-            monitor.steam_monitor_user(76561197960435530, None)
+            monitor.steam_monitor_user(76561201960435530, None)
     assert state["waits"] == [150] * 6
     assert len(state["deliveries"]) == 1
     assert "monitoring error" in state["deliveries"][0]["embeds"][0]["title"]

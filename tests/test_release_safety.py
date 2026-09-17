@@ -144,9 +144,9 @@ def test_migrate_whitespace_persona(monkeypatch, tmp_path):
     monkeypatch.setattr(monitor, "STEAM_STATUS_FILE", "")
     old = tmp_path / "steam_ Someone _last_status.json"
     old.write_text("[1700000000, 0, null]", encoding="utf-8")
-    monitor.migrate_legacy_state_files(76561197960287930, " Someone ")
+    monitor.migrate_legacy_state_files(76561201960287930, " Someone ")
     assert not old.exists()
-    assert (tmp_path / "steam_76561197960287930_last_status.json").read_text(encoding="utf-8") == "[1700000000, 0, null]"
+    assert (tmp_path / "steam_76561201960287930_last_status.json").read_text(encoding="utf-8") == "[1700000000, 0, null]"
 
 
 # AST spans remain usable when running on Python versions without end-position attributes
@@ -199,7 +199,7 @@ def test_achievement_failure_stops_real_client(monkeypatch, capsys, status):
         return response
     monkeypatch.setattr(HTTPAdapter, "send", send)
     client = monitor.steam.webapi.WebAPI(key="synthetic-api-key")
-    assert monitor.display_recent_achievements(76561197960287930, client, {"response": {"games": []}}) is False
+    assert monitor.display_recent_achievements(76561201960287930, client, {"response": {"games": []}}) is False
     assert sum("GetPlayerAchievements" in path for path in calls) == 1
     output = capsys.readouterr().out
     assert "No recent achievements" not in output

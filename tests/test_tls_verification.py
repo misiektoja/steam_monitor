@@ -72,10 +72,10 @@ def test_the_api_key_check_honors_the_setting(tls_setting, outbound, verify):
 # Verifies the vanity name resolver carries the setting, which is the other request made before monitoring starts
 def test_the_vanity_resolver_honors_the_setting(tls_setting, monkeypatch, verify):
     tls_setting.setattr(monitor, "VERIFY_SSL", verify)
-    recorder = RecordingRequests({"response": {"success": 1, "steamid": "76561197960435530"}})
+    recorder = RecordingRequests({"response": {"success": 1, "steamid": "76561201960435530"}})
     monkeypatch.setattr(monitor.req, "get", recorder)
 
-    assert monitor.resolve_steam_community_url("https://steamcommunity.com/id/example/", API_KEY) == 76561197960435530
+    assert monitor.resolve_steam_community_url("https://steamcommunity.com/id/example/", API_KEY) == 76561201960435530
     assert recorder.verified() is verify
 
 

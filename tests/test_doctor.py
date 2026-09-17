@@ -100,7 +100,7 @@ def build_report(monkeypatch, target_value=None, client=None, connected=True, co
 
 # Verifies only the four agreed status markers can appear, which is the biggest source of drift between tools
 def test_only_four_status_markers_are_used(monkeypatch, doctor_globals):
-    report = build_report(monkeypatch, target_value=76561197960435530, client=FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 3}]))
+    report = build_report(monkeypatch, target_value=76561201960435530, client=FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 3}]))
 
     rendered = render_doctor_report(report)
 
@@ -111,7 +111,7 @@ def test_only_four_status_markers_are_used(monkeypatch, doctor_globals):
 
 # Verifies the sections render in the declared order rather than in the order checks happened to be appended
 def test_sections_render_in_the_declared_order(monkeypatch, doctor_globals):
-    report = build_report(monkeypatch, target_value=76561197960435530, client=FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 3}]))
+    report = build_report(monkeypatch, target_value=76561201960435530, client=FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 3}]))
 
     rendered = render_doctor_report(report)
 
@@ -238,7 +238,7 @@ def test_no_secret_value_reaches_the_report(monkeypatch, doctor_globals):
     monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "discord")
     monkeypatch.setattr(monitor, "WEBHOOK_STATUS_NOTIFICATION", True)
 
-    report = build_report(monkeypatch, target_value=76561197960435530, client=FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 3}]))
+    report = build_report(monkeypatch, target_value=76561201960435530, client=FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 3}]))
     rendered = render_doctor_report(report)
 
     assert SECRET_API_KEY not in rendered
@@ -431,7 +431,7 @@ def test_the_steam_client_is_opened_once(monkeypatch, doctor_globals):
     monkeypatch.setattr(monitor, "steam_web_api_client", open_client)
     report = monitor.DoctorReport()
     report.checks.extend(monitor.doctor_check_authentication(report))
-    report.checks.extend(monitor.doctor_check_target(report, 76561197960435530))
+    report.checks.extend(monitor.doctor_check_target(report, 76561201960435530))
 
     assert len(opened) == 1
     assert report.player_summary is not None
@@ -439,7 +439,7 @@ def test_the_steam_client_is_opened_once(monkeypatch, doctor_globals):
 
 # Verifies doctor accepts a vanity target and checks the resolved Steam64 ID
 def test_doctor_resolves_a_vanity_target(monkeypatch, doctor_globals):
-    resolved = 76561197960435530
+    resolved = 76561201960435530
     client = FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 3}])
     report = monitor.DoctorReport()
     report.steam_client = client
@@ -454,7 +454,7 @@ def test_doctor_resolves_a_vanity_target(monkeypatch, doctor_globals):
 # Verifies a private profile warns rather than passing silently, since nothing can be detected while it is private
 def test_a_private_profile_warns(monkeypatch, doctor_globals):
     client = FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 1}])
-    report = build_report(monkeypatch, target_value=76561197960435530, client=client)
+    report = build_report(monkeypatch, target_value=76561201960435530, client=client)
 
     visibility = [check for check in report.checks if check.section == "Target" and "visible" in check.label]
     assert visibility and visibility[0].status == "WARN"
@@ -466,7 +466,7 @@ def test_the_target_is_skipped_without_authentication(doctor_globals, monkeypatc
     monkeypatch.setattr(monitor, "STEAM_API_KEY", "your_steam_web_api_key")
     report = monitor.DoctorReport()
 
-    checks = monitor.doctor_check_target(report, 76561197960435530)
+    checks = monitor.doctor_check_target(report, 76561201960435530)
 
     assert checks[0].status == "SKIP"
 
@@ -492,13 +492,13 @@ def test_the_log_destination_is_resolved_when_a_target_is_known(tmp_path, monkey
     monkeypatch.setattr(monitor, "ST_LOGFILE", str(tmp_path / "steam_monitor"))
     monkeypatch.setattr(monitor, "FILE_SUFFIX", "")
 
-    checks = monitor.doctor_output_destination_checks(76561197960435530)
+    checks = monitor.doctor_output_destination_checks(76561201960435530)
 
     assert checks[0].status == "PASS"
     assert checks[0].label == "Log destination appears writable"
-    assert checks[0].detail == f"Path: {tmp_path / 'steam_monitor_76561197960435530.log'}"
+    assert checks[0].detail == f"Path: {tmp_path / 'steam_monitor_76561201960435530.log'}"
     # The reported path is the one monitoring opens, not a separately assembled name
-    assert monitor.build_log_path(monitor.ST_LOGFILE, "76561197960435530") == tmp_path / "steam_monitor_76561197960435530.log"
+    assert monitor.build_log_path(monitor.ST_LOGFILE, "76561201960435530") == tmp_path / "steam_monitor_76561201960435530.log"
 
 
 # Verifies a configured suffix replaces the Steam ID in the reported log destination
@@ -507,7 +507,7 @@ def test_a_configured_file_suffix_names_the_log_destination(tmp_path, monkeypatc
     monkeypatch.setattr(monitor, "ST_LOGFILE", str(tmp_path / "steam_monitor"))
     monkeypatch.setattr(monitor, "FILE_SUFFIX", "mybox")
 
-    checks = monitor.doctor_output_destination_checks(76561197960435530)
+    checks = monitor.doctor_output_destination_checks(76561201960435530)
 
     assert checks[0].detail == f"Path: {tmp_path / 'steam_monitor_mybox.log'}"
 
@@ -534,7 +534,7 @@ def test_an_unwritable_output_path_fails(monkeypatch, doctor_globals, setting, l
     # The missing path resolves to the root directory, which is the only parent made unwritable, so the default status file in the working directory keeps passing
     monkeypatch.setattr(monitor.os, "access", lambda path, *_args, **_kwargs: str(path) != "/")
 
-    failures = [check for check in monitor.doctor_output_destination_checks(76561197960435530) if check.status == "FAIL"]
+    failures = [check for check in monitor.doctor_output_destination_checks(76561201960435530) if check.status == "FAIL"]
 
     assert len(failures) == 1
     assert failures[0].label.startswith(f"{label} is not writable")
@@ -576,7 +576,7 @@ def test_a_link_in_a_detail_line_is_coloured_as_a_link(monkeypatch, doctor_globa
 def test_every_marker_is_coloured_in_the_rendered_report(monkeypatch, doctor_globals):
     monkeypatch.setattr(monitor, "COLOR_ENABLED", True)
     monkeypatch.setattr(monitor, "_COLOR_STYLES", {name: monitor._build_ansi_sequence(value) for name, value in monitor.DEFAULT_COLOR_THEME.items() if monitor._build_ansi_sequence(value)})
-    report = build_report(monkeypatch, target_value=76561197960435530, client=FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 3}]))
+    report = build_report(monkeypatch, target_value=76561201960435530, client=FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 3}]))
 
     rendered = render_doctor_report(report)
 
@@ -608,7 +608,7 @@ def test_the_report_ends_with_its_guide_link(monkeypatch, doctor_globals):
 # Verifies the exit code is usable as a container healthcheck or CI smoke test
 def test_the_exit_code_reflects_the_result(monkeypatch, doctor_globals, capsys):
     client = FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 3}])
-    assert run_doctor_offline(monkeypatch, target_value=76561197960435530, client=client) == 0
+    assert run_doctor_offline(monkeypatch, target_value=76561201960435530, client=client) == 0
 
     assert run_doctor_offline(monkeypatch, connected=False) == 1
     capsys.readouterr()
@@ -618,7 +618,7 @@ def test_the_exit_code_reflects_the_result(monkeypatch, doctor_globals, capsys):
 def test_a_warning_alone_exits_zero(monkeypatch, doctor_globals, capsys):
     client = FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 1}])
 
-    assert run_doctor_offline(monkeypatch, target_value=76561197960435530, client=client) == 0
+    assert run_doctor_offline(monkeypatch, target_value=76561201960435530, client=client) == 0
     capsys.readouterr()
 
 
@@ -705,7 +705,7 @@ def test_the_delivery_prompts_use_the_shared_wording(monkeypatch, doctor_globals
 # Verifies the notice states what doctor will not do before any slow check runs, not afterwards
 def test_the_preflight_notice_precedes_the_checks(monkeypatch, doctor_globals, capsys):
     client = FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 3}])
-    run_doctor_offline(monkeypatch, target_value=76561197960435530, client=client)
+    run_doctor_offline(monkeypatch, target_value=76561201960435530, client=client)
 
     output = capsys.readouterr().out
     assert output.index("Running preflight checks. No files will be written.") < output.index("Doctor")
@@ -715,11 +715,11 @@ def test_the_preflight_notice_precedes_the_checks(monkeypatch, doctor_globals, c
 def test_a_passing_run_leaves_the_monitoring_command_to_the_next_steps(monkeypatch, doctor_globals, capsys):
     client = FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 3}])
 
-    run_doctor_offline(monkeypatch, target_value=76561197960435530, client=client)
+    run_doctor_offline(monkeypatch, target_value=76561201960435530, client=client)
 
     output = capsys.readouterr().out
     assert "Start monitoring with: " not in output
-    assert "76561197960435530" not in output.split("Summary", 1)[1]
+    assert "76561201960435530" not in output.split("Summary", 1)[1]
 
 
 # Returns the doctor transcript from a real pseudo-terminal, the way a user actually sees it
@@ -870,7 +870,7 @@ def test_piped_output_has_no_progress_line(monkeypatch, doctor_globals, capsys):
     monkeypatch.setattr(monitor, "steam_web_api_client", lambda *_a, **_k: FakeSteamClient(players=[{"personaname": "P", "communityvisibilitystate": 3}]))
     monkeypatch.setattr(monitor.sys.stdin, "isatty", lambda: False, raising=False)
 
-    monitor.run_doctor(target_value=76561197960435530)
+    monitor.run_doctor(target_value=76561201960435530)
 
     output = capsys.readouterr().out
     assert "* Checking " not in output
@@ -1091,7 +1091,7 @@ def test_a_failed_delivery_test_changes_the_exit_code(monkeypatch, doctor_global
     monkeypatch.setattr("builtins.input", lambda _prompt: "y")
     monkeypatch.setattr(monitor, "send_email", lambda *_a, **_k: 1)
 
-    code = monitor.run_doctor(target_value=76561197960435530)
+    code = monitor.run_doctor(target_value=76561201960435530)
 
     output = capsys.readouterr().out
     assert code == 1
@@ -1191,9 +1191,9 @@ def test_a_command_line_target_is_carried_into_the_command(monkeypatch, capsys):
     monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", "")
     monkeypatch.setattr(monitor, "DOTENV_FILE", "")
 
-    monitor.print_doctor_next_steps("76561197960435530", doctor_exit=0)
+    monitor.print_doctor_next_steps("76561201960435530", doctor_exit=0)
 
-    assert "76561197960435530" in capsys.readouterr().out
+    assert "76561201960435530" in capsys.readouterr().out
 
 
 # Verifies the monitoring command carries a target only when the config file will not supply one
@@ -1201,12 +1201,12 @@ def test_the_monitoring_command_leaves_out_a_target_the_config_supplies(monkeypa
     monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", "")
     monkeypatch.setattr(monitor, "DOTENV_FILE", "")
 
-    monitor.print_doctor_next_steps("76561197960435530", "76561197960435530", doctor_exit=0)
+    monitor.print_doctor_next_steps("76561201960435530", "76561201960435530", doctor_exit=0)
     saved_transcript = capsys.readouterr().out
     monitor.print_doctor_next_steps(None, "", doctor_exit=0)
     unsaved_transcript = capsys.readouterr().out
 
-    assert "76561197960435530" not in saved_transcript
+    assert "76561201960435530" not in saved_transcript
     assert "<steam_target>" not in saved_transcript
     assert "<steam_target>" in unsaved_transcript
 
@@ -1243,7 +1243,7 @@ def test_the_report_names_the_status_file(monkeypatch, doctor_globals, tmp_path)
     destination = tmp_path / "last_status.json"
     monkeypatch.setattr(monitor, "STEAM_STATUS_FILE", str(destination))
 
-    checks = [check for check in monitor.doctor_output_destination_checks(76561197960435530) if check.label.startswith("Status destination")]
+    checks = [check for check in monitor.doctor_output_destination_checks(76561201960435530) if check.label.startswith("Status destination")]
 
     assert [check.status for check in checks] == ["PASS"]
     assert str(destination) in checks[0].detail
@@ -1253,10 +1253,10 @@ def test_the_report_names_the_status_file(monkeypatch, doctor_globals, tmp_path)
 def test_a_default_status_file_follows_the_target(monkeypatch, doctor_globals):
     monkeypatch.setattr(monitor, "STEAM_STATUS_FILE", "")
 
-    with_target = [check for check in monitor.doctor_output_destination_checks(76561197960435530) if check.label.startswith("Status")]
+    with_target = [check for check in monitor.doctor_output_destination_checks(76561201960435530) if check.label.startswith("Status")]
     without_target = [check for check in monitor.doctor_output_destination_checks() if check.label.startswith("Status")]
 
-    assert [(check.status, check.label, check.detail) for check in with_target] == [("PASS", "Status destination appears writable", "Path: steam_76561197960435530_last_status.json")]
+    assert [(check.status, check.label, check.detail) for check in with_target] == [("PASS", "Status destination appears writable", "Path: steam_76561201960435530_last_status.json")]
     assert [(check.status, check.label, check.detail) for check in without_target] == [("PASS", "Status file will be finalized after a target is selected", "Base name: steam_<steam64_id>_last_status.json in the working directory")]
 
 

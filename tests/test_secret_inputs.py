@@ -40,7 +40,7 @@ class SecretInputTests(unittest.TestCase):
 
     # Verifies the monitoring command carries a target only when the config file will not supply one
     def test_next_steps_carry_the_target_the_config_does_not_supply(self):
-        for saved, expects_placeholder in (("", True), ('TARGET_STEAM_ID = "76561198000000000"', False)):
+        for saved, expects_placeholder in (("", True), ('TARGET_STEAM_ID = "76561202000000000"', False)):
             with self.subTest(saved=saved):
                 config_path = Path(self.tempdir.name) / "steam_monitor.conf"
                 config_path.write_text(saved + "\n", encoding="utf-8")
@@ -54,7 +54,7 @@ class SecretInputTests(unittest.TestCase):
                 self.assertIn("After Doctor passes, start monitoring:", output)
                 self.assertNotIn("<steam_target>", output.split("After Doctor passes, start monitoring:", 1)[0])
                 self.assertEqual("<steam_target>" in output, expects_placeholder)
-                self.assertNotIn("76561198000000000", output)
+                self.assertNotIn("76561202000000000", output)
 
     # Verifies hidden webhook entry saves the URL without displaying it
     def test_hidden_webhook_entry(self):
@@ -157,7 +157,7 @@ class SecretInputTests(unittest.TestCase):
         with patch.object(steam_monitor.req, "get", return_value=response) as request:
             self.assertTrue(steam_monitor.validate_steam_api_key("A" * 32))
 
-        request.assert_called_once_with("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/", params={"key": "A" * 32, "steamids": "76561197960287930"}, timeout=10, verify=steam_monitor.VERIFY_SSL)
+        request.assert_called_once_with("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/", params={"key": "A" * 32, "steamids": "76561201960287930"}, timeout=10, verify=steam_monitor.VERIFY_SSL)
 
     # Verifies the SMTP password is accepted by the mail server before it reaches the dotenv file
     def test_smtp_password_is_signed_in_before_it_is_saved(self):
