@@ -1368,15 +1368,19 @@ _STEAM_USER_LINE_RE = re.compile(
 _USER_IN_GAME_RE = re.compile(r"^(User is currently in-game:\s+)(.*)$")
 # The monitored account named inside a sentence, so the ID is coloured without wrapping the whole line
 _MONITORED_ID_RE = re.compile(r"^(Monitoring user with Steam64 ID\s+)(\S+)$")
+# The weekday in front of a date, taken from the abbreviations the running locale prints. A date is separated
+# from its weekday by one space, so the wide gap of a padded listing column cannot pull the word before it,
+# such as the last word of a line, into the date
+_WEEKDAY_ABBR_PATTERN = "|".join(re.escape(day_abbr) for day_abbr in calendar.day_abbr)
 # Long date in format returned by get_date_from_ts, e.g. 'Sun 21 Apr 2024, 15:08:45'
-_LONG_DATE_RE = re.compile(r"\b\w{3}\s+\d{1,2}\s+\w{3}\s+\d{4},\s+\d{2}:\d{2}:\d{2}\b")
+_LONG_DATE_RE = re.compile(r"\b(?:" + _WEEKDAY_ABBR_PATTERN + r")[\t ]\d{1,2}\s+\w{3}\s+\d{4},\s+\d{2}:\d{2}:\d{2}\b")
 # Short range date in parentheses, e.g. '(Sat 22 Nov 16:54 - 17:58)'
 _SHORT_RANGE_DATE_RE = re.compile(
-    r"\(\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\)"
+    r"\((?:" + _WEEKDAY_ABBR_PATTERN + r")[\t ]\d{1,2}\s+\w{3}\s+\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\)"
 )
 # Date range without year, e.g. 'Sat 22 Nov 03:24 - 08:28'
 _DATE_RANGE_RE = re.compile(
-    r"\b\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\b"
+    r"\b(?:" + _WEEKDAY_ABBR_PATTERN + r")[\t ]\d{1,2}\s+\w{3}\s+\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\b"
 )
 _STATUS_CHANGE_RE = re.compile(
     r"^(Steam user .+? changed status from\s+)([a-zA-Z ]+)(\s+to\s+)([a-zA-Z ]+)(.*)$"
