@@ -50,3 +50,31 @@ def test_entry_pages_share_the_main_image_and_features():
     # the README pins an anchor above the next section, docs/index.md ends the page there
     readme_block = re.sub(r'\n<a id="[^"]+"></a>\s*\Z', "", readme_features.group(1).strip()).strip()
     assert readme_block == index_features.group(1).strip()
+
+
+# Keep the badge block identical on both entry pages, since a badge added to one is easy to forget on the other
+def test_entry_pages_share_the_badge_block():
+    blocks = []
+    for path in (ROOT / "README.md", ROOT / "docs/index.md"):
+        badges = re.findall(r"^\[!\[[^\]]+\]\([^)]+\)\]\([^)]+\)$", path.read_text(encoding="utf-8"), re.MULTILINE)
+        assert len(badges) >= 8, f"{path.name}: expected the full badge block, found {len(badges)}"
+        blocks.append(badges)
+    assert blocks[0] == blocks[1]
+
+
+# Every badge links somewhere, the way the sibling monitors render them, so a bare image cannot creep back in
+def test_badges_are_linked_the_way_the_sibling_monitors_render_them():
+    for path in (ROOT / "README.md", ROOT / "docs/index.md"):
+        text = path.read_text(encoding="utf-8")
+        header = text[:text.index("\n\n", text.index("shields.io"))]
+        assert "<img" not in header and "<p align=" not in header, f"{path.name}: unlinked image badge in the header"
+
+
+# The Scorecard badge only resolves through the scorecard.dev API, so the retired shields endpoints stay out
+def test_the_scorecard_badge_uses_the_endpoint_that_resolves():
+    for path in (ROOT / "README.md", ROOT / "docs/index.md"):
+        text = path.read_text(encoding="utf-8")
+        assert "api.scorecard.dev%2Fprojects%2Fgithub.com%2Fmisiektoja%2Fsteam_monitor" in text
+        assert "ossf-scorecard" not in text and "securityscorecards.dev" not in text
+        # A cache-buster freezes shields on the first score it fetched, so the badge stops tracking the real one
+        assert "badge_cache" not in text
