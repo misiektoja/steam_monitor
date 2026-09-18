@@ -5529,6 +5529,8 @@ def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input
     if config_result["backup_path"]:
         print(f"  Backup:        {config_result['backup_path']}")
     if dotenv_result:
+        # The row prints the dotenv file path, not what the file holds
+        # codeql[py/clear-text-logging-sensitive-data]
         print(f"  {'Secrets:':<15}{dotenv_result['path']}")
 
     doctor_offered = bool(state.target)
