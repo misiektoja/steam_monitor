@@ -1686,6 +1686,10 @@ def _colorize_line(line, notification_summary=False):
     if ANSI_RESET in original:
         return line
 
+    # A summary row reports a setting, so a value that happens to read like a log keyword must not paint the whole row
+    if is_startup_summary_row(original):
+        return line
+
     # Errors / warnings (avoid colouring summary lines like 'errors = False')
     lowered = original.lower()
     if any(w in lowered for w in ("failure", "forbidden", "timeout")) or (
@@ -5677,11 +5681,23 @@ StartupSummaryRow.__new__.__defaults__ = (False, True)
 # Rows that detail the channel named right above them, indented so the block reads as one setting with its details
 STARTUP_SUMMARY_NESTED_LABELS = ("Email transport", "Email recipient", "Email images", "Webhook provider", "ntfy images")
 
+# The column every summary value starts in, which also lets the colouriser recognize a summary row
+STARTUP_SUMMARY_VALUE_COLUMN = 32
+
+# Matches a summary row by that padded label column, since no log line puts a value there
+_STARTUP_SUMMARY_ROW_RE = re.compile(r"^\*(?: {1,3})[^:\s][^:]*: {2,}(?=\S)")
+
+
+# Returns whether a line is a startup summary row rather than ordinary output
+def is_startup_summary_row(line):
+    match = _STARTUP_SUMMARY_ROW_RE.match(line)
+    return bool(match) and match.end() == STARTUP_SUMMARY_VALUE_COLUMN
+
 
 # Formats one summary row with an aligned value column, wrapping only the rollup that grows long
 def format_startup_summary_row(row):
     indent = "  " if row.label in STARTUP_SUMMARY_NESTED_LABELS else ""
-    prefix = f"* {indent}{(row.label + ':'):<{30 - len(indent)}}"
+    prefix = f"* {indent}{(row.label + ':'):<{STARTUP_SUMMARY_VALUE_COLUMN - 2 - len(indent)}}"
     if row.label in ("Notifications (email)", "Notifications (webhook)"):
         return textwrap.fill(str(row.value), width=100, initial_indent=prefix, subsequent_indent=" " * len(prefix), break_long_words=False, break_on_hyphens=False) + "\n"
     return f"{prefix}{row.value}\n"
