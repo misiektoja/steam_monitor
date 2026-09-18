@@ -4,11 +4,12 @@ This is a high-level summary of the most important changes.
 
 # Changes in 2.0.1 (TBD)
 
-Version **2.0.1** reports an alert channel that still holds the values from the sample configuration as unset, instead of naming a mail server and a recipient no alert could reach.
+Version **2.0.1** fixes two alerting issues: alert delivery messages now stay within the correct check report, while alert channels that still use placeholder configuration values are shown as not configured.
 
 **Bug fixes**:
 
-- **BUGFIX:** **Unset alert channels are reported as unset** - The verbose startup summary read the values the sample configuration ships as a real destination, so a run that had never been given a mail server printed **`Email transport: your_smtp_server_ssl:587`**, a recipient of **`your_receiver_email`** and a webhook provider of **`Discord`**. Those rows now read **`Not configured`** and the channel rollup above them reads **`Off (not configured)`** rather than naming alert types nothing could deliver
+- **BUGFIX:** **Alert deliveries stay inside their report** - The hourly **`Monitoring degraded`** reminder previously closed the report before sending its alert. This caused lines such as **`Sending email notification to ...`** and webhook delivery messages to appear below the separator in a separate block. The report now closes after the delivery messages, keeping the entire check output together.
+- **BUGFIX:** **Unset alert channels are reported as unset** - The verbose startup summary previously treated placeholder configuration values as real alert settings. For example, an unconfigured email channel could appear as **`Email transport: your_smtp_server_ssl:587`** with recipient **`your_receiver_email`**, while the webhook provider could appear as **`Discord`**. These values are now shown as **`Not configured`**, while the channel summary shows **`Off (not configured)`**.
 
 # Changes in 2.0 (18 Sep 2026)
 
