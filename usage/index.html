@@ -1,0 +1,1290 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Real-time tracker for Steam players' activity with detailed profile insights and instant alerts">
+      
+      
+      
+        <link rel="canonical" href="https://misiektoja.github.io/steam_monitor/usage/">
+      
+      
+        <link rel="prev" href="../configuration/">
+      
+      
+        <link rel="next" href="../troubleshooting/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Usage - steam_monitor</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#usage" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="steam_monitor" class="md-header__button md-logo" aria-label="steam_monitor" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            steam_monitor
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Usage
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="blue" data-md-color-accent="blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/misiektoja/steam_monitor" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    misiektoja/steam_monitor
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="steam_monitor" class="md-nav__button md-logo" aria-label="steam_monitor" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    steam_monitor
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/misiektoja/steam_monitor" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    misiektoja/steam_monitor
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../setup-and-first-run/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Setup & First Run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Usage
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#command-format-by-installation-method" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Command Format by Installation Method
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#user-information-display-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        User Information Display Mode
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#monitoring-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Monitoring Mode
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#terminal-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Terminal Output
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Terminal Output">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#coloured-terminal-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Coloured Terminal Output
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#email-notifications" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Email Notifications
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#webhook-notifications" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Webhook Notifications
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#csv-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CSV Export
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#status-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Status File
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#check-intervals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Check Intervals
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Check Intervals">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#liveness-reminder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Liveness Reminder
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#signal-controls-macoslinuxunix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Signal Controls (macOS/Linux/Unix)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#coloring-log-output-with-grc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Coloring Log Output with GRC
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../about/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    About
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#command-format-by-installation-method" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Command Format by Installation Method
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#user-information-display-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        User Information Display Mode
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#monitoring-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Monitoring Mode
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#terminal-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Terminal Output
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Terminal Output">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#coloured-terminal-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Coloured Terminal Output
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#email-notifications" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Email Notifications
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#webhook-notifications" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Webhook Notifications
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#csv-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CSV Export
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#status-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Status File
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#check-intervals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Check Intervals
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Check Intervals">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#liveness-reminder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Liveness Reminder
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#signal-controls-macoslinuxunix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Signal Controls (macOS/Linux/Unix)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#coloring-log-output-with-grc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Coloring Log Output with GRC
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/misiektoja/steam_monitor/edit/main/docs/usage.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h1>
+<p><a id="command-format-by-installation-method"></a></p>
+<h2 id="command-format-by-installation-method">Command Format by Installation Method<a class="headerlink" href="#command-format-by-installation-method" title="Permanent link">&para;</a></h2>
+<p>Examples use the PyPI command. For a downloaded script, run commands from the directory containing <code>steam_monitor.py</code> and keep the same arguments:</p>
+<table>
+<thead>
+<tr>
+<th>Installation</th>
+<th>Command</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PyPI or pipx</td>
+<td><code>steam_monitor [OPTIONS]</code></td>
+</tr>
+<tr>
+<td>Manual script on macOS or Linux</td>
+<td><code>python3 steam_monitor.py [OPTIONS]</code></td>
+</tr>
+<tr>
+<td>Manual script on Windows</td>
+<td><code>python steam_monitor.py [OPTIONS]</code></td>
+</tr>
+</tbody>
+</table>
+<p>For example, <code>steam_monitor --setup</code> becomes <code>python3 steam_monitor.py --setup</code> on macOS or Linux. Use <code>python</code> on Windows. Replace placeholders such as <code>&lt;steam_target&gt;</code> with a Steam64 ID or complete Steam community profile URL.</p>
+<p>Activate the tool's virtual environment before running these commands. For a downloaded script, run them from the directory containing <code>steam_monitor.py</code>.</p>
+<p>For first-time configuration, follow <a href="../setup-and-first-run/">Setup &amp; First Run</a>. Use <a href="../troubleshooting/#doctor-preflight">Doctor Preflight</a> to check a setup before monitoring.</p>
+<p>The tool has two modes. <strong>Monitoring mode</strong> watches a profile continuously and sends alerts as things change. <strong>User information mode</strong> prints a detailed profile snapshot once and exits.</p>
+<p><a id="user-information-display-mode"></a></p>
+<h2 id="user-information-display-mode">User Information Display Mode<a class="headerlink" href="#user-information-display-mode" title="Permanent link">&para;</a></h2>
+<p>To display comprehensive Steam profile information for a user without starting monitoring, pass a Steam64 ID, Steam3 identifier, vanity name or full profile URL as <code>steam_target</code> and use the <code>-i</code> / <code>--info</code> flag:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>-i
+</code></pre></div>
+<p>For compatibility with existing scripts, <code>-r</code> / <code>--resolve-community-url</code> still resolves a Steam community URL:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>steam_monitor<span class="w"> </span>-r<span class="w"> </span><span class="s2">"https://steamcommunity.com/id/steam_username/"</span><span class="w"> </span>-i
+</code></pre></div>
+<p>If you have not set <code>STEAM_API_KEY</code> secret, you can use <code>-u</code> flag:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>-i<span class="w"> </span>-u<span class="w"> </span><span class="s2">"your_steam_web_api_key"</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="c1"># or</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>steam_monitor<span class="w"> </span>-r<span class="w"> </span><span class="s2">"https://steamcommunity.com/id/steam_username/"</span><span class="w"> </span>-i<span class="w"> </span>-u<span class="w"> </span><span class="s2">"your_steam_web_api_key"</span>
+</code></pre></div>
+<p>This mode displays detailed information including:
+- Steam64 ID, display name, real name
+- Country/region
+- Current status and profile visibility
+- Account creation date
+- Profile URL
+- Steam level, badges earned and XP statistics
+- Ban status (VAC, Community, Economy)
+- Friends count (with <code>--list-friends</code> it also shows the full list including when each friendship started)
+- Top games by lifetime hours
+- Recently played games with playtime statistics
+- Hours played in the last 2 weeks</p>
+<p>Optionally, you can also display the <strong>persona (display) name history</strong> using the <code>--name-history</code> flag:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>-i<span class="w"> </span>--name-history
+</code></pre></div>
+<p>This lists the user's previous display names with the date each one was changed, as reported by Steam.</p>
+<p>Optionally, you can also display <strong>recently earned achievements</strong> using the <code>--achievements</code> flag:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>-i<span class="w"> </span>--achievements<span class="w">                    </span><span class="c1"># show recent achievements (default: 10)</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>-i<span class="w"> </span>--achievements<span class="w"> </span>-n<span class="w"> </span><span class="m">20</span><span class="w">              </span><span class="c1"># show up to 20 recent achievements</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>-i<span class="w"> </span>--achievements<span class="w"> </span>--achievements-all-games<span class="w">  </span><span class="c1"># check all owned games instead of only recently played</span>
+</code></pre></div>
+<p>Recent achievements show game name, achievement name, description (if available) and earn time.</p>
+<p><strong>How it works:</strong>
+- By default, the tool checks achievements from the user's recently played games (up to 15 games).
+- If the recently played games list is empty or hidden, it automatically falls back to checking all owned games.
+- Use <code>--achievements-all-games</code> to force checking all owned games instead of only recently played games. This is useful for users who haven't played recently, as their recently played list may be limited and older games with achievements might be missed.
+- Achievements are sorted by unlock time (most recent first) and limited to the number specified with <code>-n</code> (default: 10).</p>
+<p>The visibility of achievements depends on the user's Steam privacy settings for game details. If game details are set to "Private", achievements may not be accessible.</p>
+<p>The tool displays this information and then exits (does not start monitoring).</p>
+<p><a id="monitoring-mode"></a></p>
+<h2 id="monitoring-mode">Monitoring Mode<a class="headerlink" href="#monitoring-mode" title="Permanent link">&para;</a></h2>
+<p>To monitor specific user activity, pass a Steam64 ID, Steam3 identifier, vanity name or full profile URL:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;
+</code></pre></div>
+<p>You can also save any of these forms as <code>TARGET_STEAM_ID</code> in <code>steam_monitor.conf</code>. A positional target takes precedence. With a saved target no positional value is needed:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>steam_monitor
+</code></pre></div>
+<p>If you have not set <code>STEAM_API_KEY</code> secret, you can use <code>-u</code> flag:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>-u<span class="w"> </span><span class="s2">"your_steam_web_api_key"</span>
+</code></pre></div>
+<p>The legacy <code>-r</code> flag remains supported for commands that explicitly resolve a community URL:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>steam_monitor<span class="w"> </span>-r<span class="w"> </span><span class="s2">"https://steamcommunity.com/id/steam_username/"</span>
+</code></pre></div>
+<p>When monitoring starts, the tool displays user information including Steam64 ID, display name, real name (if available), country/region, current status, profile visibility, account creation date and profile URL.</p>
+<p>If you generated a configuration file as described in <a href="../configuration/">Configuration</a>, but saved it under a different name or in a different directory, you can specify its location using the <code>--config-file</code> flag:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>--config-file<span class="w"> </span>/path/steam_monitor_new.conf
+</code></pre></div>
+<p><code>--config-file none</code> switches automatic config discovery off for one run. The startup summary reports <code>Discovery disabled</code> when it is in effect.</p>
+<p>The tool runs until interrupted (<code>Ctrl+C</code>). Use <code>tmux</code> or <code>screen</code> for persistence.</p>
+<p>You can monitor multiple Steam players by running multiple instances of the script.</p>
+<p>The tool automatically saves its output to <code>steam_monitor_&lt;user_steam_id/file_suffix&gt;.log</code> file. The log file name can be changed via <code>ST_LOGFILE</code> configuration option and its suffix via <code>FILE_SUFFIX</code> / <code>-y</code> flag. Logging can be disabled completely via <code>DISABLE_LOGGING</code> / <code>-d</code> flag.</p>
+<p>Set <code>ASCII_LOG_SEPARATORS</code> to <code>"Auto"</code> (default) to use ASCII separator-only lines on Windows, <code>"On"</code> to use them on every operating system or <code>"Off"</code> to preserve Unicode separators in logs everywhere. Terminal separators stay Unicode. Log files and all other logged text remain UTF-8.</p>
+<p>The tool also saves the timestamp and last status (after every change) to the <code>steam_&lt;steam64_id&gt;_last_status.json</code> file, so the last status is available after the restart of the tool. See <a href="#status-file">Status File</a> to keep it somewhere else. When games library tracking is enabled, a snapshot of the library (game count and app IDs) is stored in <code>steam_&lt;steam64_id&gt;_games.json</code> and only changes are reported.</p>
+<p>To track when the user's <strong>Steam level and total XP</strong> changes:
+- set <code>STEAM_LEVEL_XP_CHECK</code> to <code>True</code>
+- or use the <code>--check-level-xp</code> flag</p>
+<p>To track changes in the user's <strong>friends list</strong> (count and when available - added/removed friends):
+- set <code>FRIENDS_CHECK</code> to <code>True</code>
+- or use the <code>--check-friends</code> flag</p>
+<p>To track changes in the user's <strong>games library</strong> (game count and added/removed games):
+- set <code>GAMES_LIBRARY_CHECK</code> to <code>True</code>
+- or use the <code>--check-games</code> flag</p>
+<p>The user's <strong>display (persona) name</strong> is tracked automatically with no extra configuration. Whenever it changes, the tool logs the old and new name and (when a profile CSV is configured) records a <code>name_change</code> row. To also receive an email on such changes use <code>--notify-name-change</code> (see <a href="#email-notifications">Email Notifications</a>).</p>
+<p><a id="terminal-output"></a></p>
+<h2 id="terminal-output">Terminal Output<a class="headerlink" href="#terminal-output" title="Permanent link">&para;</a></h2>
+<p>Use <code>--help</code> for examples grouped by task and matched to your installation.</p>
+<p>Monitoring mode prints the settings that are actually in effect before the first check.</p>
+<p>Optional features appear once you switch them on.</p>
+<p>Use <code>--verbose</code> or <code>--debug</code> for the full startup summary, including output paths, notification settings, secret sources and runtime information.</p>
+<p>Use <code>--truncate N</code> or <code>TRUNCATE_CHARS</code> to limit screen line width. Set it to <code>999</code> to detect the terminal width automatically. Truncation does not change log files and is ignored when logging is disabled with <code>-d</code>.</p>
+<p>The tool clears the terminal when monitoring starts. Set <code>CLEAR_SCREEN</code> to <code>False</code> to keep whatever is already on the screen.</p>
+<p>The screen is never cleared when output is redirected to a file or a pipe, in debug mode or for a command that prints a result and exits, such as <code>--doctor</code>, <code>--help</code> and the test senders.</p>
+<p>Two settings add detail to what a run prints. <code>VERBOSE_MODE</code> adds the decisions the run made and <code>DEBUG_MODE</code> adds timestamped technical traces. Both are off by default, both are independent of each other and both have a flag that wins over the file, <code>--verbose</code> and <code>--debug</code>. <code>DELIVERY_CONFIRMATIONS</code> is on by default and controls whether verbose mode confirms each delivered email and webhook alert. See <a href="../troubleshooting/#verbose-and-debug-output">Verbose and Debug Output</a>.</p>
+<p><a id="coloured-terminal-output"></a></p>
+<h3 id="coloured-terminal-output">Coloured Terminal Output<a class="headerlink" href="#coloured-terminal-output" title="Permanent link">&para;</a></h3>
+<p>Steam Monitor colours live terminal output and help by default. Saved log files stay plain text.</p>
+<p>Turn colour off for one run with <code>--no-color</code> or permanently with <code>COLORED_OUTPUT = False</code>. Colour is also disabled for redirected output, <code>NO_COLOR</code> or an unsupported terminal. See <a href="../configuration/#terminal-colours">Terminal Colours</a> for details and Windows support.</p>
+<p>Override individual colours with <code>COLOR_THEME</code>. It is merged over the built-in theme, so you only name the parts you want to change:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="na">COLOR_THEME = { "game"</span><span class="o">:</span><span class="w"> </span><span class="s">"bright_magenta bold"</span><span class="na">, "username"</span><span class="o">:</span><span class="w"> </span><span class="s">"green"</span><span class="w"> </span><span class="na">}</span>
+</code></pre></div>
+<p>See <a href="../configuration/#terminal-colours">Terminal Colours</a> for every theme key and the accepted colour and style names.</p>
+<p><a id="email-notifications"></a></p>
+<h2 id="email-notifications">Email Notifications<a class="headerlink" href="#email-notifications" title="Permanent link">&para;</a></h2>
+<p>To enable email notifications when a user gets online or offline:
+- set <code>ACTIVE_INACTIVE_NOTIFICATION</code> to <code>True</code>
+- or use the <code>-a</code> flag</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>-a
+</code></pre></div>
+<p>To be informed when a user starts, stops or changes the played game:
+- set <code>GAME_CHANGE_NOTIFICATION</code> to <code>True</code>
+- or use the <code>-g</code> flag</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>-g
+</code></pre></div>
+<p>To get email notifications about any changes in user status (online/away/snooze/offline):
+- set <code>STATUS_NOTIFICATION</code> to <code>True</code>
+- or use the <code>-s</code> flag</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>-s
+</code></pre></div>
+<p>To get email notifications when the user's <strong>display (persona) name</strong> changes:
+- set <code>NAME_CHANGE_NOTIFICATION</code> to <code>True</code>
+- or use the <code>--notify-name-change</code> flag</p>
+<p>Display name changes are always detected and logged to the console, log file and profile CSV. This flag only controls whether an email is also sent.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>--notify-name-change
+</code></pre></div>
+<p>To get email notifications when the user's <strong>Steam level and total XP</strong> changes:
+- set <code>STEAM_LEVEL_XP_NOTIFICATION</code> to <code>True</code>
+- or use the <code>--notify-level-xp</code> flag</p>
+<p>It requires Steam level and total XP tracking (<code>STEAM_LEVEL_XP_CHECK</code> / <code>--check-level-xp</code>) to be enabled.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>--check-level-xp<span class="w"> </span>--notify-level-xp
+</code></pre></div>
+<p>To get email notifications when the user's <strong>friends list</strong> changes:
+- set <code>FRIENDS_NOTIFICATION</code> to <code>True</code>
+- or use the <code>--notify-friends</code> flag</p>
+<p>It requires friends tracking (<code>FRIENDS_CHECK</code> / <code>--check-friends</code>) to be enabled.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>--check-friends<span class="w"> </span>--notify-friends
+</code></pre></div>
+<p>To get email notifications when the user's <strong>games library</strong> changes:
+- set <code>GAMES_LIBRARY_NOTIFICATION</code> to <code>True</code>
+- or use the <code>--notify-games</code> flag</p>
+<p>It requires games library tracking (<code>GAMES_LIBRARY_CHECK</code> / <code>--check-games</code>) to be enabled.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>--check-games<span class="w"> </span>--notify-games
+</code></pre></div>
+<p>To disable sending an email on errors (enabled by default):
+- set <code>ERROR_NOTIFICATION</code> to <code>False</code>
+- or use the <code>-e</code> flag</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>-e
+</code></pre></div>
+<p>Email and webhook error alerts are sent after <strong>5 minutes</strong> of a continuing failure. Problems that need your action, such as a rejected API key, alert immediately. Each kind of failure alerts once per channel. Failed deliveries are retried after 5 minutes, with increasing waits up to an hour. Alerts can fire again after monitoring recovers.</p>
+<p>Make sure you have configured your <a href="../configuration/#smtp-settings">SMTP settings</a> first.</p>
+<p>Example email:</p>
+<p align="center">
+   <img src="https://raw.githubusercontent.com/misiektoja/steam_monitor/refs/heads/main/assets/steam_monitor_email_notifications.png" alt="steam_monitor_email_notifications" width="85%"/>
+</p>
+
+<p><a id="webhook-notifications"></a></p>
+<h2 id="webhook-notifications">Webhook Notifications<a class="headerlink" href="#webhook-notifications" title="Permanent link">&para;</a></h2>
+<p>Webhook event switches mirror the email choices while remaining independent:</p>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>Configuration</th>
+<th>One-run flag</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>User goes online or offline</td>
+<td><code>WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION</code></td>
+<td><code>--webhook-active-inactive</code></td>
+</tr>
+<tr>
+<td>Any status change</td>
+<td><code>WEBHOOK_STATUS_NOTIFICATION</code></td>
+<td><code>--webhook-status</code></td>
+</tr>
+<tr>
+<td>Game starts, changes or stops</td>
+<td><code>WEBHOOK_GAME_CHANGE_NOTIFICATION</code></td>
+<td><code>--webhook-game-changes</code></td>
+</tr>
+<tr>
+<td>Steam level or XP changes</td>
+<td><code>WEBHOOK_LEVEL_XP_NOTIFICATION</code></td>
+<td><code>--webhook-level-xp</code></td>
+</tr>
+<tr>
+<td>Friends list changes</td>
+<td><code>WEBHOOK_FRIENDS_NOTIFICATION</code></td>
+<td><code>--webhook-friends</code></td>
+</tr>
+<tr>
+<td>Games library changes</td>
+<td><code>WEBHOOK_GAMES_NOTIFICATION</code></td>
+<td><code>--webhook-games</code></td>
+</tr>
+<tr>
+<td>Display name changes</td>
+<td><code>WEBHOOK_NAME_CHANGE_NOTIFICATION</code></td>
+<td><code>--webhook-name-change</code></td>
+</tr>
+<tr>
+<td>Monitoring errors</td>
+<td><code>WEBHOOK_ERROR_NOTIFICATION</code></td>
+<td><code>--webhook-errors</code> or <code>--no-webhook-error-notify</code></td>
+</tr>
+</tbody>
+</table>
+<p>Use <code>--webhook</code> or <code>--no-webhook</code> to override the master switch for one run. Event flags enable the master switch automatically. Level and XP, friends and games alerts require their corresponding tracking options.</p>
+<p>For example:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>--webhook-active-inactive<span class="w"> </span>--webhook-game-changes
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>--check-friends<span class="w"> </span>--webhook-friends
+</code></pre></div>
+<p>Known Discord and <code>ntfy.sh</code> URLs automatically select the matching request format even if the configured provider is stale. Set <code>WEBHOOK_PROVIDER</code> in <code>steam_monitor.conf</code> or use <code>--webhook-provider {discord,ntfy}</code> for self-hosted ntfy or compatible endpoints. For automation or one-time tests, <code>--webhook-url URL</code> overrides the destination without changing <code>.env</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>steam_monitor<span class="w"> </span>--webhook-provider<span class="w"> </span>ntfy<span class="w"> </span>--webhook-url<span class="w"> </span><span class="s2">"https://ntfy.sh/your-private-topic"</span><span class="w"> </span>--send-test-webhook
+</code></pre></div>
+<p>A URL passed on the command line may remain visible in shell history or process listings. Prefer <code>--set-webhook-url</code> for persistent private destinations.</p>
+<p><a id="csv-export"></a></p>
+<h2 id="csv-export">CSV Export<a class="headerlink" href="#csv-export" title="Permanent link">&para;</a></h2>
+<p>If you want to save all reported activities of the Steam user to a CSV file, set <code>CSV_FILE</code> or use <code>-b</code> flag:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>-b<span class="w"> </span>steam_user_id.csv
+</code></pre></div>
+<p>The file will be automatically created if it does not exist.</p>
+<p>If you want to save <strong>profile-related changes</strong> (Steam level changes, total XP changes, display name changes, friends count changes, games library changes and individual added/removed friends) to a <strong>separate CSV file</strong>, set <code>PROFILE_CSV_FILE</code> or use the <code>--profile-csv-file</code> flag:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>--profile-csv-file<span class="w"> </span>steam_user_id_profile.csv
+</code></pre></div>
+<p>Each row contains a timestamp, event type and associated values (for example: old/new Steam level or XP, friends count delta or one friend per row for added/removed friends, when available).</p>
+<p><a id="status-file"></a></p>
+<h2 id="status-file">Status File<a class="headerlink" href="#status-file" title="Permanent link">&para;</a></h2>
+<p>The tool saves the timestamp and last status after every change, so the last status is available after a restart. By default it uses <code>steam_&lt;steam64_id&gt;_last_status.json</code> in the current directory. Set <code>STEAM_STATUS_FILE</code> or use the <code>--status-file</code> flag to keep it somewhere else:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>--status-file<span class="w"> </span>~/steam/last_status.json
+</code></pre></div>
+<p>Interrupted writes leave the previous status file intact. If a saved timestamp is more than five minutes ahead of the machine clock, monitoring warns and starts timing that status again. Files named after the Steam display name by versions before 2.0 are renamed to use the Steam64 ID on first start.</p>
+<p><a id="check-intervals"></a></p>
+<h2 id="check-intervals">Check Intervals<a class="headerlink" href="#check-intervals" title="Permanent link">&para;</a></h2>
+<p>If you want to customize the polling intervals, use the <code>-k</code> and <code>-c</code> flags (or the corresponding configuration options):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>-k<span class="w"> </span><span class="m">30</span><span class="w"> </span>-c<span class="w"> </span><span class="m">120</span>
+</code></pre></div>
+<ul>
+<li><code>STEAM_ACTIVE_CHECK_INTERVAL</code>, <code>-k</code>: check interval when the user is online, away or snooze (seconds)</li>
+<li><code>STEAM_CHECK_INTERVAL</code>, <code>-c</code>: check interval when the user is offline (seconds)</li>
+</ul>
+<p>An active interval below 30 seconds invites the Steam rate limiter, which stops the tool seeing anything. <code>--doctor</code> warns when the configured interval is that short.
+<a id="liveness-reminder"></a></p>
+<h3 id="liveness-reminder">Liveness Reminder<a class="headerlink" href="#liveness-reminder" title="Permanent link">&para;</a></h3>
+<p>While nothing changes, the tool prints one reminder that it is still running:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>* Monitoring healthy for &lt;steam_target&gt;. The user is online with no status or game change since the last check
+<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>Liveness check, timestamp:  Mon 08 Sep 2026, 09:15:05
+</code></pre></div>
+<p>The reminder is timed in seconds, so it arrives at the same rate whichever check interval is in use. Set <code>LIVENESS_CHECK_INTERVAL</code> to change it (default: 86400, i.e. 24 hours) or to 0 to switch it off.</p>
+<p>Anything the tool prints about the target restarts the countdown, so a busy run stays quiet.</p>
+<p><a id="signal-controls-macoslinuxunix"></a></p>
+<h2 id="signal-controls-macoslinuxunix">Signal Controls (macOS/Linux/Unix)<a class="headerlink" href="#signal-controls-macoslinuxunix" title="Permanent link">&para;</a></h2>
+<p>The tool has several signal handlers implemented which allow to change behavior of the tool without a need to restart it with new configuration options / flags.</p>
+<p>List of supported signals:</p>
+<table>
+<thead>
+<tr>
+<th>Signal</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>USR1</td>
+<td>Toggle email notifications when user gets online or offline (-a)</td>
+</tr>
+<tr>
+<td>USR2</td>
+<td>Toggle email notifications when user starts/stops/changes the game (-g)</td>
+</tr>
+<tr>
+<td>CONT</td>
+<td>Toggle email notifications for all user status changes (online/away/snooze/offline) (-s)</td>
+</tr>
+<tr>
+<td>URG</td>
+<td>Toggle email notifications for Steam level/XP changes (--notify-level-xp)</td>
+</tr>
+<tr>
+<td>PIPE</td>
+<td>Toggle email notifications for friends list changes (--notify-friends)</td>
+</tr>
+<tr>
+<td>VTALRM</td>
+<td>Toggle email notifications for display name changes (--notify-name-change)</td>
+</tr>
+<tr>
+<td>TRAP</td>
+<td>Increase the check timer for player activity when user is online/away/snooze (by 30 seconds)</td>
+</tr>
+<tr>
+<td>ABRT</td>
+<td>Decrease check timer for player activity when user is online/away/snooze (by 30 seconds)</td>
+</tr>
+<tr>
+<td>HUP</td>
+<td>Reload secrets from .env file</td>
+</tr>
+</tbody>
+</table>
+<p><code>SIGHUP</code> keeps command-line credentials and nonempty environment values exported before startup. Change those values and restart to replace them.</p>
+<p>Send signals with <code>kill</code> or <code>pkill</code>, e.g.:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>pkill<span class="w"> </span>-USR1<span class="w"> </span>-f<span class="w"> </span><span class="s2">"steam_monitor &lt;steam_target&gt;"</span>
+</code></pre></div>
+<p>As Windows supports limited number of signals, this functionality is available only on Linux/Unix/macOS.</p>
+<p><a id="coloring-log-output-with-grc"></a></p>
+<h2 id="coloring-log-output-with-grc">Coloring Log Output with GRC<a class="headerlink" href="#coloring-log-output-with-grc" title="Permanent link">&para;</a></h2>
+<p>The tool colours the terminal itself, but you can also use <a href="https://github.com/garabik/grc">GRC</a> to colour logs.</p>
+<p>The bundled recipe follows the same colours as the live output. It also covers the other monitors in the family, so one copy in <code>~/.grc/</code> colours every tool's logs.</p>
+<p>Add to your GRC config (<code>~/.grc/grc.conf</code>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a># monitoring log file
+<a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a>.*_monitor_.*\.log
+<a id="__codelineno-27-3" name="__codelineno-27-3" href="#__codelineno-27-3"></a>conf.monitor_logs
+</code></pre></div>
+<p>Now copy the <a href="https://raw.githubusercontent.com/misiektoja/steam_monitor/refs/heads/main/grc/conf.monitor_logs">conf.monitor_logs</a> to your <code>~/.grc/</code> and log files should be nicely colored when using <code>grc</code> tool.</p>
+<p>Example:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>grc<span class="w"> </span>tail<span class="w"> </span>-F<span class="w"> </span>-n<span class="w"> </span><span class="m">100</span><span class="w"> </span>steam_monitor_&lt;user_steam_id/file_suffix&gt;.log
+</code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Licensed under GPLv3
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.top", "navigation.sections", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

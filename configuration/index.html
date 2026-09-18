@@ -1,0 +1,1230 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Real-time tracker for Steam players' activity with detailed profile insights and instant alerts">
+      
+      
+      
+        <link rel="canonical" href="https://misiektoja.github.io/steam_monitor/configuration/">
+      
+      
+        <link rel="prev" href="../setup-and-first-run/">
+      
+      
+        <link rel="next" href="../usage/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Configuration - steam_monitor</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#configuration" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="steam_monitor" class="md-header__button md-logo" aria-label="steam_monitor" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            steam_monitor
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Configuration
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="blue" data-md-color-accent="blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/misiektoja/steam_monitor" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    misiektoja/steam_monitor
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="steam_monitor" class="md-nav__button md-logo" aria-label="steam_monitor" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    steam_monitor
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/misiektoja/steam_monitor" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    misiektoja/steam_monitor
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../setup-and-first-run/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Setup & First Run
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration File
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#monitored-target" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Monitored Target
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#smtp-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SMTP Settings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#webhook-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Webhook Settings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Webhook Settings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ntfy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ntfy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#discord" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Discord
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#advanced-discord-format-customization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Advanced Discord-format customization
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#terminal-colours" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Terminal Colours
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#storing-secrets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Storing Secrets
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tls-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TLS Verification
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../usage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../about/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    About
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration File
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#monitored-target" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Monitored Target
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#smtp-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SMTP Settings
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#webhook-settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Webhook Settings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Webhook Settings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ntfy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ntfy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#discord" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Discord
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#advanced-discord-format-customization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Advanced Discord-format customization
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#terminal-colours" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Terminal Colours
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#storing-secrets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Storing Secrets
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tls-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TLS Verification
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/misiektoja/steam_monitor/edit/main/docs/configuration.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h1>
+<p>Examples on this page use the PyPI command <code>steam_monitor</code>. Manual script users should keep the shown options and use the matching prefix under <a href="../usage/#command-format-by-installation-method">Command Format by Installation Method</a>.</p>
+<p><a id="configuration-file"></a></p>
+<h2 id="configuration-file">Configuration File<a class="headerlink" href="#configuration-file" title="Permanent link">&para;</a></h2>
+<p>You can pass most settings as command-line options or save them in a configuration file for later runs.</p>
+<p>The easiest way to create this file is <code>steam_monitor --setup</code>.</p>
+<p>To edit every available setting yourself, generate a default configuration file:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># On macOS, Linux or Windows Command Prompt (cmd.exe)</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>steam_monitor<span class="w"> </span>--generate-config<span class="w"> </span>&gt;<span class="w"> </span>steam_monitor.conf
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># On Windows PowerShell (recommended to avoid encoding issues)</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>steam_monitor<span class="w"> </span>--generate-config<span class="w"> </span>steam_monitor.conf
+</code></pre></div>
+<blockquote>
+<p><strong>Windows PowerShell:</strong> Pass the filename directly to <code>--generate-config</code>. PowerShell redirection can write UTF-16, which the tool rejects with a "null bytes" error.</p>
+</blockquote>
+<p>When the named file already exists, <code>--generate-config</code> asks before replacing it and keeps a timestamped <code>.bak</code> backup next to it. Add <code>--force</code> to replace it without the question.</p>
+<p>The file contains a short explanation above each setting.</p>
+<p>A configuration file is read as data, not executed. The tool accepts only <code>SETTING = value</code> lines where the name is one of the documented settings and the value is a plain literal such as a string, number, <code>True</code>, <code>False</code>, <code>None</code>, a list or a dictionary. Comments and blank lines are fine.</p>
+<p>Imports, function calls, expressions and unknown settings are rejected with the setting and line number to correct.</p>
+<p>If the same setting appears in more than one place, the item later in this list wins:</p>
+<ol>
+<li>Built-in defaults</li>
+<li>The discovered or explicitly selected configuration file</li>
+<li>Values from the selected <code>.env</code> file</li>
+<li>Secret environment variables</li>
+<li>Command-line options</li>
+</ol>
+<p>By default the tool looks for a configuration file named <code>steam_monitor.conf</code> in the current directory, the home directory (<code>~</code>) and the script directory. Use <code>--config-file</code> to name another location or <code>--config-file none</code> to disable automatic config discovery for one run.</p>
+<p><a id="monitored-target"></a></p>
+<h2 id="monitored-target">Monitored Target<a class="headerlink" href="#monitored-target" title="Permanent link">&para;</a></h2>
+<p>The Steam target is a positional argument. It is required to start monitoring:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;
+</code></pre></div>
+<p>The target can be a Steam64 ID, a Steam3 identifier, a vanity name or a full profile URL.</p>
+<p>To stop repeating it, save it in the configuration file:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="na">TARGET_STEAM_ID</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"76561201960435530"</span>
+</code></pre></div>
+<p><code>TARGET_STEAM_ID</code> accepts the same forms as the command line. Then <code>steam_monitor</code> alone starts monitoring that profile. A positional argument still wins, so you can watch someone else for one run without editing the file:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>steam_monitor<span class="w"> </span><span class="m">76561201960287930</span>
+</code></pre></div>
+<p><a id="smtp-settings"></a></p>
+<h2 id="smtp-settings">SMTP Settings<a class="headerlink" href="#smtp-settings" title="Permanent link">&para;</a></h2>
+<p>Email notifications need SMTP server details for the sending account. Add them to <code>steam_monitor.conf</code> or use the setup wizard. Setup checks the login without sending an email. To replace only the password, run <code>steam_monitor --set-smtp-password</code>. Password entry is hidden and preserves spaces.</p>
+<p>Send one test message to verify the settings:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>steam_monitor<span class="w"> </span>--send-test-email
+</code></pre></div>
+<p><a id="webhook-settings"></a></p>
+<h2 id="webhook-settings">Webhook Settings<a class="headerlink" href="#webhook-settings" title="Permanent link">&para;</a></h2>
+<p>Steam Monitor can send activity alerts through Discord or the native <a href="https://docs.ntfy.sh/publish/">ntfy publish API</a>. Webhook alerts are independent from email, so either channel can be enabled alone or both can receive the same event.</p>
+<p><a href="../setup-and-first-run/#run-the-setup-wizard"><code>--setup</code></a> collects the webhook URL and detects the provider from it. To configure it separately, save the private destination through a hidden prompt:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>steam_monitor<span class="w"> </span>--set-webhook-url
+</code></pre></div>
+<p>The command checks the URL and saves <code>WEBHOOK_URL</code> to <code>.env</code> without sending a message. Use <code>--env-file PATH</code> for another destination. Select the provider and event switches in <code>steam_monitor.conf</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">WEBHOOK_ENABLED</span> <span class="o">=</span> <span class="kc">True</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">WEBHOOK_PROVIDER</span> <span class="o">=</span> <span class="s2">"discord"</span>  <span class="c1"># or "ntfy"</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION</span> <span class="o">=</span> <span class="kc">True</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="n">WEBHOOK_STATUS_NOTIFICATION</span> <span class="o">=</span> <span class="kc">False</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="n">WEBHOOK_GAME_CHANGE_NOTIFICATION</span> <span class="o">=</span> <span class="kc">True</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="n">WEBHOOK_LEVEL_XP_NOTIFICATION</span> <span class="o">=</span> <span class="kc">False</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="n">WEBHOOK_FRIENDS_NOTIFICATION</span> <span class="o">=</span> <span class="kc">False</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="n">WEBHOOK_GAMES_NOTIFICATION</span> <span class="o">=</span> <span class="kc">False</span>
+<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="n">WEBHOOK_NAME_CHANGE_NOTIFICATION</span> <span class="o">=</span> <span class="kc">False</span>
+<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="n">WEBHOOK_ERROR_NOTIFICATION</span> <span class="o">=</span> <span class="kc">True</span>
+</code></pre></div>
+<p>A <code>WEBHOOK_URL</code> left unset, or left at its <code>your_webhook_url</code> placeholder, switches webhook alerts off at startup instead of failing at the first alert. <code>--verbose</code> reports why.</p>
+<p>The service is detected from the URL. While <code>WEBHOOK_PROVIDER</code> is left at its default, that detection is silent and <code>--verbose</code> reports it. A warning appears only when your configuration file sets a provider the URL disagrees with.</p>
+<p>Verify delivery without starting monitoring:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>steam_monitor<span class="w"> </span>--send-test-webhook
+</code></pre></div>
+<p><a id="ntfy"></a></p>
+<h3 id="ntfy">ntfy<a class="headerlink" href="#ntfy" title="Permanent link">&para;</a></h3>
+<p>For ntfy.sh or a self-hosted ntfy server, use a complete private topic URL such as <code>https://ntfy.sh/steam-monitor-long-random-value</code>. Public <code>ntfy.sh</code> URLs select the ntfy request format automatically. Set the provider in <code>steam_monitor.conf</code> for a self-hosted endpoint:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="na">WEBHOOK_PROVIDER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"ntfy"</span>
+</code></pre></div>
+<p>The ntfy provider needs no template. Steam Monitor sends the alert body as a native ntfy message with the subject as its title. Long ntfy text messages are visibly truncated below ntfy's 4 KB boundary so they remain notifications instead of temporary attachments.</p>
+<p>Topics on the public ntfy.sh service are public unless protected through an account reservation. Treat an unprotected topic name like a password. Protected ntfy topics can use <code>NTFY_ACCESS_TOKEN</code> from an environment variable or dotenv file:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="na">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s">"tk_your_ntfy_access_token"</span>
+</code></pre></div>
+<p><code>NTFY_IMAGES</code> enables bounded Steam avatar or game artwork attachments. It is disabled by default and needs the optional Pillow package:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"steam_monitor[ntfy-images]"</span>
+</code></pre></div>
+<p>Then enable it in <code>steam_monitor.conf</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="na">NTFY_IMAGES</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">True</span>
+</code></pre></div>
+<p>If artwork is enabled while Pillow is missing, startup says so, names the exact install command and keeps sending text-only alerts. If image preparation or upload fails, delivery falls back to text. Debug mode records why image preparation failed. Intentional image attachments through <code>NTFY_IMAGES</code> are not affected by the text truncation above.</p>
+<p>Customize ntfy delivery further through <code>WEBHOOK_HEADERS</code>, for example <code>X-Priority</code> or <code>X-Tags</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="na">WEBHOOK_HEADERS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">{</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">    </span><span class="na">"X-Webhook-Title"</span><span class="o">:</span><span class="w"> </span><span class="s">"{title}"</span><span class="na">,</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="na">}</span>
+</code></pre></div>
+<p>Header values support the same placeholders as <code>WEBHOOK_TEMPLATE</code> and apply to both Discord and ntfy.</p>
+<p><a id="discord"></a></p>
+<h3 id="discord">Discord<a class="headerlink" href="#discord" title="Permanent link">&para;</a></h3>
+<p>If you are new to Discord, follow these steps to get your private webhook URL:</p>
+<ol>
+<li>Open your Steam alerts server and choose the channel that should receive them.</li>
+<li>Select <strong>Edit Channel</strong>, open <strong>Integrations</strong> then choose <strong>Webhooks</strong>.</li>
+<li>Create a webhook, choose a name if you want then copy its private URL.</li>
+<li>Save it with <code>steam_monitor --set-webhook-url</code>.</li>
+</ol>
+<p>Treat this link like a password because anyone who has it can post through it.</p>
+<p>Keep the default provider in <code>steam_monitor.conf</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="na">WEBHOOK_PROVIDER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"discord"</span>
+</code></pre></div>
+<p><a id="advanced-discord-format-customization"></a></p>
+<h3 id="advanced-discord-format-customization">Advanced Discord-format customization<a class="headerlink" href="#advanced-discord-format-customization" title="Permanent link">&para;</a></h3>
+<p><code>WEBHOOK_USERNAME</code> and <code>WEBHOOK_AVATAR_URL</code> change the sender name and HTTPS avatar for Discord-format payloads:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="na">WEBHOOK_USERNAME</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"Steam Monitor"</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="na">WEBHOOK_AVATAR_URL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"https://example.com/path/avatar.png"</span>
+</code></pre></div>
+<p><code>WEBHOOK_TEMPLATE</code> controls the Discord-format request body. It supports these placeholders:</p>
+<ul>
+<li><code>{title}</code></li>
+<li><code>{description}</code></li>
+<li><code>{version}</code></li>
+<li><code>{image_url}</code></li>
+<li><code>{fields}</code> and <code>{fields_str}</code></li>
+<li><code>{color}</code></li>
+<li><code>{timestamp}</code></li>
+<li><code>{username}</code></li>
+<li><code>{avatar_url}</code></li>
+</ul>
+<p>Discord templates must produce a JSON object. Use a dictionary or a JSON string encoding an object, including legacy strings with doubled object braces. Lists, non-JSON strings and unsupported placeholders are rejected before delivery. Alert text is kept literal and all payloads replace <code>allowed_mentions</code> with <code>{"parse": []}</code> so alert text cannot trigger Discord mentions. Reloaded settings apply to the next delivery.</p>
+<p><code>WEBHOOK_TRANSFORMS</code> applies string methods to shared placeholder values before the template and headers are rendered:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="na">WEBHOOK_TRANSFORMS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">[</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="w">    </span><span class="na">("title", "upper"),</span>
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="w">    </span><span class="na">("description", "replace", "**", ""),</span>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="w">    </span><span class="na">("description", "strip"),</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="na">]</span>
+</code></pre></div>
+<p>The tuple format is <code>(field_to_target, method_name, *optional_arguments)</code>. Invalid templates, avatar URLs, transforms or formatted headers fail before a request is attempted. <code>WEBHOOK_TEMPLATE</code>, <code>WEBHOOK_USERNAME</code> and <code>WEBHOOK_AVATAR_URL</code> apply only to the Discord request format and are ignored when <code>WEBHOOK_PROVIDER</code> is <code>"ntfy"</code>. ntfy continues to use its native publish API while transformations and header placeholders use the same shared title and description values.</p>
+<p><a id="terminal-colours"></a></p>
+<h2 id="terminal-colours">Terminal Colours<a class="headerlink" href="#terminal-colours" title="Permanent link">&para;</a></h2>
+<p>Terminal output is coloured by default. <code>COLORED_OUTPUT</code> and <code>COLOR_THEME</code> apply to monitoring output and to the <code>--setup</code>, <code>--doctor</code> and <code>--help</code> screens. <code>--no-color</code> turns colour off for all of them.</p>
+<p>The <code>--help</code> screen is coloured too. Group headings, option names, the values those options take, the example commands and the comments above them each get their own colour, so the screen can be scanned instead of read.</p>
+<p>Turn it off for one run:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>--no-color
+</code></pre></div>
+<p>Turn it off permanently in the config file:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="n">COLORED_OUTPUT</span> <span class="o">=</span> <span class="kc">False</span>
+</code></pre></div>
+<p>On Windows, install <a href="https://pypi.org/project/colorama/">colorama</a> for colours in the older Command Prompt. Windows Terminal needs nothing extra.</p>
+<p>Each part of the output has a logical name. <code>COLOR_THEME</code> in the config file overrides only the names it lists. Combine attributes with spaces or <code>+</code>, for example <code>"bright_cyan bold"</code> or <code>"red underline"</code>. Valid colours are <code>black</code>, <code>red</code>, <code>green</code>, <code>yellow</code>, <code>blue</code>, <code>magenta</code>, <code>cyan</code>, <code>white</code> and their <code>bright_</code> variants, plus the <code>bold</code>, <code>dim</code>, <code>underline</code> and <code>blink</code> attributes. An empty string leaves that part uncoloured.</p>
+<p>The built-in colours apply unless you set <code>COLOR_THEME</code>. Older configurations may set every colour explicitly. Remove that block to use current defaults or edit individual values to keep a custom theme. The old <code>steam_id</code> key is still accepted as <code>id</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="n">COLOR_THEME</span> <span class="o">=</span> <span class="p">{</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>    <span class="s2">"game"</span><span class="p">:</span> <span class="s2">"bright_magenta bold"</span><span class="p">,</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>    <span class="s2">"duration"</span><span class="p">:</span> <span class="s2">"cyan"</span><span class="p">,</span>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="p">}</span>
+</code></pre></div>
+<p>The four presence colours apply where the tool reports a state, such as a <code>Status:</code> row, a status change line or a capitalised state like <code>*** User got OFFLINE !</code>. A sentence that only mentions a state, such as the liveness line <code>The user is offline with no status or game change since the last check</code>, stays in the default colour. The two boolean colours apply to a <code>Yes</code> or <code>No</code> that is the whole value of a labelled row, not to the word inside a sentence.</p>
+<table>
+<thead>
+<tr>
+<th>Theme key</th>
+<th>Default</th>
+<th>What it colours</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>header</code></td>
+<td><code>bright_cyan</code></td>
+<td>Report and wizard headings, plus the ASCII banner</td>
+</tr>
+<tr>
+<td><code>section</code></td>
+<td><code>bright_white</code></td>
+<td>Section names and every command the tool tells you to run</td>
+</tr>
+<tr>
+<td><code>username</code></td>
+<td><code>bright_cyan underline</code></td>
+<td>The monitored account name and the detected install method</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td><code>bright_magenta</code></td>
+<td>The Steam64 ID</td>
+</tr>
+<tr>
+<td><code>status_online</code></td>
+<td><code>green</code></td>
+<td>An online presence</td>
+</tr>
+<tr>
+<td><code>status_offline</code></td>
+<td><code>red</code></td>
+<td>An offline presence</td>
+</tr>
+<tr>
+<td><code>status_away</code></td>
+<td><code>yellow</code></td>
+<td>An away presence</td>
+</tr>
+<tr>
+<td><code>status_snooze</code></td>
+<td><code>magenta</code></td>
+<td>A snooze presence</td>
+</tr>
+<tr>
+<td><code>status_other</code></td>
+<td><code>white</code></td>
+<td>A presence value the tool does not recognise</td>
+</tr>
+<tr>
+<td><code>game</code></td>
+<td><code>bright_yellow</code></td>
+<td>Game titles</td>
+</tr>
+<tr>
+<td><code>duration</code></td>
+<td><code>green</code></td>
+<td>Time spans such as <code>3 hours, 21 minutes</code></td>
+</tr>
+<tr>
+<td><code>timestamp_label</code></td>
+<td><em>(empty)</em></td>
+<td>The <code>Timestamp:</code> label, left uncoloured by default</td>
+</tr>
+<tr>
+<td><code>timestamp_value</code></td>
+<td><code>cyan</code></td>
+<td>The timestamp itself</td>
+</tr>
+<tr>
+<td><code>info</code></td>
+<td><code>cyan</code></td>
+<td><code>To fix:</code> lines, notes, prompts and <code>[SKIP]</code> rows</td>
+</tr>
+<tr>
+<td><code>warning</code></td>
+<td><code>yellow</code></td>
+<td><code>* Warning:</code> lines and <code>[WARN]</code> rows</td>
+</tr>
+<tr>
+<td><code>error</code></td>
+<td><code>red</code></td>
+<td><code>* Error:</code> lines and <code>[FAIL]</code> rows</td>
+</tr>
+<tr>
+<td><code>signal</code></td>
+<td><code>yellow</code></td>
+<td><code>* Signal ... received</code> lines</td>
+</tr>
+<tr>
+<td><code>email</code></td>
+<td><code>bright_cyan</code></td>
+<td>Lines reporting an email being sent</td>
+</tr>
+<tr>
+<td><code>webhook</code></td>
+<td><code>bright_blue</code></td>
+<td>Lines reporting a webhook being sent</td>
+</tr>
+<tr>
+<td><code>date</code></td>
+<td><code>magenta</code></td>
+<td>Single dates and times</td>
+</tr>
+<tr>
+<td><code>date_range</code></td>
+<td><code>magenta</code></td>
+<td>Date and time ranges</td>
+</tr>
+<tr>
+<td><code>boolean_true</code></td>
+<td><code>green</code></td>
+<td><code>True</code>, <code>Enabled</code>, <code>On</code>, a <code>Yes</code> answer and <code>[PASS]</code> rows</td>
+</tr>
+<tr>
+<td><code>boolean_false</code></td>
+<td><code>red</code></td>
+<td><code>False</code>, <code>Disabled</code>, <code>Off</code> and a <code>No</code> answer</td>
+</tr>
+<tr>
+<td><code>link</code></td>
+<td><code>blue underline</code></td>
+<td>URLs</td>
+</tr>
+<tr>
+<td><code>help_heading</code></td>
+<td><code>bright_cyan bold</code></td>
+<td>The <code>--help</code> group headings and example task names</td>
+</tr>
+<tr>
+<td><code>help_usage</code></td>
+<td><code>bright_white bold</code></td>
+<td>The <code>usage:</code> label</td>
+</tr>
+<tr>
+<td><code>help_option</code></td>
+<td><code>bright_green</code></td>
+<td>Option names such as <code>--doctor</code></td>
+</tr>
+<tr>
+<td><code>help_metavar</code></td>
+<td><code>yellow</code></td>
+<td>The value each option takes, such as a path or a number of seconds</td>
+</tr>
+<tr>
+<td><code>help_placeholder</code></td>
+<td><code>bright_magenta</code></td>
+<td>Values to replace in the help examples</td>
+</tr>
+<tr>
+<td><code>help_command</code></td>
+<td><code>bright_white</code></td>
+<td>The commands in the help examples</td>
+</tr>
+<tr>
+<td><code>help_comment</code></td>
+<td><code>bright_black</code></td>
+<td>The <code>#</code> comment above each help example</td>
+</tr>
+<tr>
+<td><code>help_default</code></td>
+<td><code>bright_black</code></td>
+<td>The <code>(default: ...)</code> notes</td>
+</tr>
+</tbody>
+</table>
+<p><a id="storing-secrets"></a></p>
+<h2 id="storing-secrets">Storing Secrets<a class="headerlink" href="#storing-secrets" title="Permanent link">&para;</a></h2>
+<p>It is recommended to store secrets like <code>STEAM_API_KEY</code>, <code>SMTP_PASSWORD</code>, <code>WEBHOOK_URL</code> or <code>NTFY_ACCESS_TOKEN</code> as either an environment variable or in a dotenv file.</p>
+<p>Both work on their own. An exported environment variable is applied whether or not a dotenv file exists, and a value exported in your shell overrides the same name in the dotenv file. Run with <code>--verbose</code> to see which of the two supplied each secret.</p>
+<p>Set environment variables using <code>export</code> on <strong>Linux/Unix/macOS/WSL</strong> systems:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">STEAM_API_KEY</span><span class="o">=</span><span class="s2">"your_steam_web_api_key"</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SMTP_PASSWORD</span><span class="o">=</span><span class="s2">"your_smtp_password"</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">WEBHOOK_URL</span><span class="o">=</span><span class="s2">"https://discord.com/api/webhooks/..."</span>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="nb">export</span><span class="w"> </span><span class="nv">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s2">"your_ntfy_access_token"</span>
+</code></pre></div>
+<p>On <strong>Windows Command Prompt</strong> use <code>set</code> instead of <code>export</code> and on <strong>Windows PowerShell</strong> use <code>$env</code>.</p>
+<p>Alternatively store them persistently in a dotenv file (recommended):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="na">STEAM_API_KEY</span><span class="o">=</span><span class="s">"your_steam_web_api_key"</span>
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="na">SMTP_PASSWORD</span><span class="o">=</span><span class="s">"your_smtp_password"</span>
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="na">WEBHOOK_URL</span><span class="o">=</span><span class="s">"https://discord.com/api/webhooks/..."</span>
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="na">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s">"your_ntfy_access_token"</span>
+</code></pre></div>
+<p>Use <code>steam_monitor --set-smtp-password</code> after configuring the other SMTP settings. It checks sign-in before saving and keeps input hidden. An exported <code>SMTP_PASSWORD</code> overrides the saved value at startup.</p>
+<p>Secret commands save the dotenv file with owner-only permissions and leave the original intact if writing fails. Replaced secrets are not backed up.</p>
+<p>By default the tool will auto-search for dotenv file named <code>.env</code> in current directory and then upward from it.</p>
+<p>You can specify a custom file with <code>DOTENV_FILE</code> or <code>--env-file</code> flag:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>--env-file<span class="w"> </span>/path/.env-steam_monitor
+</code></pre></div>
+<p>You can also disable <code>.env</code> auto-search with <code>DOTENV_FILE = "none"</code> or <code>--env-file none</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>--env-file<span class="w"> </span>none
+</code></pre></div>
+<p>As a fallback, you can also store secrets in the configuration file or source code.</p>
+<p>A forgotten <code>export</code> can shadow the dotenv file invisibly, so <code>--debug</code> names every secret and the source it resolved from, never the value:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>[DEBUG 12:00:00] Secret resolution: name=STEAM_API_KEY, source=environment, value=set, chars=32
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>[DEBUG 12:00:00] Secret resolution: name=SMTP_PASSWORD, source=dotenv file, value=set
+</code></pre></div>
+<p>A secret still holding its <code>your_...</code> placeholder counts as unset and is left out, and a run with no secret anywhere says so on one line. A length appears only for the secrets whose length the provider issues, never for a password you chose.</p>
+<p>Secret commands update the selected value without changing other dotenv settings. Clearing a value removes its assignment.</p>
+<p><a id="tls-verification"></a></p>
+<h2 id="tls-verification">TLS Verification<a class="headerlink" href="#tls-verification" title="Permanent link">&para;</a></h2>
+<p>The tool verifies the TLS certificate of every server it contacts: the Steam Web API, the connectivity check endpoint, the mail server that delivers email alerts and, when enabled, the webhook service.</p>
+<p>Set <code>VERIFY_SSL</code> to <code>False</code> only on a network that intercepts TLS with its own certificate authority, such as a corporate proxy. With verification off, an intercepted connection cannot be told apart from the real service.</p>
+<p>The startup summary shows <code>TLS verification</code> and <a href="../troubleshooting/#doctor-preflight"><code>--doctor</code></a> reports a warning while it is off.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Licensed under GPLv3
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.top", "navigation.sections", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
