@@ -4,6 +4,11 @@ from unittest.mock import Mock, patch
 import steam_monitor
 
 
+# Returns the TLS verification setting the module applies to every outbound request
+def monitor_verify_ssl():
+    return steam_monitor.VERIFY_SSL
+
+
 class ResolveSteamCommunityUrlTests(unittest.TestCase):
     # Builds a mocked HTTP response for resolver tests
     def make_response(self, status_code=200, payload=None, headers=None):
@@ -16,35 +21,35 @@ class ResolveSteamCommunityUrlTests(unittest.TestCase):
     # Verifies that numeric profile URLs are resolved without an HTTP request
     def test_resolves_numeric_profile_url_locally(self):
         with patch.object(steam_monitor.req, "get") as get_mock:
-            result = steam_monitor.resolve_steam_community_url("https://steamcommunity.com/profiles/76561197960265740/", "test-key")
+            result = steam_monitor.resolve_steam_community_url("https://steamcommunity.com/profiles/76561201960265740/", "test-key")
 
-        self.assertEqual(result, 76561197960265740)
+        self.assertEqual(result, 76561201960265740)
         get_mock.assert_not_called()
 
     # Verifies that Steam3 profile URLs are resolved without an HTTP request
     def test_resolves_steam3_profile_url_locally(self):
         with patch.object(steam_monitor.req, "get") as get_mock:
-            result = steam_monitor.resolve_steam_community_url("https://steamcommunity.com/profiles/[U:1:12]/", "test-key")
+            result = steam_monitor.resolve_steam_community_url("https://steamcommunity.com/profiles/[U:1:4000000012]/", "test-key")
 
-        self.assertEqual(result, 76561197960265740)
+        self.assertEqual(result, 76561201960265740)
         get_mock.assert_not_called()
 
     # Verifies that Steam invite URLs are decoded without an HTTP request
     def test_resolves_steam_invite_url_locally(self):
         with patch.object(steam_monitor.req, "get") as get_mock:
-            result = steam_monitor.resolve_steam_community_url("https://steamcommunity.com/user/cv-dgb/", "test-key")
+            result = steam_monitor.resolve_steam_community_url("https://steamcommunity.com/user/vvjt-bpgb/", "test-key")
 
-        self.assertEqual(result, 76561197960389184)
+        self.assertEqual(result, 76561201960389184)
         get_mock.assert_not_called()
 
     # Verifies that vanity profile URLs use the official Steam Web API
     def test_resolves_vanity_url_through_web_api(self):
-        response = self.make_response(payload={"response": {"steamid": "76561197960265740", "success": 1}})
+        response = self.make_response(payload={"response": {"steamid": "76561201960265740", "success": 1}})
         with patch.object(steam_monitor.req, "get", return_value=response) as get_mock:
             result = steam_monitor.resolve_steam_community_url("https://steamcommunity.com/id/misiektoja/", "test-key")
 
-        self.assertEqual(result, 76561197960265740)
-        get_mock.assert_called_once_with("https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/", params={"key": "test-key", "vanityurl": "misiektoja", "url_type": 1}, timeout=30)
+        self.assertEqual(result, 76561201960265740)
+        get_mock.assert_called_once_with("https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/", params={"key": "test-key", "vanityurl": "misiektoja", "url_type": 1}, timeout=30, verify=monitor_verify_ssl())
 
     # Verifies that API no-match responses produce a useful resolver error
     def test_reports_unresolved_vanity_url(self):

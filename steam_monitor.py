@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.9.2
+v2.0
 
 Tool implementing real-time tracking of Steam players activities:
 https://github.com/misiektoja/steam_monitor/
 
 Python pip3 requirements:
 
-steam[client]
+steam
 requests
 python-dateutil
 python-dotenv (optional)
-Pillow (for ntfy images)
+Pillow (optional, needed only when NTFY_IMAGES attaches artwork to ntfy alerts)
 colorama (optional, for better colours on Windows terminals)
 """
 
-VERSION = "1.9.2"
+VERSION = "2.0"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -34,6 +34,10 @@ CONFIG_BLOCK = """
 # Fallback:
 #   - Hard-code it in the code or config file
 STEAM_API_KEY = "your_steam_web_api_key"
+
+# Steam profile to monitor by Steam64 ID, Steam3 identifier, vanity name or profile URL
+# A positional command-line target overrides this value
+TARGET_STEAM_ID = ""
 
 # SMTP settings for sending email notifications
 # If left as-is, no notifications will be sent
@@ -94,18 +98,16 @@ WEBHOOK_PROVIDER = "discord"
 WEBHOOK_URL = "your_webhook_url"
 
 # Discord display name (leave empty to use the webhook default)
+# Applies only when WEBHOOK_PROVIDER is "discord" (ignored by the ntfy provider)
 WEBHOOK_USERNAME = "Steam Monitor"
 
 # Discord avatar URL (leave empty to use the webhook default)
+# Applies only when WEBHOOK_PROVIDER is "discord" (ignored by the ntfy provider)
 WEBHOOK_AVATAR_URL = ""
 
-# Whether to send a webhook notification when the user becomes active
-# Can also be enabled via the --webhook-active flag
-WEBHOOK_ACTIVE_NOTIFICATION = False
-
-# Whether to send a webhook notification when the user goes offline
-# Can also be enabled via the --webhook-inactive flag
-WEBHOOK_INACTIVE_NOTIFICATION = False
+# Whether to send a webhook notification when user goes online/offline
+# Can also be enabled via the --webhook-active-inactive flag
+WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION = False
 
 # Whether to send a webhook notification on any status change
 # Can also be enabled via the --webhook-status flag
@@ -139,11 +141,23 @@ WEBHOOK_ERROR_NOTIFICATION = True
 # Values support the same placeholders as WEBHOOK_TEMPLATE
 WEBHOOK_HEADERS = {}
 
+# Optional ntfy access token for Bearer authentication
+# Prefer an environment variable or dotenv file instead of storing this token here
+NTFY_ACCESS_TOKEN = ""
+
+# Whether to attach a Steam avatar or game image to supported ntfy alerts
+# Requires the optional Pillow package: pip3 install "steam_monitor[ntfy-images]"
+# Image preparation or delivery failures fall back to text
+NTFY_IMAGES = False
+
 # ----------------------------
 # Advanced Webhook Settings
 # ----------------------------
 
 # Discord-format webhook request payload template
+# Applies only when WEBHOOK_PROVIDER is "discord". The "ntfy" provider needs no template and ignores this
+# value: it sends the alert body as a native ntfy message with the subject as its title. Use WEBHOOK_HEADERS
+# to add ntfy options such as priority or tags
 # Supported placeholders include title, description, version, image_url, fields, fields_str, color, timestamp,
 # username and avatar_url
 WEBHOOK_TEMPLATE = {
@@ -176,14 +190,6 @@ WEBHOOK_TEMPLATE = {
 #       ("description", "strip"),
 #   ]
 WEBHOOK_TRANSFORMS = []
-
-# Optional ntfy access token for Bearer authentication
-# Prefer an environment variable or dotenv file instead of storing this token here
-NTFY_ACCESS_TOKEN = ""
-
-# Whether to attach a Steam avatar or game image to supported ntfy alerts
-# Image preparation or delivery failures fall back to text
-NTFY_IMAGES = True
 
 # Whether to periodically check the user's Steam level and total XP for changes
 # (disabled by default to avoid extra API usage)
@@ -233,13 +239,18 @@ STEAM_SNOOZE_INACTIVITY_THRESHOLD = 7200  # 2 hours
 
 # How often to print a "liveness check" message to the output; in seconds
 # Set to 0 to disable
-LIVENESS_CHECK_INTERVAL = 43200  # 12 hours
+LIVENESS_CHECK_INTERVAL = 86400  # 24 hours
 
 # URL used to verify internet connectivity at startup
 CHECK_INTERNET_URL = 'https://api.steampowered.com/'
 
 # Timeout used when checking initial internet connectivity; in seconds
 CHECK_INTERNET_TIMEOUT = 5
+
+# Whether to verify TLS certificates on every outbound connection, email delivery included
+# Only set this to False on a network that intercepts TLS with its own certificate authority
+# Switching it off removes the protection against an intercepted connection
+VERIFY_SSL = True
 
 # CSV file to write all status & game changes
 # Can also be set using the -b flag
@@ -248,6 +259,11 @@ CSV_FILE = ""
 # Optional separate CSV file for profile-related changes (Steam level, total XP, friends changes)
 # Can also be set using the --profile-csv-file flag
 PROFILE_CSV_FILE = ""
+
+# File the tool saves the last seen status to, so a restart resumes from the previous session
+# Leave empty to use steam_<steam64_id>_last_status.json in the current directory
+# Can also be set using the --status-file flag
+STEAM_STATUS_FILE = ""
 
 # Location of the optional dotenv file which can keep secrets
 # If not specified it will try to auto-search for .env files
@@ -273,6 +289,13 @@ DISABLE_LOGGING = False
 #   "Off"  - preserve Unicode separators in logs
 ASCII_LOG_SEPARATORS = "Auto"
 
+# Max characters per line when printing to screen to avoid line wrapping
+# Does not affect log file output
+# Set to 999 to auto-detect terminal width
+# Applies only when DISABLE_LOGGING is False
+# Can also be set via the --truncate flag
+TRUNCATE_CHARS = 0
+
 # Width of horizontal line
 HORIZONTAL_LINE = 113
 
@@ -290,37 +313,66 @@ COLORED_OUTPUT = True
 #   "bright_cyan bold", "yellow", "red underline", "bright_magenta bold underline", "red bold blink"
 # Valid colour names: black, red, green, yellow, blue, magenta, cyan, white,
 # and their bright_ variants (bright_red, bright_green, ...).
-COLOR_THEME = {
-    # General sections
-    "header": "bright_cyan",
-    "section": "bright_white",
-    # Identity
-    "username": "blue underline",
-    "steam_id": "bright_magenta",
-    # Status values
-    "status_online": "green",
-    "status_offline": "red",
-    "status_away": "yellow",
-    "status_snooze": "magenta",
-    "status_other": "white",
-    # Activity / game info
-    "status_change": "yellow",
-    "game": "bright_yellow",
-    "duration": "green",
-    # Misc
-    "timestamp_label": "",
-    "timestamp_value": "cyan",
-    "info": "cyan",
-    "warning": "yellow",
-    "error": "red",
-    "signal": "yellow",
-    # Dates
-    "date": "magenta",
-    "date_range": "magenta",
-    # Boolean values
-    "boolean_true": "green",
-    "boolean_false": "red",
-}
+# The defaults below are what the tool uses while this block stays commented out. Uncomment it to override
+# them and keep only the lines you want to change, so the rest keep following the tool's own defaults.
+# COLOR_THEME = {
+#     # General sections
+#     "header": "bright_cyan",
+#     "section": "bright_white",
+#     # Identity
+#     "username": "bright_cyan underline",
+#     "id": "bright_magenta",
+#     # Status values
+#     "status_online": "green",
+#     "status_offline": "red",
+#     "status_away": "yellow",
+#     "status_snooze": "magenta",
+#     "status_other": "white",
+#     # Activity / game info
+#     "game": "bright_yellow",
+#     "duration": "green",
+#     # Misc
+#     "timestamp_label": "",
+#     "timestamp_value": "cyan",
+#     "info": "cyan",
+#     "warning": "yellow",
+#     "error": "red",
+#     "signal": "yellow",
+#     "email": "bright_cyan",
+#     "webhook": "bright_blue",
+#     # Dates
+#     "date": "magenta",
+#     "date_range": "magenta",
+#     # Boolean values
+#     "boolean_true": "green",
+#     "boolean_false": "red",
+#     # Links
+#     "link": "blue underline",
+#     # Help screen
+#     "help_heading": "bright_cyan bold",
+#     "help_usage": "bright_white bold",
+#     "help_option": "bright_green",
+#     "help_metavar": "yellow",
+#     "help_placeholder": "bright_magenta",
+#     "help_command": "bright_white",
+#     "help_comment": "bright_black",
+#     "help_default": "bright_black",
+# }
+
+# Whether to print extra startup and runtime detail
+# Independent of DEBUG_MODE, so enable both to see everything
+# Can also be enabled via the --verbose flag, which turns it on regardless of this setting
+VERBOSE_MODE = False
+
+# Whether to print timestamped diagnostic detail, including outbound calls,
+# each notification delivery attempt and the technical cause of failures
+# Independent of VERBOSE_MODE, so enable both to see everything
+# Can also be enabled via the --debug flag, which turns it on regardless of this setting
+DEBUG_MODE = False
+
+# Whether verbose output confirms each delivered email and webhook alert
+# Applies only when VERBOSE_MODE is enabled
+DELIVERY_CONFIRMATIONS = True
 
 # Value used by signal handlers increasing/decreasing the check for player activity
 # when user is online/away/snooze (STEAM_ACTIVE_CHECK_INTERVAL); in seconds
@@ -334,6 +386,7 @@ STEAM_ACTIVE_CHECK_SIGNAL_VALUE = 30  # 30 seconds
 # Default dummy values so linters shut up
 # Do not change values below - modify them in the configuration section or config file instead
 STEAM_API_KEY = ""
+TARGET_STEAM_ID = ""
 SMTP_HOST = ""
 SMTP_PORT = 0
 SMTP_USER = ""
@@ -351,8 +404,7 @@ WEBHOOK_PROVIDER = ""
 WEBHOOK_URL = ""
 WEBHOOK_USERNAME = ""
 WEBHOOK_AVATAR_URL = ""
-WEBHOOK_ACTIVE_NOTIFICATION = False
-WEBHOOK_INACTIVE_NOTIFICATION = False
+WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION = False
 WEBHOOK_STATUS_NOTIFICATION = False
 WEBHOOK_GAME_CHANGE_NOTIFICATION = False
 WEBHOOK_LEVEL_XP_NOTIFICATION = False
@@ -361,17 +413,16 @@ WEBHOOK_GAMES_NOTIFICATION = False
 WEBHOOK_NAME_CHANGE_NOTIFICATION = False
 WEBHOOK_ERROR_NOTIFICATION = False
 WEBHOOK_HEADERS = {}
-WEBHOOK_TEMPLATE = {}
-WEBHOOK_TRANSFORMS = []
 NTFY_ACCESS_TOKEN = ""
 NTFY_IMAGES = False
+WEBHOOK_TEMPLATE = {}
+WEBHOOK_TRANSFORMS = []
 STEAM_LEVEL_XP_CHECK = False
 STEAM_LEVEL_XP_NOTIFICATION = False
 FRIENDS_CHECK = False
 FRIENDS_NOTIFICATION = False
 GAMES_LIBRARY_CHECK = False
 GAMES_LIBRARY_NOTIFICATION = False
-PROFILE_CSV_FILE = ""
 STEAM_CHECK_INTERVAL = 0
 STEAM_ACTIVE_CHECK_INTERVAL = 0
 OFFLINE_INTERRUPT = 0
@@ -380,27 +431,81 @@ STEAM_SNOOZE_INACTIVITY_THRESHOLD = 0
 LIVENESS_CHECK_INTERVAL = 0
 CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
+VERIFY_SSL = True
 CSV_FILE = ""
+PROFILE_CSV_FILE = ""
+STEAM_STATUS_FILE = ""
 DOTENV_FILE = ""
 FILE_SUFFIX = ""
 ST_LOGFILE = ""
 DISABLE_LOGGING = False
 ASCII_LOG_SEPARATORS = "Auto"
+TRUNCATE_CHARS = 0
 HORIZONTAL_LINE = 0
+# Counts the reports printed so far, so a check can tell whether it said anything before the banner claims it was quiet
+REPORTS_PRINTED = 0
 CLEAR_SCREEN = False
-STEAM_ACTIVE_CHECK_SIGNAL_VALUE = 0
 COLORED_OUTPUT = False
+
+# True once monitoring has printed its header, so a verbose notice after that closes its own block
+MONITORING_ACTIVE = False
+
 COLOR_THEME = {}
+VERBOSE_MODE = False
+DEBUG_MODE = False
+DELIVERY_CONFIRMATIONS = True
+STEAM_ACTIVE_CHECK_SIGNAL_VALUE = 0
 
 exec(CONFIG_BLOCK, globals())
 
 # Default name for the optional config file
 DEFAULT_CONFIG_FILENAME = "steam_monitor.conf"
 
+# Documentation links, kept as constants so error messages, help text and the guides they point at cannot drift apart
+PROJECT_URL = "https://github.com/misiektoja/steam_monitor"
+DOCS_BASE_URL = "https://misiektoja.github.io/steam_monitor"
+GUIDE_URL = f"{DOCS_BASE_URL}/"
+INSTALLATION_GUIDE_URL = f"{DOCS_BASE_URL}/installation/"
+QUICK_START_GUIDE_URL = f"{DOCS_BASE_URL}/setup-and-first-run/"
+CONFIG_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#configuration-file"
+INTERVALS_GUIDE_URL = f"{DOCS_BASE_URL}/usage/#check-intervals"
+STEAM_API_KEY_GUIDE_URL = f"{DOCS_BASE_URL}/setup-and-first-run/#steam-web-api-key"
+PRIVACY_GUIDE_URL = f"{DOCS_BASE_URL}/setup-and-first-run/#user-privacy-settings"
+SMTP_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#smtp-settings"
+WEBHOOK_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#webhook-settings"
+SECRETS_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#storing-secrets"
+TLS_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#tls-verification"
+USAGE_GUIDE_URL = f"{DOCS_BASE_URL}/usage/"
+STEAM_API_KEY_REGISTRATION_URL = "https://steamcommunity.com/dev/apikey"
+STEAM_TARGET_FORMS = "Steam64 ID, Steam3 identifier, vanity name or full profile URL"
+STEAM_TARGET_INPUT_ERROR = f"Enter a {STEAM_TARGET_FORMS}, for example https://steamcommunity.com/id/<vanity_name>/"
+DOCTOR_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#doctor-preflight"
+DIAGNOSTICS_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#verbose-and-debug-output"
+
+# Shared prefixes for the checks a delivery test depends on, kept as constants because the labels are dynamic
+SMTP_READY_CHECK_LABEL = "SMTP connection and login succeeded"
+WEBHOOK_READY_CHECK_LABEL = "Webhook URL, headers and alert choices look valid"
+
+# The label every sibling monitor uses when email alerts are on but the settings they would use cannot deliver
+EMAIL_UNUSABLE_CHECK_LABEL = "Email alerts are enabled but unusable"
+
 # List of secret keys to load from env/config
 SECRET_KEYS = ("STEAM_API_KEY", "SMTP_PASSWORD", "WEBHOOK_URL", "NTFY_ACCESS_TOKEN")
 
-LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / STEAM_CHECK_INTERVAL
+# Secrets the provider issues at one length, where a wrong character count is the fault a diagnostic run has to show
+FIXED_LENGTH_SECRET_KEYS = frozenset(("STEAM_API_KEY",))
+
+# Secrets supplied as arguments. The dotenv and environment lookup cannot see them, so they are recorded here
+COMMAND_LINE_SECRET_KEYS = frozenset()
+
+# The one-shot commands that only write a secret, so the other early-exit flags do not swallow them
+SECRET_ACTION_FLAGS = ("--set-steam-api-key", "--set-smtp-password", "--set-webhook-url")
+
+# Seconds rather than checks, because a failing run usually retries on a different interval than a healthy one
+LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_INTERVAL > 0 else 0
+
+# The last connectivity failure, so a quiet caller can classify it instead of the check printing it
+LAST_CONNECTIVITY_ERROR = None
 
 stdout_bck = None
 csvfieldnames = ['Date', 'Status', 'Game name', 'Game ID']
@@ -412,18 +517,44 @@ steam_visibilitystates = ["private", "private", "private", "public"]
 
 CLI_CONFIG_PATH = None
 
+# Set when --config-file none switches discovery off, so no later lookup can find a file the run rejected
+CONFIG_DISCOVERY_DISABLED = False
+
+# The settings a configuration file actually assigned, so a built-in default is never mistaken for a choice
+CONFIGURED_SETTING_NAMES = set()
+
+# Secret names already present in the process environment before dotenv loading
+EXPORTED_SECRET_KEYS = frozenset()
+
 # to solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
 nl_ch = "\n"
 
+STARTUP_BANNER = r"""
+ .---------------.    ____  _
+|         .--.   |   / ___|| |_ ___  __ _ _ __ ___
+|    O===|  O |  |   \___ \| __/ _ \/ _` | '_ ` _ \
+|   /     '--'   |    ___) | ||  __/ (_| | | | | | |
+|  O             |   |____/ \__\___|\__,_|_| |_| |_|
+ '---------------'
+                      __  __             _ _
+                     |  \/  | ___  _ __ (_) |_ ___  _ __
+                     | |\/| |/ _ \| '_ \| | __/ _ \| '__|
+                     | |  | | (_) | | | | | || (_) | |
+                     |_|  |_|\___/|_| |_|_|\__\___/|_|"""
+
 
 import sys
+from threading import local as _ThreadLocal
 
-if sys.version_info < (3, 6):
-    print("* Error: Python version 3.6 or higher required !")
+# Declared once so the startup gate, the packaging metadata and any later environment check cannot disagree
+MINIMUM_PYTHON_VERSION = (3, 6)
+MINIMUM_PYTHON_VERSION_TEXT = ".".join(str(part) for part in MINIMUM_PYTHON_VERSION)
+
+if sys.version_info < MINIMUM_PYTHON_VERSION:
+    print(f"* Error: Python version {MINIMUM_PYTHON_VERSION_TEXT} or higher required !")
     sys.exit(1)
 
 import time
-import string
 import textwrap
 import json
 import os
@@ -431,6 +562,7 @@ from datetime import datetime
 from dateutil import relativedelta
 import calendar
 import requests as req
+import urllib3
 import signal
 import smtplib
 import ssl
@@ -438,12 +570,22 @@ from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import argparse
+import functools
+from contextlib import contextmanager
+import ast
 import csv
 import getpass
-from typing import Any, Dict
+# Referenced from the type comments below, which the linter does not parse
+from typing import Any, Dict  # noqa: F401
 import platform
 from platform import system
+import importlib.util
+import math
 import re
+import shlex
+import subprocess
+from collections import namedtuple
+import unicodedata
 import ipaddress
 import tempfile
 from io import BytesIO
@@ -459,7 +601,7 @@ try:
     import steam.steamid
     import steam.webapi
 except ModuleNotFoundError:
-    raise SystemExit("Error: Couldn't find the Steam library !\n\nTo install it, run:\n    pip3 install \"steam[client]\"\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://github.com/ValvePython/steam/")
+    raise SystemExit("Error: Couldn't find the Steam library !\n\nTo install it, run:\n    pip3 install steam\n\nOnce installed, re-run this tool. For more help, visit:\nhttps://github.com/ValvePython/steam/")
 import shutil
 from pathlib import Path
 
@@ -469,6 +611,7 @@ WEBHOOK_SESSION = req.Session()
 WEBHOOK_MAX_ATTEMPTS = 2
 WEBHOOK_MAX_RETRY_AFTER_SECONDS = 5.0
 WEBHOOK_FALLBACK_RETRY_SECONDS = 1.0
+STEAM_MAX_RETRY_AFTER_SECONDS = 3600.0
 WEBHOOK_TIMEOUT_SECONDS = 10
 WEBHOOK_EMBED_TITLE_LIMIT = 256
 WEBHOOK_EMBED_DESCRIPTION_LIMIT = 4096
@@ -478,6 +621,50 @@ NTFY_IMAGE_DOWNLOAD_LIMIT_BYTES = 5 * 1024 * 1024
 NTFY_IMAGE_DOWNLOAD_CHUNK_BYTES = 64 * 1024
 NTFY_IMAGE_PIXEL_LIMIT = 25_000_000
 NTFY_IMAGE_FILENAME = "steam-image.jpg"
+# One short retry absorbs a transient failure without waiting a whole polling interval
+TRANSIENT_RETRY_SECONDS = 5
+# How long a failure the tool can retry away must last before it is alerted, a failure it cannot is alerted at once
+ERROR_ALERT_AFTER_SECONDS = 300  # 5 minutes
+# How long a channel that could not deliver an error alert waits before the next attempt, doubled on every further failure up to the cap
+ERROR_ALERT_RETRY_SECONDS = 300  # 5 minutes
+ERROR_ALERT_RETRY_MAX_SECONDS = 3600  # 1 hour
+
+
+# Tracks the error alert per channel: what was delivered, and how long a channel that failed waits before the next attempt
+class ErrorAlertState:
+    # Starts with nothing delivered and no channel on hold
+    def __init__(self) -> None:
+        self.email_sent = False
+        self.webhook_sent = False
+        self.email_failures = 0
+        self.webhook_failures = 0
+        self.email_retry_at = 0
+        self.webhook_retry_at = 0
+
+    # Forgets the delivered alert and any hold, so the next failure earns each channel a new one
+    def reset(self) -> None:
+        self.__init__()
+
+    # Tells whether a channel still owes the alert and its wait after a failed attempt, if any, has passed
+    def pending(self, channel: str, enabled, now: int) -> bool:
+        return bool(enabled) and not getattr(self, f"{channel}_sent") and now >= getattr(self, f"{channel}_retry_at")
+
+    # Records one attempt, holding a channel that failed for a growing wait so a broken server is not dialled on every check
+    def record(self, channel: str, attempted: bool, delivered: bool, now: int) -> None:
+        if not attempted:
+            return
+        if delivered:
+            setattr(self, f"{channel}_sent", True)
+            setattr(self, f"{channel}_failures", 0)
+            setattr(self, f"{channel}_retry_at", 0)
+            return
+        failures = getattr(self, f"{channel}_failures") + 1
+        delay = min(ERROR_ALERT_RETRY_SECONDS * 2 ** (failures - 1), ERROR_ALERT_RETRY_MAX_SECONDS)
+        setattr(self, f"{channel}_failures", failures)
+        setattr(self, f"{channel}_retry_at", now + delay)
+        print(f"* The {channel} alert is on hold for {display_time(delay)} after {failures} {'attempt' if failures == 1 else 'attempts'}, then tried again")
+
+
 NTFY_IMAGE_ALLOWED_HOST_SUFFIXES = ("steamstatic.com", "steamusercontent.com", "steamcdn-a.akamaihd.net", "steamuserimages-a.akamaihd.net")
 
 PILImage = None  # type: Any
@@ -489,8 +676,608 @@ except ImportError:
 NTFY_IMAGES_AVAILABLE = PILImage is not None
 
 
+# Install methods the tool can detect, used to tailor every command it prints
+INSTALL_METHOD_PYPI = "pip"
+INSTALL_METHOD_SCRIPT = "manual"
+INSTALL_METHOD_ENV_VAR = "STEAM_MONITOR_INSTALL_METHOD"
+
+
+# Returns True when the tool runs inside a container, so printed commands and paths can be adjusted for it
+def running_in_container():
+    if os.environ.get("STEAM_MONITOR_IN_CONTAINER", "").strip().casefold() in ("1", "true", "yes"):
+        return True
+    if os.path.exists("/.dockerenv") or os.path.exists("/run/.containerenv"):
+        return True
+    try:
+        with open("/proc/1/cgroup", encoding="utf-8", errors="replace") as cgroup_file:
+            return any(marker in cgroup_file.read() for marker in ("docker", "containerd", "kubepods", "podman"))
+    except OSError:
+        return False
+
+
+# Returns how the tool was started, either as the installed console script or as a downloaded standalone script
+def install_method():
+    override = os.environ.get(INSTALL_METHOD_ENV_VAR, "").strip().casefold()
+    if override in (INSTALL_METHOD_PYPI, INSTALL_METHOD_SCRIPT):
+        return override
+    if os.path.basename(sys.argv[0] or "").casefold().endswith(".py"):
+        return INSTALL_METHOD_SCRIPT
+    return INSTALL_METHOD_PYPI
+
+
+# Returns a readable name for the detected install method
+def install_method_display_name(method=None):
+    selected = install_method() if method is None else method
+    base = {"pip": "PyPI install", "manual": "downloaded script"}.get(selected, selected)
+    return f"{base} in a container" if running_in_container() else base
+
+
+# Returns a compact display prefix for the detected install method
+def install_command_prefix():
+    executable = "python" if system() == "Windows" else "python3"
+    if install_method() == INSTALL_METHOD_SCRIPT:
+        return [executable, "steam_monitor.py"]
+    return ["steam_monitor"]
+
+
+# The documentation placeholders a printed command carries unquoted, because the reader replaces them before running it
+COMMAND_PLACEHOLDERS = frozenset(("<steam_target>", "<new-file>"))
+
+
+# Returns one command-line argument quoted for the shell the user is most likely pasting into
+def quote_command_argument(argument):
+    text = str(argument)
+    # Matched exactly rather than by shape, since any other angle-bracket value is user-derived and would otherwise reach the shell unquoted
+    if text in COMMAND_PLACEHOLDERS:
+        return text
+    if system() == "Windows":
+        return f'"{text}"' if (not text or any(char.isspace() for char in text)) else text
+    return shlex.quote(text)
+
+
+# True when a command writes the dotenv file itself, so it refuses an --env-file that switches dotenv loading off
+def command_writes_dotenv(arguments=()):
+    return any(str(argument) == "--setup" or str(argument).startswith("--set-") for argument in arguments)
+
+
+# True when a command writes the config file itself, so it refuses a --config-file that switches discovery off
+def command_writes_config(arguments=()):
+    return any(str(argument) == "--setup" for argument in arguments)
+
+
+# Reads only the persisted target from a config file, so a printed command can omit a positional the config already supplies
+def config_file_target(config_path):
+    if not config_path or str(config_path).casefold() == "none":
+        return ""
+    namespace = {}
+    if not load_config_file(config_path, namespace=namespace, report_errors=False):
+        return ""
+    return str(namespace.get("TARGET_STEAM_ID") or "")
+
+
+# Returns the targets for the printed doctor and monitoring commands, dropping one the effective config already supplies
+def command_targets(explicit_target=None, saved_target=None, placeholder="<steam_target>"):
+    saved = str(saved_target or "")
+    known = str(explicit_target or "") or saved
+    if not known:
+        # Monitoring cannot run without a target, so it keeps the placeholder while the doctor reports the gap itself
+        return None, placeholder
+    printed = None if known == saved else known
+    return printed, printed
+
+
+# Returns a copy-pasteable command line for the detected install method, carrying non-default config and dotenv paths
+def render_command(arguments=None, include_paths=True, *, config_path=None, env_path=None):
+    parts = list(install_command_prefix())
+    parts.extend(str(argument) for argument in (arguments or []))
+    # An explicitly passed path is always rendered, while include_paths only governs falling back to the active ones
+    active_config = CLI_CONFIG_PATH or ("none" if CONFIG_DISCOVERY_DISABLED else None)
+    selected_config = config_path if config_path is not None else (active_config if include_paths else None)
+    selected_env = env_path if env_path is not None else (DOTENV_FILE if include_paths else None)
+    # The "none" sentinel is carried so the printed command checks the setup this run checked, except into a
+    # command that writes the config file, since those refuse the sentinel at their own argument gate
+    if selected_config and not (str(selected_config).casefold() == "none" and command_writes_config(arguments or ())):
+        parts.extend(["--config-file", str(selected_config)])
+    # The "none" sentinel is carried so the printed command checks the setup this run checked, except into a
+    # command that writes the dotenv file, since those refuse the sentinel at their own argument gate
+    if selected_env and not (str(selected_env).casefold() == "none" and command_writes_dotenv(arguments or ())):
+        parts.extend(["--env-file", str(selected_env)])
+    return " ".join(quote_command_argument(part) for part in parts)
+
+
+# Renders one diagnostic line as an operation followed by comma-separated key=value fields, dropping unset ones
+def format_diagnostic_line(operation, fields):
+    rendered = ", ".join(f"{key}={value}" for key, value in fields.items() if value is not None)
+    return f"{operation}: {rendered}" if rendered else str(operation)
+
+
+# Prints one timestamped and sanitized diagnostic line only when debug mode is enabled
+def debug_print(_operation, **fields):
+    if DEBUG_MODE:
+        # Sanitized here rather than at each call site, since one caller interpolating a secret is enough to leak it
+        message = format_diagnostic_line(_operation, fields)
+        # The scanner does not treat the sanitizer as a barrier, so it reports the masked line as a leak
+        # codeql[py/clear-text-logging-sensitive-data]
+        print(f"[DEBUG {datetime.now().strftime('%H:%M:%S')}] {sanitize_error_text(message)}")
+
+
+# Returns whether the full startup summary should be shown, which debug mode also implies
+def full_startup_summary_enabled():
+    return bool(VERBOSE_MODE or DEBUG_MODE)
+
+
+# Prints one sanitized operational detail only when verbose mode is enabled
+def verbose_print(message):
+    if VERBOSE_MODE:
+        print(f"* {sanitize_error_text(message)}")
+
+
+# Prints one delivery confirmation in verbose mode unless DELIVERY_CONFIRMATIONS turns them off
+def verbose_delivery_print(message):
+    if DELIVERY_CONFIRMATIONS:
+        verbose_print(message)
+
+
+# Prints verbose-only notices as one block, so a standalone line is not left without the timestamp trailer
+def verbose_notice(*messages):
+    if not VERBOSE_MODE or not messages:
+        return
+    for message in messages:
+        verbose_print(message)
+    # Before monitoring starts the notice belongs to the startup screen, which the monitoring header closes
+    if MONITORING_ACTIVE:
+        print_cur_ts("Timestamp:\t\t\t")
+
+
+# Marks the point where output stops being the startup screen, so later notices close their own block
+def mark_monitoring_started():
+    global MONITORING_ACTIVE
+    MONITORING_ACTIVE = True
+
+
+# Stops the run when this process is out of file descriptors, since every fallback below it would hit the same limit
+def exit_if_out_of_file_descriptors(exc):
+    if not is_too_many_open_files(exc):
+        return
+    print_recovery_advice(classify_recovery_error(exc))
+    raise SystemExit(1)
+
+
+# Records a swallowed exception in debug output, first stopping the run if the cause was a local descriptor limit
+def debug_swallowed_exception(context, exc):
+    exit_if_out_of_file_descriptors(exc)
+    debug_print(context, outcome="failed", error=f"{type(exc).__name__}: {exc}")
+
+
+# Strips terminal control sequences and other C0/C1 characters from third-party text before it reaches a console or a log
+def sanitize_untrusted_text(value, max_length=256):
+    if value is None:
+        return ""
+    text = str(value)
+    text = ANSI_ESCAPE_RE.sub("", text)
+    # Everything a remote service sends is hostile until proven otherwise, so drop the control range outright
+    text = "".join(character for character in text if character == " " or not unicodedata.category(character).startswith("C"))
+    text = text.strip()
+    if max_length and len(text) > max_length:
+        text = text[:max_length] + "..."
+    return text
+
+
+# Returns the file the tool saves the last seen status to, so a restart resumes from it
+def resolve_status_file(steamid):
+    if STEAM_STATUS_FILE:
+        return os.path.expanduser(STEAM_STATUS_FILE)
+    return default_status_file(steamid)
+
+
+# Returns the status file name a target gets when no path is configured
+def default_status_file(steamid):
+    return f"steam_{steamid}_last_status.json"
+
+
+# Returns the games library snapshot file for a target
+def default_games_file(steamid):
+    return f"steam_{steamid}_games.json"
+
+
+# Renames the state files an earlier release keyed on the persona name, so an upgrade resumes from what it saved
+def migrate_legacy_state_files(steamid, username):
+    if not username or str(username) == str(steamid):
+        return
+    pairs = [(f"steam_{username}_games.json", default_games_file(steamid))]
+    if not STEAM_STATUS_FILE:
+        pairs.insert(0, (f"steam_{username}_last_status.json", default_status_file(steamid)))
+    for legacy, current in pairs:
+        if Path(legacy).parent != Path(".") or Path(legacy).is_symlink():
+            continue
+        if not os.path.isfile(legacy) or os.path.exists(current):
+            continue
+        try:
+            os.replace(legacy, current)
+            print(f"* Saved state file '{sanitize_untrusted_text(legacy)}' was renamed to '{sanitize_untrusted_text(current)}'")
+        except OSError as e:
+            print_recovery_error(e, context="file.unwritable", detail=f"Cannot rename '{legacy}' to '{current}': {e}")
+
+
+# Writes JSON to a file atomically, so a crash cannot leave a half-written state file behind
+def write_json_atomic(destination, payload, mode=None):
+    destination_path = Path(destination).expanduser()
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n", prefix=f".{destination_path.name}.", suffix=".tmp", dir=str(destination_path.parent), delete=False) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            json.dump(payload, temporary_file, indent=2)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        if mode is not None and os.name == "posix":
+            os.chmod(str(temporary_path), mode)
+        os.replace(str(temporary_path), str(destination_path))
+        temporary_path = None
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
+    return str(destination_path)
+
+
+# Returns a source node's end without requiring Python 3.8 AST position metadata
+def config_node_end(node, text):
+    import io
+    import tokenize
+    end_line = getattr(node, "end_lineno", None)
+    end_column = getattr(node, "end_col_offset", None)
+    if end_line is not None and end_column is not None:
+        return end_line, end_column
+    lines = text.splitlines(keepends=True)
+    start = (node.lineno, len(lines[node.lineno - 1].encode("utf-8")[:node.col_offset].decode("utf-8")))
+    end = start
+    depth = 0
+    for token in tokenize.generate_tokens(io.StringIO(text).readline):
+        if token.start < start:
+            continue
+        if token.type in (tokenize.NEWLINE, tokenize.ENDMARKER):
+            break
+        if token.type in (tokenize.NL, tokenize.COMMENT, tokenize.INDENT, tokenize.DEDENT):
+            continue
+        if token.type == tokenize.OP:
+            if token.string in (")", "]", "}"):
+                if depth == 0:
+                    break
+                depth -= 1
+            elif token.string in ("(", "[", "{"):
+                depth += 1
+            elif token.string == ";" and depth == 0:
+                break
+        end = token.end
+    return end[0], len(lines[end[0] - 1][:end[1]].encode("utf-8"))
+
+
+# Accepts finite numeric values without overflowing on unusually large integers
+def finite_number(value):
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+# How far ahead of this machine's clock a saved timestamp may be before the tool stops timing against it
+STATE_FUTURE_TOLERANCE_SECONDS = 300
+
+
+# Validates a saved timestamp before any date conversion or duration calculation
+def valid_state_timestamp(value):
+    if not finite_number(value) or value < 0:
+        return False
+    try:
+        datetime.fromtimestamp(value)
+    except (ValueError, OverflowError, OSError):
+        return False
+    return True
+
+
+# Reports whether a saved timestamp is far enough ahead of this machine's clock to be untrustworthy. The tool
+# wrote the file itself, so a clock moved backwards is the usual cause and is not a reason to refuse to run
+def state_timestamp_ahead(value):
+    return finite_number(value) and value > time.time() + STATE_FUTURE_TOLERANCE_SECONDS
+
+
+# Reads legacy or current status records without adopting malformed state
+def read_status_record(path):
+    with open(path, "r", encoding="utf-8") as source:
+        record = json.load(source)
+    if not isinstance(record, list) or len(record) < 2:
+        raise ValueError("expected a status list containing a timestamp and a status number")
+    if not valid_state_timestamp(record[0]):
+        raise ValueError("the saved status timestamp must be finite, nonnegative and representable")
+    if not isinstance(record[1], int) or isinstance(record[1], bool) or not 0 <= record[1] < len(steam_personastates):
+        raise ValueError("the saved status number must be an integer from 0 through 6")
+    if len(record) > 2 and record[2] is not None and not valid_state_timestamp(record[2]):
+        raise ValueError("the saved activity timestamp must be null or a finite nonnegative representable timestamp")
+    return record
+
+
+# Replaces a saved timestamp this machine's clock cannot support, so only the timing restarts and the saved
+# entry itself is kept. A file this tool wrote must not be able to stop the next run over a corrected clock
+def reconcile_status_record(record, path):
+    if not record or not (state_timestamp_ahead(record[0]) or (len(record) > 2 and state_timestamp_ahead(record[2]))):
+        return record
+    print(f"* Warning: The saved status in '{path}' is dated ahead of this machine's clock.")
+    print(f"  Keeping the saved status {str(steam_personastates[record[1]]).upper()} and timing it from now. Check the system clock if this repeats.")
+    now = int(time.time())
+    reconciled = [now if state_timestamp_ahead(record[0]) else record[0], *record[1:]]
+    # The activity timestamp comes from the same clock, so it cannot outlive the status it belongs to
+    if len(reconciled) > 2 and state_timestamp_ahead(reconciled[2]):
+        reconciled[2] = now
+    return reconciled
+
+
+# Validates one games-library snapshot before it replaces remembered user state
+def games_library_snapshot(payload, saved=False):
+    if saved:
+        if not isinstance(payload, dict):
+            raise ValueError("expected a games-library object")
+        count = payload.get("game_count")
+        ids = payload.get("appids")
+    else:
+        response = payload.get("response") if isinstance(payload, dict) else None
+        if not isinstance(response, dict) or ("games" not in response and response.get("game_count") != 0):
+            raise ValueError("Steam did not return a complete games library")
+        games = response.get("games", [])
+        if not isinstance(games, list) or any(not isinstance(game, dict) for game in games):
+            raise ValueError("Steam returned an invalid games list")
+        count = response.get("game_count", len(games))
+        ids = [game.get("appid") for game in games]
+    if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+        raise ValueError("the game count must be a nonnegative integer")
+    if not isinstance(ids, list) or any(not isinstance(appid, int) or isinstance(appid, bool) or appid <= 0 for appid in ids):
+        raise ValueError("game IDs must be a list of positive integers")
+    appids = set(ids)
+    # Releases before 2.0 saved the response length as the count while deduplicating the IDs, so a file this tool
+    # wrote can disagree with itself. Comparisons use the ID set, so a saved count follows it instead of failing
+    if saved:
+        return len(appids), appids
+    if count != len(appids):
+        raise ValueError("the game count does not match the complete set of game IDs")
+    return count, appids
+
+
+# Applies the same command-line settings before preflight checks and normal monitoring
+def apply_runtime_cli_overrides(args):
+    for argument, setting in (("check_interval", "STEAM_CHECK_INTERVAL"), ("active_interval", "STEAM_ACTIVE_CHECK_INTERVAL")):
+        value = getattr(args, argument, None)
+        if value is not None:
+            globals()[setting] = value
+    for argument, setting in (("csv_file", "CSV_FILE"), ("profile_csv_file", "PROFILE_CSV_FILE"), ("status_file", "STEAM_STATUS_FILE"), ("file_suffix", "FILE_SUFFIX")):
+        value = getattr(args, argument, None)
+        if value:
+            globals()[setting] = value
+    for setting in ("CSV_FILE", "PROFILE_CSV_FILE", "STEAM_STATUS_FILE"):
+        if isinstance(globals()[setting], str) and globals()[setting]:
+            globals()[setting] = os.path.expanduser(globals()[setting])
+    for argument, setting in (("disable_logging", "DISABLE_LOGGING"), ("notify_active_inactive", "ACTIVE_INACTIVE_NOTIFICATION"), ("notify_game_change", "GAME_CHANGE_NOTIFICATION"), ("notify_status", "STATUS_NOTIFICATION"), ("notify_name_change", "NAME_CHANGE_NOTIFICATION"), ("notify_level_xp", "STEAM_LEVEL_XP_NOTIFICATION"), ("notify_friends", "FRIENDS_NOTIFICATION"), ("notify_games", "GAMES_LIBRARY_NOTIFICATION"), ("check_level_xp", "STEAM_LEVEL_XP_CHECK"), ("check_friends", "FRIENDS_CHECK"), ("check_games", "GAMES_LIBRARY_CHECK")):
+        if getattr(args, argument, None) is True:
+            globals()[setting] = True
+    if getattr(args, "notify_errors", None) is False:
+        globals()["ERROR_NOTIFICATION"] = False
+
+
+# Recognizes the provider's specific response for a game without achievement statistics
+def game_has_no_stats(error):
+    response = error.response
+    if response is None or response.status_code != 400:
+        return False
+    try:
+        payload = response.json()
+    except ValueError:
+        return False
+    stats = payload.get("playerstats") if isinstance(payload, dict) else None
+    return isinstance(stats, dict) and stats.get("success") is False and stats.get("error") == "Requested app has no stats"
+
+
+# Preserves inline credentials privately before setup replaces their only saved source
+def preserve_inline_config_secrets(config_path, env_path):
+    from dotenv import dotenv_values
+    source = Path(config_path).expanduser()
+    if not source.is_file():
+        return None
+    original = {}
+    if not load_config_file(source, namespace=original, report_errors=False):
+        raise ValueError("Existing configuration could not be read before preserving its inline secrets")
+    defaults = _config_template_defaults()
+    destination = Path(env_path).expanduser()
+    saved = dotenv_values(str(destination), interpolate=False) if destination.exists() else {}
+    updates = {}
+    for key in SECRET_KEYS:
+        value = original.get(key)
+        if isinstance(value, str) and value and value != defaults.get(key) and saved.get(key) is None:
+            updates[key] = value
+    if not updates:
+        return None
+    try:
+        return update_dotenv_file(destination, updates)
+    except Exception as exc:
+        raise OSError(f"Could not preserve inline secrets in '{destination}'. The original configuration was not replaced") from exc
+
+
+# Removes inline secret assignments from a setup backup while preserving other configuration text
+def redact_config_backup(content):
+    import ast
+    try:
+        text = content.decode("utf-8")
+        tree = ast.parse(text)
+    except (UnicodeError, SyntaxError) as exc:
+        raise ValueError("Cannot create a secret-free configuration backup. Correct the existing file's UTF-8 encoding or assignment syntax before running setup") from exc
+    lines = text.splitlines(keepends=True)
+    offsets = [0]
+    for line in lines:
+        offsets.append(offsets[-1] + len(line.encode("utf-8")))
+    replacements = []
+    secret_values = set()
+    for statement in ast.walk(tree):
+        if not isinstance(statement, (ast.Assign, ast.AnnAssign)):
+            continue
+        targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
+        if any(isinstance(target, ast.Name) and target.id in SECRET_KEYS for target in targets):
+            value = statement.value
+            if value is not None:
+                start = offsets[value.lineno - 1] + value.col_offset
+                end_line, end_column = config_node_end(value, text)
+                end = offsets[end_line - 1] + end_column
+                replacements.append((start, end))
+                try:
+                    literal = ast.literal_eval(value)
+                except (ValueError, TypeError):
+                    literal = None
+                if isinstance(literal, str) and literal:
+                    secret_values.add(literal)
+    for start, end in sorted(replacements, reverse=True):
+        content = content[:start] + b'""' + content[end:]
+    import io
+    import tokenize
+    text = content.decode("utf-8")
+    lines = text.splitlines(keepends=True)
+    for token in tokenize.generate_tokens(io.StringIO(text).readline):
+        if token.type == tokenize.COMMENT:
+            comment = token.string
+            for secret in sorted(secret_values, key=len, reverse=True):
+                comment = comment.replace(secret, "<redacted>")
+            row, start = token.start
+            end = token.end[1]
+            lines[row - 1] = lines[row - 1][:start] + comment + lines[row - 1][end:]
+    return "".join(lines).encode("utf-8")
+
+
+# Copies an existing file to a timestamped private backup before it is replaced, returning the backup path or None
+def create_timestamped_backup(destination, attempts=100, redact_secrets=False):
+    destination_path = Path(destination).expanduser()
+    if not destination_path.is_file():
+        return None
+    existing_bytes = destination_path.read_bytes()
+    if redact_secrets:
+        existing_bytes = redact_config_backup(existing_bytes)
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    for attempt in range(attempts):
+        suffix = f".{stamp}.bak" if attempt == 0 else f".{stamp}-{attempt}.bak"
+        backup_path = destination_path.with_name(destination_path.name + suffix)
+        try:
+            # O_EXCL so a backup can never overwrite an earlier one, even under a concurrent run
+            descriptor = os.open(str(backup_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            continue
+        try:
+            with os.fdopen(descriptor, "wb") as backup_file:
+                backup_file.write(existing_bytes)
+                backup_file.flush()
+                os.fsync(backup_file.fileno())
+        except Exception:
+            try:
+                os.unlink(str(backup_path))
+            except OSError:
+                pass
+            raise
+        return str(backup_path)
+    raise OSError(f"Could not create a unique backup for '{destination_path}' after {attempts} attempts")
+
+
+# Silences the repeated certificate warning once verification is off, so the choice is reported by the summary and the doctor instead of on every request
+def apply_tls_verification_setting():
+    if not VERIFY_SSL:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+# Returns the TLS context SMTP uses, unverified while VERIFY_SSL is off so email follows the same switch as every other connection
+def smtp_ssl_context():
+    context = ssl.create_default_context()
+    if not VERIFY_SSL:
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+    return context
+
+
+# Returns a Steam Web API client whose session honors the configured TLS verification setting
+def steam_web_api_client(api_key=None):
+    selected_key = STEAM_API_KEY if api_key is None else api_key
+    # Interfaces are loaded manually because the automatic load fires before the session can be configured
+    client = steam.webapi.WebAPI(key=selected_key, auto_load_interfaces=False)
+    # A release that moves the session should still start, verifying, rather than fail on the missing attribute
+    try:
+        client.session.verify = VERIFY_SSL
+    except AttributeError as exc:
+        debug_print("TLS verification", target="Steam Web API session", outcome="failed", error=f"{type(exc).__name__}: {exc}")
+    client.load_interfaces(client.fetch_interfaces())
+    return client
+
+
+# Silences debug output while a raw secret is entered or validated, then restores the previous mode
+@contextmanager
+def debug_output_suppressed():
+    global DEBUG_MODE
+    previous_debug_mode = DEBUG_MODE
+    DEBUG_MODE = False
+    try:
+        yield
+    finally:
+        DEBUG_MODE = previous_debug_mode
+
+
+# Silences debug output for the whole of a function that handles a raw secret
+def suppresses_debug_output(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        with debug_output_suppressed():
+            return func(*args, **kwargs)
+    return wrapper
+
+
+# Returns the webhook destination host on its own, so delivery can be traced without printing the private URL
+def webhook_destination_host():
+    try:
+        return urlsplit(str(WEBHOOK_URL).strip()).hostname or "unknown host"
+    except ValueError:
+        return "unknown host"
+
+
+# Applies only the explicitly supplied --verbose and --debug flags so the command line always wins over the config file
+def apply_diagnostic_cli_flags(args):
+    global VERBOSE_MODE, DEBUG_MODE
+    if getattr(args, "verbose", None):
+        VERBOSE_MODE = True
+    if getattr(args, "debug", None):
+        DEBUG_MODE = True
+
+
+# Returns the diagnostic fields describing one secret, keeping the length out of the value so a line still splits on ", "
+def secret_fields(value, key=None):
+    return {"value": "set" if doctor_value_is_set(value) else "not set", "chars": len(str(value).strip()) if key in FIXED_LENGTH_SECRET_KEYS and doctor_value_is_set(value) else None}
+
+
+# Returns the newest Pillow release that still supports the running Python version
+def ntfy_images_requirement():
+    if sys.version_info < (3, 7):
+        return "Pillow>=8.0,<9.0"
+    if sys.version_info < (3, 8):
+        return "Pillow>=9.0,<10.0"
+    if sys.version_info < (3, 9):
+        return "Pillow>=10.0,<11.0"
+    if sys.version_info < (3, 10):
+        return "Pillow>=11.3.0,<12"
+    return "Pillow>=12.0.0"
+
+
+# Returns the command that installs optional ntfy artwork support for the active installation
+def ntfy_images_install_command():
+    if install_method() == INSTALL_METHOD_SCRIPT:
+        return 'pip3 install "{}"'.format(ntfy_images_requirement())
+    return 'pip3 install "steam_monitor[ntfy-images]"'
+
+
 # ANSI escape sequence helper used for colouring and stripping colour codes
 ANSI_ESCAPE_RE = re.compile(r"\x1B[@-_][0-?]*[ -/]*[@-~]")
+
+# Matches only the colour sequences the tool emits, which truncation copies through without spending display width
+SGR_SEQUENCE_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 # Internal flag & style map for colour handling
 COLOR_ENABLED = False
@@ -502,8 +1289,8 @@ DEFAULT_COLOR_THEME = {
     "header": "bright_cyan",
     "section": "bright_white",
     # Identity
-    "username": "blue underline",
-    "steam_id": "bright_magenta",
+    "username": "bright_cyan underline",
+    "id": "bright_magenta",
     # Status values
     "status_online": "green",
     "status_offline": "red",
@@ -511,7 +1298,6 @@ DEFAULT_COLOR_THEME = {
     "status_snooze": "magenta",
     "status_other": "white",
     # Activity / game info
-    "status_change": "yellow",
     "game": "bright_yellow",
     "duration": "green",
     # Misc
@@ -521,13 +1307,29 @@ DEFAULT_COLOR_THEME = {
     "warning": "yellow",
     "error": "red",
     "signal": "yellow",
+    "email": "bright_cyan",
+    "webhook": "bright_blue",
     # Dates
     "date": "magenta",
     "date_range": "magenta",
     # Boolean values
     "boolean_true": "green",
     "boolean_false": "red",
+    # Links
+    "link": "blue underline",
+    # Help screen
+    "help_heading": "bright_cyan bold",
+    "help_usage": "bright_white bold",
+    "help_option": "bright_green",
+    "help_metavar": "yellow",
+    "help_placeholder": "bright_magenta",
+    "help_command": "bright_white",
+    "help_comment": "bright_black",
+    "help_default": "bright_black",
 }
+
+# COLOR_THEME key names used by older releases, still honoured so an existing config keeps working
+_THEME_KEY_ALIASES = {"steam_id": "id"}
 
 ANSI_RESET = "\033[0m"
 
@@ -556,7 +1358,7 @@ _STYLE_CODES = {
 }
 
 # Pre-compiled regexes used for line-level colourisation
-_TIMESTAMP_LINE_RE = re.compile(r"^(Timestamp:\s+)(.*)$")
+_TIMESTAMP_LINE_RE = re.compile(r"^(Timestamp:\s+|Liveness check, timestamp:\s+)(.*)$")
 _STATUS_LINE_RE = re.compile(r"^(Status:\s+)([A-Za-z ]+)$")
 _DISPLAY_NAME_RE = re.compile(r"^(Display name:\s+)(.*)$")
 # 'Steam user <display name> ...' where name can contain spaces
@@ -564,6 +1366,8 @@ _STEAM_USER_LINE_RE = re.compile(
     r"^(Steam user )(.+?)( (?:changed status|started playing|stopped playing|changed game from|now plays).*)$"
 )
 _USER_IN_GAME_RE = re.compile(r"^(User is currently in-game:\s+)(.*)$")
+# The monitored account named inside a sentence, so the ID is coloured without wrapping the whole line
+_MONITORED_ID_RE = re.compile(r"^(Monitoring user with Steam64 ID\s+)(\S+)$")
 # Long date in format returned by get_date_from_ts, e.g. 'Sun 21 Apr 2024, 15:08:45'
 _LONG_DATE_RE = re.compile(r"\b\w{3}\s+\d{1,2}\s+\w{3}\s+\d{4},\s+\d{2}:\d{2}:\d{2}\b")
 # Short range date in parentheses, e.g. '(Sat 22 Nov 16:54 - 17:58)'
@@ -580,18 +1384,49 @@ _STATUS_CHANGE_RE = re.compile(
 _DURATION_RE = re.compile(
     r"(\d+\s+(seconds?|minutes?|hours?|days?|weeks?|months?|years?))", re.IGNORECASE
 )
-_ONLINE_WORD_RE = re.compile(r"(?i)( online| appeared |\bYes\b)")
-_OFFLINE_WORD_RE = re.compile(r"(?i)( offline| away| snooze|\bNo\b)")
-_BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b")
-_BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b")
+# A presence word is only a reported state when the tool prints it in capitals, so a sentence that merely
+# mentions a state, such as "the user is offline with no change", keeps its plain colour
+_ONLINE_WORD_RE = re.compile(r"\b(ONLINE|ACTIVE)\b")
+_OFFLINE_WORD_RE = re.compile(r"\b(OFFLINE|INACTIVE|AWAY|SNOOZE)\b")
+# A Yes or No is an answer only as the whole value of a labelled row, never as the word inside a sentence
+_ANSWER_VALUE_RE = re.compile(r"(?<=:)([\t ]+)(Yes|No)[\t ]*$")
+# A startup summary row names a setting, so a presence word inside its label is part of the label and not a state
+_SUMMARY_ROW_LABEL_RE = re.compile(r"^(\* [\w()/ -]+:[\t ]+)(.*)$", re.S)
+_BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b|\bEnabled\b")
+_BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b|\bDisabled\b")
+# The TLS row reports a word rather than a boolean, and its off state is the one setting that weakens
+# a security property, so the state word is coloured like a boolean
+_TLS_STATE_RE = re.compile(r"^(\* TLS verification:\s+)(On|Off)(.*)$")
 _NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \((?:email|webhook)\):\s+)(On|Off)(.*)$")
-# Game names in quotes, but exclude file paths (containing underscores followed by more text, dots, or slashes)
-_GAME_NAME_QUOTED_RE = re.compile(r"(['\"])((?![^'\"]*[._/])[^'\"]+)\1")
+# Quoted names such as game titles. At least one word character is required so a run of punctuation between two
+# quotes is not read as a name. The closing quote has to be followed by whitespace, punctuation or the end of the
+# line, so a title's own apostrophe does not end the name early: "Assassin's Creed Valhalla"
+_QUOTED_CONTENT_RE = re.compile(r"(['\"])([^\n]*?\w[^\n]*?)\1(?=[\s.,;:!?)\]]|$)")
+
+# Quoted values shaped like a file name or a filesystem path stay plain, since a log or state destination is
+# not content. Game titles routinely contain slashes and dots, so only these two shapes are excluded
+_QUOTED_FILE_LIKE_RE = re.compile(r"^[~.]?[\\/]|^[A-Za-z]:[\\/]|\.[A-Za-z0-9]{1,8}$")
+
+# A quoted '<name>' inside a printed command is the placeholder the reader has to replace, not a game title
+_QUOTED_PLACEHOLDER_RE = re.compile(r"^<[^<>]*>$")
+
+# A quoted command-line option is an instruction to retype, not a name
+_QUOTED_OPTION_RE = re.compile(r"^-")
+
+# A quoted piece of a URL, such as the '?code=' or '&state=' a prompt points at. Only a leading '?' or '&' counts,
+# so a title may end in a question mark and a title such as 'Ratchet & Clank' is still a name
+_QUOTED_URL_PART_RE = re.compile(r"^[?&]|://")
+_URL_RE = re.compile(r"(https?://[^\s\]]+)")
+
+# Output labels whose value is coloured with one theme style, longest label first so a prefix cannot win
+_LABEL_STYLES = (
+    (("Steam64 ID:", "Target:"), "id"),
+)
 
 
 # Builds ANSI escape sequence from a style description string
 def _build_ansi_sequence(style_str):
-    if not style_str:
+    if not isinstance(style_str, str) or not style_str:
         return ""
     parts = re.split(r"[+ ]+", style_str.strip().lower())
     codes = []
@@ -644,6 +1479,11 @@ def init_color_output(stream):
     user_theme = globals().get("COLOR_THEME") if isinstance(globals().get("COLOR_THEME"), dict) else {}
     theme = {**DEFAULT_COLOR_THEME, **(user_theme or {})}
 
+    # A config written against an older key name still wins over the default, unless it also sets the current name
+    for legacy_name, current_name in _THEME_KEY_ALIASES.items():
+        if user_theme and legacy_name in user_theme and current_name not in user_theme:
+            theme[current_name] = user_theme[legacy_name]
+
     styles = {}
     for name, style_str in theme.items():
         seq = _build_ansi_sequence(style_str)
@@ -678,7 +1518,51 @@ def colorize_status(status_text):
     return colorize(key, status_text)
 
 
+# Splits a labelled output row into its label and value, tolerating a leading '* ' summary marker
+def _split_output_label(value, labels):
+    body = value.rstrip("\n")
+    cursor = len(body) - len(body.lstrip())
+    if body[cursor:cursor + 1] == "*":
+        cursor += 1
+        cursor += len(body[cursor:]) - len(body[cursor:].lstrip())
+    for label in labels:
+        if not body.startswith(label, cursor):
+            continue
+        value_start = cursor + len(label)
+        value_start += len(body[value_start:]) - len(body[value_start:].lstrip())
+        if value_start == cursor + len(label):
+            return None
+        return body[:value_start], body[value_start:]
+    return None
+
+
+# Colours one quoted name unless the quoted value is a path, a placeholder, an option or a piece of a URL
+def _colorize_quoted_name(match):
+    name = match.group(2)
+    if _QUOTED_FILE_LIKE_RE.search(name) or _QUOTED_PLACEHOLDER_RE.match(name) or _QUOTED_OPTION_RE.match(name) or _QUOTED_URL_PART_RE.search(name):
+        return match.group(0)
+    return f"{match.group(1)}{colorize('game', name)}{match.group(1)}"
+
+
 # Applies colour rules to a single output line
+# Applies a substitution only to the parts of a line outside already coloured spans, so styles never nest
+def _sub_outside_color(pattern, replacement, line):
+    if ANSI_RESET not in line:
+        return pattern.sub(replacement, line)
+    parts = []
+    position = 0
+    inside = False
+    for match in SGR_SEQUENCE_RE.finditer(line):
+        segment = line[position:match.start()]
+        parts.append(segment if inside else pattern.sub(replacement, segment))
+        parts.append(match.group(0))
+        inside = match.group(0) != ANSI_RESET
+        position = match.end()
+    trailing = line[position:]
+    parts.append(trailing if inside else pattern.sub(replacement, trailing))
+    return "".join(parts)
+
+
 def _colorize_line(line, notification_summary=False):
     original = line
 
@@ -689,6 +1573,13 @@ def _colorize_line(line, notification_summary=False):
         prefix, state, suffix = match.groups()
         state_style = "boolean_true" if state == "On" else "boolean_false"
         return f"{prefix}{colorize(state_style, state)}{suffix}"
+
+    # The TLS row reports its state as a word rather than as a boolean
+    m = _TLS_STATE_RE.match(line.strip("\n"))
+    if m:
+        prefix, state, suffix = m.groups()
+        colored = f"{prefix}{colorize('boolean_true' if state == 'On' else 'boolean_false', state)}{suffix}"
+        return colored + ("\n" if line.endswith("\n") else "")
 
     # Timestamp lines
     m = _TIMESTAMP_LINE_RE.match(line.strip("\n"))
@@ -710,6 +1601,27 @@ def _colorize_line(line, notification_summary=False):
         label, name = m.groups()
         colored = f"{label}{colorize('username', name)}"
         return colored + ("\n" if line.endswith("\n") else "")
+
+    # "Monitoring user with Steam64 ID <id>"
+    m = _MONITORED_ID_RE.match(line.strip("\n"))
+    if m:
+        prefix, steam_id = m.groups()
+        colored = f"{prefix}{colorize('id', steam_id)}"
+        return colored + ("\n" if line.endswith("\n") else "")
+
+    # Any '<something> URL:' row is a link, checked before the label table so 'Profile URL:' is not read as a name
+    if " URL:" in line or _split_output_label(line, ("URL:",)):
+        return _sub_outside_color(_URL_RE, lambda mo: colorize("link", mo.group(0)), line)
+
+    # Labelled identifier rows keep their label plain and colour only the value
+    for labels, style_name in _LABEL_STYLES:
+        labeled_value = _split_output_label(line, labels)
+        if labeled_value:
+            label, rest = labeled_value
+            return f"{label}{colorize(style_name, rest)}" + ("\n" if line.endswith("\n") else "")
+
+    # Links printed inside a sentence, such as the guide link on the welcome and doctor screens
+    line = _sub_outside_color(_URL_RE, lambda mo: colorize("link", mo.group(0)), line)
 
     # Steam user <name> ... lines (apply username colour but continue for further rules)
     m = _STEAM_USER_LINE_RE.match(line)
@@ -737,28 +1649,24 @@ def _colorize_line(line, notification_summary=False):
     def _dur_repl(mo):
         return colorize("duration", mo.group(0))
 
-    line = _DURATION_RE.sub(_dur_repl, line)
+    line = _sub_outside_color(_DURATION_RE, _dur_repl, line)
 
     # Highlight long date strings (info mode, account creation date, etc.)
-    line = _LONG_DATE_RE.sub(lambda mo: colorize("date", mo.group(0)), line)
+    line = _sub_outside_color(_LONG_DATE_RE, lambda mo: colorize("date", mo.group(0)), line)
     # Highlight short date ranges in parentheses, e.g. '(Sat 22 Nov 16:54 - 17:58)'
-    line = _SHORT_RANGE_DATE_RE.sub(lambda mo: colorize("date_range", mo.group(0)), line)
+    line = _sub_outside_color(_SHORT_RANGE_DATE_RE, lambda mo: colorize("date_range", mo.group(0)), line)
     # Highlight date ranges without year, e.g. 'Sat 22 Nov 03:24 - 08:28'
-    line = _DATE_RANGE_RE.sub(lambda mo: colorize("date_range", mo.group(0)), line)
+    line = _sub_outside_color(_DATE_RANGE_RE, lambda mo: colorize("date_range", mo.group(0)), line)
 
     # Highlight game names in quotes
-    def _game_name_repl(mo):
-        quote_char, game_name = mo.groups()
-        return f"{quote_char}{colorize('game', game_name)}{quote_char}"
-    line = _GAME_NAME_QUOTED_RE.sub(_game_name_repl, line)
+    line = _sub_outside_color(_QUOTED_CONTENT_RE, _colorize_quoted_name, line)
 
     # Highlight boolean values first
-    line = _BOOLEAN_TRUE_RE.sub(lambda mo: colorize("boolean_true", mo.group(0)), line)
-    line = _BOOLEAN_FALSE_RE.sub(lambda mo: colorize("boolean_false", mo.group(0)), line)
+    line = _sub_outside_color(_BOOLEAN_TRUE_RE, lambda mo: colorize("boolean_true", mo.group(0)), line)
+    line = _sub_outside_color(_BOOLEAN_FALSE_RE, lambda mo: colorize("boolean_false", mo.group(0)), line)
+    line = _sub_outside_color(_ANSWER_VALUE_RE, lambda mo: f"{mo.group(1)}{colorize('boolean_true' if mo.group(2) == 'Yes' else 'boolean_false', mo.group(2))}", line)
 
     # Highlight online/offline keywords
-    line = _ONLINE_WORD_RE.sub(lambda mo: colorize("status_online", mo.group(0)), line)
-
     def _offline_repl(mo):
         text = mo.group(0)
         lower = text.lower()
@@ -768,7 +1676,15 @@ def _colorize_line(line, notification_summary=False):
             return colorize("status_snooze", text)
         return colorize("status_offline", text)
 
-    line = _OFFLINE_WORD_RE.sub(_offline_repl, line)
+    row_match = _SUMMARY_ROW_LABEL_RE.match(line)
+    label, body = row_match.groups() if row_match else ("", line)
+    body = _sub_outside_color(_ONLINE_WORD_RE, lambda mo: colorize("status_online", mo.group(0)), body)
+    line = label + _sub_outside_color(_OFFLINE_WORD_RE, _offline_repl, body)
+
+    # A line the caller already styled carries the colours it was meant to have, so the whole-line rules
+    # below leave it alone rather than wrapping it in a second style
+    if ANSI_RESET in original:
+        return line
 
     # Errors / warnings (avoid colouring summary lines like 'errors = False')
     lowered = original.lower()
@@ -780,6 +1696,10 @@ def _colorize_line(line, notification_summary=False):
         return colorize("warning", line)
     if "signal" in lowered and "received" in lowered:
         return colorize("signal", line)
+    if "sending email" in lowered:
+        return colorize("email", line)
+    if "sending webhook" in lowered:
+        return colorize("webhook", line)
 
     return line
 
@@ -805,6 +1725,16 @@ def apply_color_to_text(text):
     return "".join(parts)
 
 
+# Colours every link in a line, for the screens printed before the output stream colouriser is installed
+def colorize_links(text):
+    return _sub_outside_color(_URL_RE, lambda mo: colorize("link", mo.group(0)), text)
+
+
+# Colours one line of a fix block the way the output stream colours it, keeping its guide line a link
+def colorize_fix_line(line):
+    return colorize_links(line) if line.lstrip().startswith("Guide: ") else colorize("info", line)
+
+
 # Reports whether separator-only log lines should use ASCII on this system
 def ascii_log_separators_enabled():
     mode = str(ASCII_LOG_SEPARATORS).strip().lower()
@@ -820,16 +1750,68 @@ def normalize_log_separators(message):
     return re.sub(r"(?m)^─+$", lambda match: match.group(0).replace("─", "-"), message)
 
 
+# Truncates each line to a display width, expanding tabs and counting double-width characters correctly
+def truncate_string_per_line(message, truncate_width, tabsize=8):
+    try:
+        from wcwidth import wcwidth
+    except ImportError:
+        # Without wcwidth every character costs one column, so truncation still applies and only wide characters are measured short
+        wcwidth = len
+    truncated_lines = []
+    for line in message.split("\n"):
+        expanded_line = line.expandtabs(tabsize)
+        current_width = 0
+        truncated = []
+        position = 0
+        style_open = False
+        while position < len(expanded_line):
+            # A colour sequence is copied through free of charge, so styling never eats into the visible width
+            escape = SGR_SEQUENCE_RE.match(expanded_line, position)
+            if escape:
+                truncated.append(escape.group(0))
+                style_open = escape.group(0) not in ("\x1b[0m", "\x1b[m")
+                position = escape.end()
+                continue
+            char = expanded_line[position]
+            char_width = wcwidth(char)
+            if char_width is None or char_width < 0:
+                char_width = 0
+            if current_width + char_width > truncate_width:
+                # The cut may have dropped the reset, which would leave the colour running into every later line
+                if style_open:
+                    truncated.append(ANSI_RESET)
+                break
+            truncated.append(char)
+            current_width += char_width
+            position += 1
+        truncated_lines.append("".join(truncated))
+    return "\n".join(truncated_lines)
+
+
+# Resolves CLI and configured truncation settings while expanding the terminal-width sentinel
+def resolve_truncate_chars(cli_value, configured_value, logging_disabled):
+    truncate_chars = configured_value if cli_value is None else cli_value
+    if logging_disabled:
+        return 0
+    if truncate_chars == 999:
+        terminal_size = shutil.get_terminal_size()
+        print(f"The detected terminal screen width is: {terminal_size.columns} characters\n")
+        return terminal_size.columns
+    return truncate_chars
+
+
 # Logger class to output messages to stdout and log file
 class Logger(object):
     def __init__(self, filename, strip_ansi=True):
-        self.terminal = sys.stdout
+        # The early colouring stream is unwrapped so each line is coloured exactly once. Writing through it
+        # would colour the output a second time and the second pass no longer sees the labels it already styled
+        self.terminal = unwrap_terminal_stream(sys.stdout)
         self.logfile = open(filename, "a", buffering=1, encoding="utf-8")
         self.strip_ansi = strip_ansi
 
     def write(self, message):
-        coloured = apply_color_to_text(message)
-        self.terminal.write(coloured)
+        terminal_message = self._truncate_terminal(message)
+        self.terminal.write(apply_color_to_text(terminal_message))
 
         # Expand tabs for file output (stdout remains untouched)
         expanded_message = message.expandtabs(8)
@@ -840,24 +1822,220 @@ class Logger(object):
         self.terminal.flush()
         self.logfile.flush()
 
+    # Writes text the log file should keep but the terminal has already shown, or does not need
+    def log_only(self, message):
+        expanded_message = message.expandtabs(8)
+        if self.strip_ansi:
+            expanded_message = ANSI_ESCAPE_RE.sub("", expanded_message)
+        self.logfile.write(normalize_log_separators(expanded_message))
+        self.logfile.flush()
+
+    # Writes text meant for the reader at the terminal, which the log file has its own version of
+    def terminal_only(self, message):
+        terminal_message = self._truncate_terminal(message)
+        self.terminal.write(apply_color_to_text(terminal_message))
+        self.terminal.flush()
+
     def flush(self):
         self.terminal.flush()
         self.logfile.flush()
 
+    # Limits the terminal line across separate writes while leaving the log complete
+    def _truncate_terminal(self, message):
+        # The limit is fixed once at startup, so with truncation off there is no column to keep track of
+        if not TRUNCATE_CHARS:
+            return message
+        try:
+            from wcwidth import wcwidth
+        except ImportError:
+            wcwidth = len
+        column = getattr(self, "_terminal_column", 0)
+        clipped = getattr(self, "_terminal_clipped", False)
+        output = []
+        position = 0
+        while position < len(message):
+            escape = ANSI_ESCAPE_RE.match(message, position)
+            if escape:
+                output.append(escape.group(0))
+                position = escape.end()
+                continue
+            char = message[position]
+            position += 1
+            if char in ("\n", "\r"):
+                output.append(char)
+                column, clipped = 0, False
+                continue
+            width = 8 - column % 8 if char == "\t" else max(0, wcwidth(char))
+            if char == "\t" and TRUNCATE_CHARS:
+                width = min(width, max(0, TRUNCATE_CHARS - column))
+            if TRUNCATE_CHARS and (clipped or column + width > TRUNCATE_CHARS):
+                clipped = True
+                continue
+            output.append(" " * width if char == "\t" and TRUNCATE_CHARS else char)
+            column += width
+        self._terminal_column, self._terminal_clipped = column, clipped
+        return "".join(output)
 
-# Simple colour-aware stdout wrapper used when logging is disabled
+
+# Simple colour-aware stdout wrapper used before the log file is opened and whenever logging is disabled
 # Applies the same line-based colouring rules as Logger, but does not write anything to a log file
+# Truncation is off for the early instance, since the setting is only resolved once the arguments are parsed
 class ColorStream(object):
-    def __init__(self, stream):
+    def __init__(self, stream, truncate=True):
         self.terminal = stream
+        self.truncate = truncate
 
     def write(self, message):
-        coloured = apply_color_to_text(message)
-        self.terminal.write(coloured)
+        terminal_message = truncate_string_per_line(message, TRUNCATE_CHARS) if self.truncate and TRUNCATE_CHARS else message
+        self.terminal.write(apply_color_to_text(terminal_message))
         self.terminal.flush()
+
+    # Writes one message to the terminal while matching the Logger interface
+    def terminal_only(self, message):
+        self.write(message)
+
+    # Discards log-only output, since this stream is used exactly when there is no log file
+    def log_only(self, message):
+        return
 
     def flush(self):
         self.terminal.flush()
+
+    # Forwards the remaining stream attributes, so code reaching for buffer, encoding or isatty still finds them
+    def __getattr__(self, name):
+        return getattr(self.terminal, name)
+
+
+# Returns the real terminal behind any number of colouring stream wrappers
+def unwrap_terminal_stream(stream):
+    while isinstance(stream, ColorStream):
+        stream = stream.terminal
+    return stream
+
+
+# Help screen parts. argparse measures its column layout on the plain text, so the palette is applied to the
+# finished help screen rather than to the pieces argparse assembles and the layout stays identical
+_HELP_USAGE_LABEL = "usage:"
+_HELP_HEADING_RE = re.compile(r"^\S.*:$")
+# The character after the leading dashes excludes a dash itself, so the dash count and the name that follows
+# cannot both claim the same character. Without that the repeated alternative backtracks exponentially
+_HELP_OPTION_ROW_RE = re.compile(r"^( {2,})(-{1,2}[^\s,-][^\s,]*(?:, *-{1,2}[^\s,-][^\s,]*)*)(.*)$")
+_HELP_POSITIONAL_ROW_RE = re.compile(r"^( {2,})([A-Z][A-Z0-9_]*)( {2,}.*)$")
+_HELP_COLUMN_GAP_RE = re.compile(r" {2,}")
+# A value placeholder is an upper-case metavar, a choice list or an angle-bracket name, including a
+# colon-joined pair of them
+_HELP_METAVAR_RE = re.compile(r"\{[^}]*\}|<[^>]+>|\b[A-Z][A-Z0-9_]*(?::[A-Z][A-Z0-9_]*)*\b")
+_HELP_OPTION_RE = re.compile(r"(?<![\w-])(--?[A-Za-z][\w-]*)")
+_HELP_PLACEHOLDER_RE = re.compile(r"<[^>]+>")
+_HELP_DEFAULT_RE = re.compile(r"\(default:[^)]*\)")
+
+
+# Helper to apply a block style while preserving internal highlights
+def _apply_style_nested(line, style_name):
+    start_style = _COLOR_STYLES.get(style_name)
+    if not start_style:
+        return line
+    # Wrap the line in the style, but ensure internal resets, return to the style immediately instead of resetting to plain
+    line = f"{start_style}{line}{ANSI_RESET}"
+    line = line.replace(ANSI_RESET, f"{ANSI_RESET}{start_style}")
+    if line.endswith(f"{ANSI_RESET}{start_style}"):
+        line = line[:-len(start_style)]
+    return line
+
+
+# Colours the links and the default notes inside one line of help prose
+def _colorize_help_prose(line):
+    line = _URL_RE.sub(lambda match: colorize("link", match.group(1)), line)
+    return _HELP_DEFAULT_RE.sub(lambda match: colorize("help_default", match.group(0)), line)
+
+
+# Colours the option names and the value placeholders of one usage line or option column
+def _colorize_help_signature(text):
+    text = _HELP_METAVAR_RE.sub(lambda match: colorize("help_metavar", match.group(0)), text)
+    return _sub_outside_color(_HELP_OPTION_RE, lambda match: colorize("help_option", match.group(1)), text)
+
+
+# Colours the usage block, the group headings and the option rows of the help screen
+def _colorize_help_body(text):
+    lines = []
+    in_usage = False
+    for line in text.split("\n"):
+        if line.startswith(_HELP_USAGE_LABEL):
+            in_usage = True
+            lines.append(colorize("help_usage", _HELP_USAGE_LABEL) + _colorize_help_signature(line[len(_HELP_USAGE_LABEL):]))
+            continue
+        if in_usage:
+            if line.strip():
+                lines.append(_colorize_help_signature(line))
+                continue
+            in_usage = False
+        if _HELP_HEADING_RE.match(line):
+            lines.append(colorize("help_heading", line))
+            continue
+        option_row = _HELP_OPTION_ROW_RE.match(line)
+        if option_row:
+            indent, names, remainder = option_row.groups()
+            gap = _HELP_COLUMN_GAP_RE.search(remainder)
+            metavars, description = (remainder[:gap.start()], remainder[gap.start():]) if gap else (remainder, "")
+            lines.append(indent + _colorize_help_signature(names + metavars) + _colorize_help_prose(description))
+            continue
+        positional_row = _HELP_POSITIONAL_ROW_RE.match(line)
+        if positional_row:
+            indent, name, description = positional_row.groups()
+            lines.append(indent + colorize("help_metavar", name) + _colorize_help_prose(description))
+            continue
+        lines.append(_colorize_help_prose(line))
+    return "\n".join(lines)
+
+
+# Colours the examples of the help epilog: the task headings, the comments and the commands to run
+def _colorize_help_epilog(text):
+    lines = []
+    for line in text.split("\n"):
+        if _HELP_HEADING_RE.match(line):
+            lines.append(colorize("help_heading", line))
+            continue
+        if not line.strip() or not line.startswith(" "):
+            lines.append(_colorize_help_prose(line))
+            continue
+        if line.lstrip().startswith("#"):
+            comment = _apply_style_nested(_colorize_help_prose(line), "help_comment")
+            lines.append(comment)
+            continue
+        placeholders = _HELP_PLACEHOLDER_RE.sub(lambda match: colorize("help_placeholder", match.group(0)), line)
+        command = _apply_style_nested(placeholders, "help_command")
+        lines.append(command)
+    return "\n".join(lines)
+
+
+# Colours one finished help screen, leaving its column layout untouched
+def colorize_help_text(text, epilog=None):
+    if not COLOR_ENABLED or not isinstance(text, str) or not text:
+        return text
+    examples = (epilog or "").strip("\n")
+    start = text.rfind(examples) if examples else -1
+    if start == -1:
+        return _colorize_help_body(text)
+    return _colorize_help_body(text[:start]) + _colorize_help_epilog(text[start:])
+
+
+# Parser that colours its own help screen and writes it past the output colouriser, which would otherwise
+# repaint the finished help with the rules meant for monitoring output
+class ColoredHelpParser(argparse.ArgumentParser):
+    # Returns the help screen with the help palette already applied
+    def format_help(self) -> str:
+        return colorize_help_text(super().format_help(), self.epilog)
+
+    # Writes one parser message straight to the terminal behind any colouring wrapper
+    def _print_message(self, message, file=None) -> None:
+        if not message:
+            return
+        stream = sys.stderr if file is None else file
+        target = unwrap_terminal_stream(stream)
+        target.write(message)
+        flush = getattr(target, "flush", None)
+        if callable(flush):
+            flush()
 
 
 # Signal handler when user presses Ctrl+C
@@ -867,13 +2045,55 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
-# Checks internet connectivity
-def check_internet(url=CHECK_INTERNET_URL, timeout=CHECK_INTERNET_TIMEOUT):
+# Restores Python's default Ctrl+C behavior while a prompt waits, so the prompt reports the outcome instead of the signal handler
+@contextmanager
+def default_interrupt_handling():
     try:
-        _ = req.get(url, timeout=timeout)
+        previous_handler = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, signal.default_int_handler)
+    except (ValueError, OSError):
+        # Handlers can only be replaced from the main thread, which is where every prompt runs
+        yield
+        return
+    try:
+        yield
+    finally:
+        try:
+            signal.signal(signal.SIGINT, previous_handler)
+        except (ValueError, OSError):
+            pass
+
+
+# Reads one visible answer with Python's default Ctrl+C behavior
+def read_interactively(reader, *args, **kwargs):
+    with default_interrupt_handling():
+        return reader(*args, **kwargs)
+
+
+# Reads one hidden answer with Python's default Ctrl+C behavior. Kept apart from the visible reader so a
+# secret typed here is never confused with an ordinary answer that is later printed back to the user
+def read_secret_interactively(reader, *args, **kwargs):
+    with default_interrupt_handling():
+        return reader(*args, **kwargs)
+
+
+# Checks internet connectivity against the configured URL and timeout
+def check_internet(url=None, timeout=None, quiet=False):
+    # Resolved at call time so a config file can change these, which binding them as default arguments prevented
+    selected_url = CHECK_INTERNET_URL if url is None else url
+    selected_timeout = CHECK_INTERNET_TIMEOUT if timeout is None else timeout
+    debug_print("Connectivity check", url=selected_url, timeout=f"{selected_timeout}s", verify_ssl=VERIFY_SSL)
+    try:
+        _ = req.get(selected_url, timeout=selected_timeout, verify=VERIFY_SSL)
+        debug_print("Connectivity check", url=selected_url, outcome="OK")
         return True
     except req.RequestException as e:
-        print(f"* No connectivity, please check your network:\n\n{e}")
+        # Quiet callers render the failure themselves, which doctor needs so nothing lands on its progress line
+        global LAST_CONNECTIVITY_ERROR
+        debug_print("Connectivity check", url=selected_url, outcome="failed", error=f"{type(e).__name__}: {e}")
+        if not quiet:
+            print_recovery_error(e, context="connectivity")
+        LAST_CONNECTIVITY_ERROR = e
         return False
 
 
@@ -912,7 +2132,7 @@ def resolve_steam_community_url(community_url, api_key, timeout=30):
 
     resolver_url = "https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/"
     try:
-        response = req.get(resolver_url, params={"key": api_key, "vanityurl": profile_name, "url_type": 1}, timeout=timeout)
+        response = req.get(resolver_url, params={"key": api_key, "vanityurl": profile_name, "url_type": 1}, timeout=timeout, verify=VERIFY_SSL)
     except req.Timeout:
         raise ValueError("Steam Web API request timed out") from None
     except req.RequestException:
@@ -946,6 +2166,107 @@ def resolve_steam_community_url(community_url, api_key, timeout=30):
     return int(resolved_id.as_64)
 
 
+# Parses a human duration such as 30s, 2m, 1.5h, 1h 30m, 1d or a bare number of seconds, returning whole seconds
+def parse_duration_input(value):
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value) if value > 0 else None
+    if not isinstance(value, str):
+        return None
+    text = value.strip().casefold().replace(",", ".")
+    if not text:
+        return None
+    units = {"s": 1, "sec": 1, "secs": 1, "second": 1, "seconds": 1,
+             "m": 60, "min": 60, "mins": 60, "minute": 60, "minutes": 60,
+             "h": 3600, "hr": 3600, "hrs": 3600, "hour": 3600, "hours": 3600,
+             "d": 86400, "day": 86400, "days": 86400}
+    matches = re.findall(r"(\d+(?:\.\d+)?)\s*([a-z]*)", text)
+    # Reject anything the pattern did not fully consume, so "5x" or "abc" cannot read as a bare number
+    if not matches or re.sub(r"(\d+(?:\.\d+)?)\s*([a-z]*)", "", text).strip():
+        return None
+    total = 0.0
+    for amount, unit in matches:
+        if unit and unit not in units:
+            return None
+        total += float(amount) * units.get(unit, 1)
+    seconds = int(round(total))
+    return seconds if seconds > 0 else None
+
+
+# Splits a Steam target into a resolved Steam64 ID or the vanity name that still needs one API lookup
+def normalize_steam_target(value):
+    if isinstance(value, bool) or value is None:
+        raise ValueError(STEAM_TARGET_INPUT_ERROR)
+    text = str(value).strip()
+    if not text or any(character.isspace() for character in text):
+        raise ValueError(STEAM_TARGET_INPUT_ERROR)
+
+    # A bare Steam64 ID, the form the tool stores and the one everything else normalizes to
+    if text.isdigit():
+        candidate = steam.steamid.SteamID(text)
+        if candidate.is_valid() and candidate.type == steam.steamid.EType.Individual:
+            return int(candidate.as_64), None
+        raise ValueError(STEAM_TARGET_INPUT_ERROR)
+
+    # A Steam3 identifier such as [U:1:4000022202] pasted straight out of a console or a profile page
+    if text.startswith("[") and text.endswith("]"):
+        candidate = steam.steamid.SteamID(text)
+        if candidate.is_valid() and candidate.type == steam.steamid.EType.Individual:
+            return int(candidate.as_64), None
+        raise ValueError(STEAM_TARGET_INPUT_ERROR)
+
+    lowered = text.casefold()
+    # Only restores the scheme a pasted link may lack. The host is checked on the parsed URL below
+    # codeql[py/incomplete-url-substring-sanitization]
+    if lowered.startswith("steamcommunity.com/") or lowered.startswith("www.steamcommunity.com/"):
+        text = "https://" + text
+        lowered = text.casefold()
+
+    if lowered.startswith("http://") or lowered.startswith("https://"):
+        try:
+            parsed = urlparse(text)
+        except ValueError:
+            raise ValueError(STEAM_TARGET_INPUT_ERROR) from None
+        if (parsed.hostname or "").casefold() not in ("steamcommunity.com", "www.steamcommunity.com"):
+            raise ValueError(STEAM_TARGET_INPUT_ERROR)
+        parts = [unquote(part) for part in parsed.path.split("/") if part]
+        if len(parts) < 2:
+            raise ValueError(STEAM_TARGET_INPUT_ERROR)
+        kind, name = parts[0].casefold(), parts[1]
+        if kind == "profiles":
+            candidate = steam.steamid.SteamID(name)
+            if candidate.is_valid() and candidate.type == steam.steamid.EType.Individual:
+                return int(candidate.as_64), None
+            raise ValueError(STEAM_TARGET_INPUT_ERROR)
+        if kind == "user":
+            candidate = steam.steamid.from_invite_code(name)
+            if candidate and candidate.is_valid():
+                return int(candidate.as_64), None
+            raise ValueError(STEAM_TARGET_INPUT_ERROR)
+        if kind == "id":
+            # A vanity name cannot be resolved locally, so it is handed back for the one API lookup it needs
+            return None, name
+        raise ValueError(STEAM_TARGET_INPUT_ERROR)
+
+    # A bare vanity name, which is what people copy out of the address bar
+    if re.fullmatch(r"[A-Za-z0-9_-]{2,64}", text):
+        return None, text
+    raise ValueError(STEAM_TARGET_INPUT_ERROR)
+
+
+# Resolves any accepted Steam target form to one canonical Steam64 ID
+def resolve_steam_target(value, api_key):
+    steam64, vanity = normalize_steam_target(value)
+    if steam64 is not None:
+        return steam64
+    original = str(value).strip()
+    if original.casefold().startswith(("steamcommunity.com/", "www.steamcommunity.com/")):
+        original = "https://" + original
+    community_url = original if original.casefold().startswith(("http://", "https://")) else f"https://steamcommunity.com/id/{vanity}/"
+    return resolve_steam_community_url(community_url, api_key)
+
+
 # Clears the terminal screen
 def clear_screen(enabled=True):
     if not enabled:
@@ -960,6 +2281,21 @@ def clear_screen(enabled=True):
             os.system('clear')
     except Exception:
         print("* Cannot clear the screen contents")
+
+
+# Commands that print a one-shot result and exit, so the screen keeps whatever is already on it
+KEEP_HISTORY_FLAGS = (*SECRET_ACTION_FLAGS, "--doctor", "--send-test-email", "--send-test-webhook", "--help", "-h")
+
+
+# Returns True when the running command is a one-shot whose output has to stay scrollable
+def keep_terminal_history():
+    return any(flag in sys.argv for flag in KEEP_HISTORY_FLAGS)
+
+
+# Prints the ASCII startup banner with a separately aligned version
+def print_startup_banner():
+    print("\n".join(colorize("header", line) if line else line for line in STARTUP_BANNER.splitlines()))
+    print(colorize("info", f"{'':21}v{VERSION}") + "\n")
 
 
 # Converts absolute value of seconds to human readable format
@@ -1055,8 +2391,21 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
         return '0 seconds'
 
 
-# Sends email notification
-def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
+# Opens one authenticated SMTP session and leaves closing it to the caller
+def smtp_connect_and_login(use_ssl, smtp_timeout=15):
+    smtp_object = smtplib.SMTP(SMTP_HOST, int(SMTP_PORT), timeout=smtp_timeout)
+    try:
+        if use_ssl:
+            smtp_object.starttls(context=smtp_ssl_context())
+        smtp_login(smtp_object, SMTP_USER, SMTP_PASSWORD)
+        return smtp_object
+    except Exception:
+        smtp_quit_quietly(smtp_object)
+        raise
+
+
+# Returns the first mail server setting that makes a delivery impossible, or None when they are all usable
+def smtp_settings_problem():
     fqdn_re = re.compile(r'(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)')
     email_re = re.compile(r'[^@]+@[^@]+\.[^@]+')
 
@@ -1064,41 +2413,57 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
         ipaddress.ip_address(str(SMTP_HOST))
     except ValueError:
         if not fqdn_re.search(str(SMTP_HOST)):
-            print("Error sending email - SMTP settings are incorrect (invalid IP address/FQDN in SMTP_HOST)")
-            return 1
+            return "The SMTP settings are incorrect (invalid IP address/FQDN in SMTP_HOST)"
 
     try:
         port = int(SMTP_PORT)
-        if not (1 <= port <= 65535):
+        if isinstance(SMTP_PORT, bool) or not (1 <= port <= 65535):
             raise ValueError
-    except ValueError:
-        print("Error sending email - SMTP settings are incorrect (invalid port number in SMTP_PORT)")
-        return 1
+    except (TypeError, ValueError, OverflowError):
+        return "The SMTP settings are incorrect (invalid port number in SMTP_PORT)"
 
     if not email_re.search(str(SENDER_EMAIL)) or not email_re.search(str(RECEIVER_EMAIL)):
-        print("Error sending email - SMTP settings are incorrect (invalid email in SENDER_EMAIL or RECEIVER_EMAIL)")
-        return 1
+        return "The SMTP settings are incorrect (invalid email in SENDER_EMAIL or RECEIVER_EMAIL)"
 
     if not SMTP_USER or not isinstance(SMTP_USER, str) or SMTP_USER == "your_smtp_user" or not SMTP_PASSWORD or not isinstance(SMTP_PASSWORD, str) or SMTP_PASSWORD == "your_smtp_password":
-        print("Error sending email - SMTP settings are incorrect (check SMTP_USER & SMTP_PASSWORD variables)")
+        return "The SMTP settings are incorrect (check SMTP_USER & SMTP_PASSWORD variables)"
+
+    return None
+
+
+# Closes an SMTP session without changing the result of an accepted or failed message
+def smtp_quit_quietly(smtp_object):
+    if smtp_object is None:
+        return
+    try:
+        smtp_object.quit()
+    except Exception as quit_error:
+        debug_print("SMTP quit", outcome="failed", error=f"{type(quit_error).__name__}: {quit_error}")
+        try:
+            smtp_object.close()
+        except Exception as close_error:
+            debug_print("SMTP close", outcome="failed", error=f"{type(close_error).__name__}: {close_error}")
+
+
+# Sends email notification
+def send_email(subject, body, body_html, use_ssl, smtp_timeout=15, report_delivery=True):
+    settings_problem = smtp_settings_problem()
+    if settings_problem is not None:
+        print_recovery_error(context="email", detail=settings_problem)
         return 1
 
     if not subject or not isinstance(subject, str):
-        print("Error sending email - SMTP settings are incorrect (subject is not a string or is empty)")
+        print_recovery_error(context="email", detail="The SMTP settings are incorrect (subject is not a string or is empty)")
         return 1
 
     if not body and not body_html:
-        print("Error sending email - SMTP settings are incorrect (body and body_html cannot be empty at the same time)")
+        print_recovery_error(context="email", detail="The SMTP settings are incorrect (body and body_html cannot be empty at the same time)")
         return 1
 
+    debug_print("SMTP delivery", host=SMTP_HOST, port=SMTP_PORT, user=SMTP_USER, starttls=bool(use_ssl), timeout=f"{smtp_timeout}s")
+    smtpObj = None
     try:
-        if use_ssl:
-            ssl_context = ssl.create_default_context()
-            smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=smtp_timeout)
-            smtpObj.starttls(context=ssl_context)
-        else:
-            smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=smtp_timeout)
-        smtpObj.login(SMTP_USER, SMTP_PASSWORD)
+        smtpObj = smtp_connect_and_login(use_ssl, smtp_timeout=smtp_timeout)
         email_msg = MIMEMultipart('alternative')
         email_msg["From"] = SENDER_EMAIL
         email_msg["To"] = RECEIVER_EMAIL
@@ -1115,10 +2480,15 @@ def send_email(subject, body, body_html, use_ssl, smtp_timeout=15):
             email_msg.attach(part2)
 
         smtpObj.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, email_msg.as_string())
-        smtpObj.quit()
     except Exception as e:
-        print(f"Error sending email: {e}")
+        debug_swallowed_exception("Sending email", e)
+        print_recovery_error(e, context="email")
         return 1
+    finally:
+        smtp_quit_quietly(smtpObj)
+    debug_print("SMTP delivery", host=SMTP_HOST, port=SMTP_PORT, recipient=RECEIVER_EMAIL, outcome="OK")
+    if report_delivery:
+        verbose_delivery_print(f"Email sent to {RECEIVER_EMAIL}")
     return 0
 
 
@@ -1132,7 +2502,8 @@ def _format_dotenv_value(value):
     if not isinstance(value, str):
         raise TypeError("Dotenv secret values must be strings")
     escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\r", "\\r").replace("\n", "\\n")
-    return f'"{escaped}"'
+    suffix = ' # monitor:literal' if '${' in value else ''
+    return f'"{escaped}"{suffix}'
 
 
 # Resolves a private dotenv destination without searching parent directories
@@ -1144,17 +2515,71 @@ def resolve_secret_env_path(env_file=None, cwd=None):
     return destination.resolve()
 
 
+# Returns the keys a dotenv file itself defines, used to tell a file-supplied secret from an exported one
+def dotenv_file_keys(env_path=None):
+    if not env_path or not os.path.isfile(str(env_path)):
+        return frozenset()
+    try:
+        from dotenv import dotenv_values
+    except ImportError:
+        return frozenset()
+    try:
+        return frozenset(name for name, value in dotenv_values(str(env_path)).items() if value is not None)
+    except Exception:
+        return frozenset()
+
+
+# Returns where each effective environment secret came from while preserving exported-value precedence
+def secret_sources(env_path=None, exported_keys=None):
+    state = DOTENV_RELOAD_STATE
+    file_keys = state["managed"] if state else dotenv_file_keys(env_path)
+    protected_keys = EXPORTED_SECRET_KEYS if exported_keys is None else frozenset(exported_keys)
+    sources = {}
+    for secret in SECRET_KEYS:
+        if os.getenv(secret) is None or (state and secret not in file_keys and secret not in protected_keys and secret not in state["exported"]):
+            continue
+        sources[secret] = "environment" if secret in protected_keys or secret not in file_keys else str(env_path)
+    return sources
+
+
+# Reloads dotenv secrets without replacing values exported when the process started
+def reload_dotenv_secrets(env_path, exported_keys=None):
+    protected_keys = EXPORTED_SECRET_KEYS if exported_keys is None else frozenset(exported_keys)
+    load_managed_dotenv(env_path, override=True, protected_keys=protected_keys)
+
+
+# Copies exported secrets into module globals and returns the applied names paired with whether the value changed
+def load_secrets_from_environment(namespace=None):
+    selected_namespace = globals() if namespace is None else namespace
+    applied = []
+    for secret in SECRET_KEYS:
+        if secret in command_line_secret_keys():
+            continue
+        value = os.getenv(secret)
+        if value is None:
+            continue
+        applied.append((secret, selected_namespace.get(secret) != value))
+        selected_namespace[secret] = value
+    return applied
+
+
 # Checks whether a dotenv file already contains one named assignment
 def _dotenv_contains_key(destination, key):
     destination_path = Path(destination)
     if not destination_path.exists():
         return False
     try:
-        lines = destination_path.read_text(encoding="utf-8").splitlines()
+        content = destination_path.read_text(encoding="utf-8")
     except (OSError, UnicodeError):
         raise SecretConfigurationError(f"Could not read dotenv destination '{destination_path}'. Check that it is a readable UTF-8 file.")
-    assignment_pattern = re.compile(rf"^\s*(?:export\s+)?{re.escape(key)}\s*=")
-    return any(assignment_pattern.match(line) for line in lines)
+    return any(binding.key == key for binding in _dotenv_bindings(content))
+
+
+# Returns the dotenv parser's own bindings for one file's text, where a quoted value written across several lines is one binding
+def _dotenv_bindings(text: str):
+    from io import StringIO
+    from dotenv.parser import parse_stream
+    return list(parse_stream(StringIO(text)))
 
 
 # Updates supported secrets in a dotenv file through an atomic replacement
@@ -1170,30 +2595,45 @@ def update_dotenv_file(destination, updates):
 
     destination_path = Path(destination).expanduser()
     destination_path.parent.mkdir(parents=True, exist_ok=True)
-    existing_lines = destination_path.read_text(encoding="utf-8").splitlines() if destination_path.exists() else []
+    existing_bindings = _dotenv_bindings(destination_path.read_text(encoding="utf-8") if destination_path.exists() else "")
     update_keys = {key for key, _ in update_items}
     values_by_key = dict(update_items)
     seen_keys = set()
-    output_lines = []
-    assignment_pattern = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
-    for line in existing_lines:
-        match = assignment_pattern.match(line)
-        key = match.group(1) if match else None
-        if key not in update_keys:
-            output_lines.append(line)
+    output_parts = []
+    # Rebuilt from the parser's own bindings rather than physical lines, since a quoted value can span several
+    # of them and replacing only the first leaves the rest of the old secret behind as broken syntax
+    for binding in existing_bindings:
+        original = binding.original.string
+        blank_prefix = original[:len(original) - len(original.lstrip("\r\n"))]
+        if binding.key is None or binding.key not in update_keys:
+            output_parts.append(original)
             continue
-        if key in seen_keys:
+        if binding.key in seen_keys:
+            output_parts.append(blank_prefix)
             continue
-        output_lines.append(f"{key}={_format_dotenv_value(values_by_key[key])}")
-        seen_keys.add(key)
-    for key, value in update_items:
-        if key not in seen_keys:
-            output_lines.append(f"{key}={_format_dotenv_value(value)}")
-            seen_keys.add(key)
-
-    content = "\n".join(output_lines)
-    if output_lines:
+        seen_keys.add(binding.key)
+        # A secret cleared by its owner is removed rather than emptied, so a disabled value cannot linger here
+        if not values_by_key[binding.key]:
+            output_parts.append(blank_prefix)
+            continue
+        # An "export " the owner wrote is kept, since dropping it changes what a shell sourcing the file exports
+        head = original[len(blank_prefix):]
+        # Keep key quotes out of the indentation and export prefix
+        written_prefix = head[:head.index(binding.key)].rstrip("'")
+        output_parts.append(f"{blank_prefix}{written_prefix}{binding.key}={_format_dotenv_value(values_by_key[binding.key])}\n")
+    content = "".join(output_parts)
+    # A file that did not end in a newline would otherwise take the first new assignment onto its last line
+    if content and not content.endswith("\n"):
         content += "\n"
+    for key, value in update_items:
+        if key not in seen_keys and value:
+            content += f"{key}={_format_dotenv_value(value)}\n"
+            seen_keys.add(key)
+    # Checked before it replaces the file, so a rewrite can never publish a secret the next run cannot read back
+    rewritten = resolve_dotenv_values(content, override=True)
+    if any(rewritten.get(key, "") != value for key, value in update_items):
+        raise ValueError(f"Updating '{destination_path}' would not store the requested values")
+
     temporary_path = None
     try:
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n", prefix=f".{destination_path.name}.", suffix=".tmp", dir=str(destination_path.parent), delete=False) as temporary_file:
@@ -1203,6 +2643,7 @@ def update_dotenv_file(destination, updates):
             os.fsync(temporary_file.fileno())
         if os.name == "posix":
             os.chmod(str(temporary_path), 0o600)
+        # No backup is taken here: a copy of the credential being replaced is the one thing not worth keeping
         os.replace(str(temporary_path), str(destination_path))
         temporary_path = None
     finally:
@@ -1216,16 +2657,27 @@ def validate_steam_api_key(api_key, timeout=10):
     if not isinstance(api_key, str) or not re.fullmatch(r"[A-Fa-f0-9]{32}", api_key.strip()):
         return False
     try:
-        response = req.get("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/", params={"key": api_key.strip(), "steamids": "76561197960287930"}, timeout=timeout)
+        response = req.get("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/", params={"key": api_key.strip(), "steamids": "76561201960287930"}, timeout=timeout, verify=VERIFY_SSL)
         if response.status_code != 200:
             return False
         payload = response.json()
         return isinstance(payload, dict) and isinstance(payload.get("response"), dict) and isinstance(payload["response"].get("players"), list)
-    except (ValueError, req.RequestException):
+    except (ValueError, req.RequestException) as exc:
+        exit_if_out_of_file_descriptors(exc)
         return False
 
 
+# Applies the discovered configuration to a secret command that runs before the normal configuration load, so the
+# request it makes to validate the entered secret follows the configured TLS choice rather than the built-in default
+def _prepare_early_command_config() -> None:
+    cfg_path = None if CONFIG_DISCOVERY_DISABLED else find_config_file(CLI_CONFIG_PATH)
+    if cfg_path and not load_config_file(cfg_path):
+        sys.exit(1)
+    apply_tls_verification_setting()
+
+
 # Privately validates and atomically stores one Steam Web API key
+@suppresses_debug_output
 def run_set_steam_api_key(env_file=None, interactive=None, input_func=None, getpass_func=None, validator=None):
     destination = resolve_secret_env_path(env_file)
     terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
@@ -1234,17 +2686,20 @@ def run_set_steam_api_key(env_file=None, interactive=None, input_func=None, getp
     prompt = input if input_func is None else input_func
     if _dotenv_contains_key(destination, "STEAM_API_KEY"):
         try:
-            confirmed = prompt(f"Replace the saved Steam Web API key in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
+            confirmed = read_interactively(prompt, f"Replace the saved Steam Web API key in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
         except (EOFError, KeyboardInterrupt):
-            confirmed = False
+            print()
+            raise RecoveryError(secret_entry_cancelled_advice("Steam Web API key", "--set-steam-api-key", STEAM_API_KEY_GUIDE_URL)) from None
         if not confirmed:
-            raise SecretConfigurationError("Steam Web API key setup was cancelled. The private settings file was not changed.")
+            raise RecoveryError(secret_replacement_declined_advice("Steam Web API key", "--set-steam-api-key", STEAM_API_KEY_GUIDE_URL))
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
-        api_key = hidden_prompt("Paste the Steam Web API key (input hidden): ").strip()
+        api_key = read_secret_interactively(hidden_prompt, "Paste the Steam Web API key (input hidden): ").strip()
     except (EOFError, KeyboardInterrupt):
-        raise SecretConfigurationError("Steam Web API key setup was cancelled. The private settings file was not changed.")
+        print()
+        raise RecoveryError(secret_entry_cancelled_advice("Steam Web API key", "--set-steam-api-key", STEAM_API_KEY_GUIDE_URL)) from None
     validate = validate_steam_api_key if validator is None else validator
+    print("* Checking the entered Steam Web API key before changing the private settings file ...")
     if not validate(api_key):
         raise SecretConfigurationError("The entered Steam Web API key is invalid or could not be verified. The private settings file was not changed.")
     try:
@@ -1253,6 +2708,10 @@ def run_set_steam_api_key(env_file=None, interactive=None, input_func=None, getp
         raise SecretConfigurationError(f"Could not save the Steam Web API key in '{destination}'. Check file permissions or choose another path with --env-file.")
     print("* Steam Web API key is valid")
     print(f"* Updated private settings file: {destination}")
+    print()
+    monitor_target = command_targets(None, config_file_target(find_config_file()))[1]
+    _wizard_print_command("Check setup again:", render_command(["--doctor"], env_path=destination))
+    _wizard_print_command("After Doctor passes, start monitoring:", render_command([monitor_target] if monitor_target else [], env_path=destination))
     return str(destination)
 
 
@@ -1263,9 +2722,23 @@ def validate_webhook_url(url=None):
         return False
     try:
         parsed = urlsplit(selected_url.strip())
+        if parsed.port is not None and not 1 <= parsed.port <= 65535:
+            return False
     except ValueError:
         return False
     return parsed.scheme.casefold() == "https" and bool(parsed.hostname) and not parsed.username and not parsed.password and bool(parsed.path.strip("/"))
+
+
+# Accepts a complete HTTPS ntfy URL or a bare ntfy.sh topic name and returns the full URL
+def normalize_ntfy_topic_url(value):
+    if not isinstance(value, str):
+        return ""
+    normalized = value.strip()
+    if validate_webhook_url(normalized):
+        return normalized
+    if re.fullmatch(r"[-_A-Za-z0-9]{1,64}", normalized):
+        return f"https://ntfy.sh/{normalized}"
+    return ""
 
 
 # Detects Discord and public ntfy webhook providers from distinctive URL shapes
@@ -1285,6 +2758,7 @@ def detect_webhook_provider(url):
 
 
 # Privately validates and atomically stores one webhook URL
+@suppresses_debug_output
 def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpass_func=None):
     destination = resolve_secret_env_path(env_file)
     terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
@@ -1293,16 +2767,18 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
     prompt = input if input_func is None else input_func
     if _dotenv_contains_key(destination, "WEBHOOK_URL"):
         try:
-            confirmed = prompt(f"Replace the saved webhook URL in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
+            confirmed = read_interactively(prompt, f"Replace the saved webhook URL in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
         except (EOFError, KeyboardInterrupt):
-            confirmed = False
+            print()
+            raise RecoveryError(secret_entry_cancelled_advice("webhook URL", "--set-webhook-url", WEBHOOK_GUIDE_URL)) from None
         if not confirmed:
-            raise SecretConfigurationError("Webhook setup was cancelled. The private settings file was not changed.")
+            raise RecoveryError(secret_replacement_declined_advice("webhook URL", "--set-webhook-url", WEBHOOK_GUIDE_URL))
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
-        webhook_url = hidden_prompt("Paste the Discord or ntfy webhook URL (input hidden): ").strip()
+        webhook_url = read_secret_interactively(hidden_prompt, "Paste the Discord or ntfy webhook URL (input hidden): ").strip()
     except (EOFError, KeyboardInterrupt):
-        raise SecretConfigurationError("Webhook setup was cancelled. The private settings file was not changed.")
+        print()
+        raise RecoveryError(secret_entry_cancelled_advice("webhook URL", "--set-webhook-url", WEBHOOK_GUIDE_URL)) from None
     if not validate_webhook_url(webhook_url):
         raise SecretConfigurationError("That does not look like a complete HTTPS webhook URL. The private settings file was not changed.")
     try:
@@ -1311,7 +2787,111 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
         raise SecretConfigurationError(f"Could not save the webhook URL in '{destination}'. Check file permissions or choose another path with --env-file.")
     print("* Webhook URL looks valid")
     print(f"* Updated private settings file: {destination}")
-    print(f"* Send a test webhook with: steam_monitor --send-test-webhook --env-file {destination}")
+    print()
+    _wizard_print_command("Send a test webhook:", render_command(["--send-test-webhook"], env_path=destination))
+    _wizard_print_command("Check setup again:", render_command(["--doctor"], env_path=destination))
+    return str(destination)
+
+
+# The settings a sign-in needs before a password can be checked against the mail server
+MAIL_SIGN_IN_SETTINGS = ("SMTP_HOST", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL")
+MAIL_SETTINGS_INCOMPLETE_MESSAGE = "The mail server settings are incomplete. Set SMTP_HOST, SMTP_USER, SENDER_EMAIL and RECEIVER_EMAIL first, or run --setup."
+
+
+# Returns whether every setting a mail sign-in needs holds a real value
+def mail_sign_in_settings_complete():
+    return all(doctor_value_is_set(globals().get(name)) for name in MAIL_SIGN_IN_SETTINGS)
+
+
+# Signs in while removing the attempted password from SMTP rejection replies before they can be rendered
+def smtp_login(connection, username, password):
+    try:
+        return connection.login(username, password)
+    except smtplib.SMTPResponseException as error:
+        reply = error.smtp_error
+        if password:
+            if isinstance(reply, bytes):
+                reply = reply.replace(str(password).encode("utf-8"), b"<redacted>")
+            else:
+                reply = str(reply).replace(str(password), "<redacted>")
+        error.smtp_error = reply
+        error.args = (error.smtp_code, reply)
+        raise
+
+
+# Signs in to the configured mail server with one entered password, so nothing is saved that cannot deliver
+def smtp_sign_in(password, timeout=15):
+    global SMTP_PASSWORD
+
+    candidate = str(password or "")
+    if not candidate or candidate == "your_smtp_password":
+        raise SecretConfigurationError("No SMTP password was entered. The private settings file was not changed.")
+    if not mail_sign_in_settings_complete():
+        raise SecretConfigurationError(MAIL_SETTINGS_INCOMPLETE_MESSAGE)
+    previous_password = SMTP_PASSWORD
+    SMTP_PASSWORD = candidate
+    smtp_object = None
+    try:
+        smtp_object = smtp_connect_and_login(SMTP_SSL, smtp_timeout=timeout)
+    finally:
+        if smtp_object is not None:
+            try:
+                smtp_object.quit()
+            except Exception:
+                pass
+        SMTP_PASSWORD = previous_password
+    return str(SMTP_USER)
+
+
+@suppresses_debug_output
+# Privately checks one SMTP password against the mail server and atomically stores it
+def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getpass_func=None, sign_in=None):
+    destination = resolve_secret_env_path(env_file)
+    terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
+    if not terminal_is_interactive:
+        raise SecretConfigurationError("--set-smtp-password requires an interactive terminal. Run it in a terminal window so the password stays hidden while you type it.")
+    # Checked before the prompts, so nobody types a password only to be told the mail server was never configured
+    if not mail_sign_in_settings_complete():
+        raise SecretConfigurationError(MAIL_SETTINGS_INCOMPLETE_MESSAGE)
+    prompt = input if input_func is None else input_func
+    if _dotenv_contains_key(destination, "SMTP_PASSWORD"):
+        try:
+            confirmed = read_interactively(prompt, f"Replace the saved SMTP password in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            raise RecoveryError(secret_entry_cancelled_advice("SMTP password", "--set-smtp-password", SMTP_GUIDE_URL)) from None
+        if not confirmed:
+            raise RecoveryError(secret_replacement_declined_advice("SMTP password", "--set-smtp-password", SMTP_GUIDE_URL))
+    print(f"* The password is checked by signing in to {SMTP_HOST} as {SMTP_USER}. Nothing is sent")
+    hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
+    try:
+        smtp_password = str(read_secret_interactively(hidden_prompt, "Enter the SMTP password (input hidden): "))
+    except (EOFError, KeyboardInterrupt):
+        print()
+        raise RecoveryError(secret_entry_cancelled_advice("SMTP password", "--set-smtp-password", SMTP_GUIDE_URL)) from None
+    check = smtp_sign_in if sign_in is None else sign_in
+    try:
+        signed_in_user = check(smtp_password, timeout=5)
+    except SecretConfigurationError:
+        raise
+    except Exception as exc:
+        # The sign-in restores the previous password before the failure reaches here, so the value that was tried
+        # is passed to the redaction explicitly rather than left to the global it would otherwise read
+        raise SecretConfigurationError(f"The mail server did not accept the password: {type(exc).__name__}: {sanitize_error_text(exc, (smtp_password,))}. The private settings file was not changed.") from None
+    try:
+        update_dotenv_file(destination, {"SMTP_PASSWORD": smtp_password})
+    except Exception:
+        raise SecretConfigurationError(f"Could not save the SMTP password in '{destination}'. Check file permissions or choose another path with --env-file.")
+    print(f"* The mail server accepted the password for {signed_in_user}")
+    print(f"* Updated private settings file: {destination}")
+    # Startup loads the dotenv file without overriding the environment, so a saved replacement that an export
+    # shadows would never be read. The run would keep failing with the password that was just proven good
+    if os.environ.get("SMTP_PASSWORD"):
+        print("* SMTP_PASSWORD is exported in this environment and an export wins at startup, so the next run uses that value rather than the one just saved")
+        print(colorize("info", "To fix: Unset the exported SMTP_PASSWORD to use the saved one"))
+    print()
+    _wizard_print_command("Send a test email:", render_command(["--send-test-email"], env_path=destination))
+    _wizard_print_command("Check setup again:", render_command(["--doctor"], env_path=destination))
     return str(destination)
 
 
@@ -1327,13 +2907,13 @@ def normalized_webhook_provider(provider=None):
 # Returns enabled email notification category names in display order
 def _startup_email_notification_categories():
     settings = (
-        (ACTIVE_INACTIVE_NOTIFICATION, "online/offline"),
-        (STATUS_NOTIFICATION, "status"),
-        (GAME_CHANGE_NOTIFICATION, "game"),
-        (STEAM_LEVEL_XP_NOTIFICATION, "level/XP"),
-        (FRIENDS_NOTIFICATION, "friends"),
-        (GAMES_LIBRARY_NOTIFICATION, "games"),
-        (NAME_CHANGE_NOTIFICATION, "name"),
+        (ACTIVE_INACTIVE_NOTIFICATION, "online and offline changes"),
+        (STATUS_NOTIFICATION, "all status changes"),
+        (GAME_CHANGE_NOTIFICATION, "game changes"),
+        (STEAM_LEVEL_XP_NOTIFICATION, "level and XP changes"),
+        (FRIENDS_NOTIFICATION, "friends list changes"),
+        (GAMES_LIBRARY_NOTIFICATION, "games library changes"),
+        (NAME_CHANGE_NOTIFICATION, "name changes"),
         (ERROR_NOTIFICATION, "errors"),
     )
     return [label for enabled, label in settings if enabled]
@@ -1341,51 +2921,431 @@ def _startup_email_notification_categories():
 
 # Returns enabled webhook notification category names in display order
 def _startup_webhook_notification_categories():
+    return _selected_webhook_notification_categories() if WEBHOOK_ENABLED else []
+
+
+# Returns the webhook alert types selected in the configuration, ignoring the master switch
+def _selected_webhook_notification_categories():
     settings = (
-        (WEBHOOK_ACTIVE_NOTIFICATION, "active"),
-        (WEBHOOK_INACTIVE_NOTIFICATION, "inactive"),
-        (WEBHOOK_STATUS_NOTIFICATION, "status"),
-        (WEBHOOK_GAME_CHANGE_NOTIFICATION, "game"),
-        (WEBHOOK_LEVEL_XP_NOTIFICATION, "level/XP"),
-        (WEBHOOK_FRIENDS_NOTIFICATION, "friends"),
-        (WEBHOOK_GAMES_NOTIFICATION, "games"),
-        (WEBHOOK_NAME_CHANGE_NOTIFICATION, "name"),
+        (WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION, "online and offline changes"),
+        (WEBHOOK_STATUS_NOTIFICATION, "all status changes"),
+        (WEBHOOK_GAME_CHANGE_NOTIFICATION, "game changes"),
+        (WEBHOOK_LEVEL_XP_NOTIFICATION, "level and XP changes"),
+        (WEBHOOK_FRIENDS_NOTIFICATION, "friends list changes"),
+        (WEBHOOK_GAMES_NOTIFICATION, "games library changes"),
+        (WEBHOOK_NAME_CHANGE_NOTIFICATION, "name changes"),
         (WEBHOOK_ERROR_NOTIFICATION, "errors"),
     )
-    return [label for enabled, label in settings if WEBHOOK_ENABLED and enabled]
+    return [label for enabled, label in settings if enabled]
 
 
-# Formats one notification row with unstarred continuation lines when needed
-def _format_startup_notification_line(label, categories):
-    prefix = f"* {label:<30}"
-    state = "On (" + ", ".join(categories) + ")" if categories else "Off"
-    return textwrap.fill(state, width=100, initial_indent=prefix, subsequent_indent=" " * len(prefix), break_long_words=False, break_on_hyphens=False)
-
-
-# Builds compact startup notification lines for both delivery channels
-def _startup_notification_summary_lines():
-    enabled_email = _startup_email_notification_categories()
-    enabled_webhook = _startup_webhook_notification_categories()
-    return [_format_startup_notification_line("Notifications (email):", enabled_email), _format_startup_notification_line("Notifications (webhook):", enabled_webhook)]
+# Returns one channel's rollup value, naming the enabled categories rather than only whether the channel is on
+def _startup_notification_state(categories):
+    return "On (" + ", ".join(categories) + ")" if categories else "Off"
 
 
 # Redacts configured secrets and API key query values from one error-shaped value
-def sanitize_error_text(value):
+def sanitize_error_text(value, extra_secrets=()):
     text = str(value)
-    for secret_name in SECRET_KEYS:
-        secret_value = globals().get(secret_name)
+    # A value being checked before it is saved is held by the caller and by no global, so it is passed in instead
+    entered = [secret for secret in extra_secrets if isinstance(secret, str) and len(secret) > 4]
+    for secret_value in [globals().get(secret_name) for secret_name in SECRET_KEYS] + entered + list(getattr(_DELIVERY_SECRET_VALUES, "values", ())):
         if isinstance(secret_value, str) and secret_value and not secret_value.startswith("your_"):
             text = text.replace(secret_value, "<redacted>")
     text = re.sub(r"(?i)([?&]key=)[^&\s]+", r"\1<redacted>", text)
-    text = re.sub(r"(?im)(\b(?:STEAM_API_KEY|SMTP_PASSWORD|WEBHOOK_URL|NTFY_ACCESS_TOKEN)\b\s*=\s*)[^\s]+", r"\1<redacted>", text)
+    text = re.sub(r"(?im)(\b(?:STEAM_API_KEY|SMTP_PASSWORD|WEBHOOK_URL|NTFY_ACCESS_TOKEN)\b\s*=\s*)[^\r\n]*", r"\1<redacted>", text)
     return text
+
+
+# Every recovery category the tool can report, kept closed so a message is testable, deduplicable and translatable later
+RECOVERY_CODES = frozenset({
+    "config.missing", "config.invalid", "config.insecure",
+    "dependency.missing",
+    "secret.missing", "secret.entry",
+    "auth.api_key_invalid",
+    "network.unavailable", "network.timeout",
+    "steam.rate_limited", "steam.unavailable",
+    "target.missing", "target.invalid", "target.not_found", "target.not_visible",
+    "smtp.invalid", "smtp.authentication", "smtp.connection",
+    "webhook.invalid", "webhook.rejected", "webhook.rate_limited", "webhook.connection",
+    "file.unreadable", "file.unwritable", "file.exists",
+    "resource.exhausted",
+    "unknown",
+})
+
+# A namedtuple rather than a dataclass, because the declared minimum Python for this tool predates dataclasses
+RecoveryAdvice = namedtuple("RecoveryAdvice", ["code", "summary", "fix", "retryable", "detail"])
+RecoveryAdvice.__new__.__defaults__ = ("",)
+
+
+# Carries structured recovery advice across an exception boundary without exposing technical detail
+class RecoveryError(Exception):
+    # Initializes a structured recovery exception, keeping the original cause attached for debug output
+    def __init__(self, advice, cause=None):
+        self.advice = advice
+        self.cause = cause
+        if cause is not None:
+            self.__cause__ = cause
+        super().__init__(advice.summary)
+
+
+# Builds one piece of recovery advice, refusing any code outside the closed set and sanitizing every field
+def make_recovery_advice(code, summary, fix, retryable, detail=""):
+    if code not in RECOVERY_CODES:
+        raise ValueError(f"Unsupported recovery code: {code}")
+    return RecoveryAdvice(code, sanitize_error_text(summary), sanitize_error_text(fix), bool(retryable), sanitize_error_text(detail) if detail else "")
+
+
+# Adds a directly relevant documentation link on its own line
+def recovery_fix_with_guide(fix, guide_url):
+    return f"{fix}\nGuide: {guide_url}"
+
+
+# Returns the advice an optional library that is missing carries, naming what the run loses and how to install it
+def missing_dependency_advice(package, effect, install_command, alternative=""):
+    return make_recovery_advice("dependency.missing", f"{effect} because the optional '{package}' library is missing", recovery_fix_with_guide(f"Install it with: {install_command}" + (f". {alternative}" if alternative else ""), INSTALLATION_GUIDE_URL), False)
+
+
+# Returns the advice a cancelled secret entry reports, worded the same way by every one-shot secret command
+def secret_entry_cancelled_advice(subject, flag, guide_url):
+    return make_recovery_advice("secret.entry", f"{subject[:1].upper()}{subject[1:]} setup was cancelled and the dotenv file was not changed", recovery_fix_with_guide(f"Run {flag} again when you have the value ready", guide_url), False)
+
+
+# Returns the advice a declined secret replacement reports, worded the same way by every one-shot secret command
+def secret_replacement_declined_advice(subject, flag, guide_url, plural=False):
+    kept = "were left as they are" if plural else "was left as it is"
+    return make_recovery_advice("secret.entry", f"The saved {subject} {kept} and the dotenv file was not changed", recovery_fix_with_guide(f"Run {flag} again and answer y to replace the saved value", guide_url), False)
+
+
+# Returns the HTTP status carried by an error, when it has one
+def recovery_http_status(error):
+    response = getattr(error, "response", None)
+    status = getattr(response, "status_code", None)
+    return status if isinstance(status, int) else None
+
+
+# Yields the exception and each cause or context up to max_depth, to walk an exception chain
+def iter_exc_chain(error, max_depth=8):
+    current = error
+    for _ in range(max_depth):
+        if current is None:
+            return
+        yield current
+        current = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
+
+
+# Reports whether this process hit the local file descriptor limit rather than a remote failure
+def is_too_many_open_files(error):
+    for current in iter_exc_chain(error):
+        if isinstance(current, OSError) and getattr(current, "errno", None) == 24:
+            return True
+        # A server controls the wording of its own reply, so its text never proves a local limit here
+        if getattr(current, "response", None) is not None:
+            continue
+        message = str(current).lower()
+        if "too many open files" in message or re.search(r"\berrno 24\b", message):
+            return True
+    return False
+
+
+# Returns the next step for a failure no rule recognized, since a run already printing the technical cause cannot be told to re-run for it
+def unknown_failure_fix():
+    return "Open an issue with this output if the failure continues" if DEBUG_MODE else "Re-run with --debug to see the technical cause"
+
+
+# Tells whether a status code appears in a message as a whole number, so 4290 or a path segment such as /429 does not read as 429
+def mentions_status_code(code, message):
+    return re.search(rf"(?<![\w/]){code}(?!\w)", message) is not None
+
+
+# Maps one exception plus its HTTP status and calling context to stable recovery advice
+def classify_recovery_error(error=None, context="runtime", detail=""):
+    if isinstance(error, RecoveryError):
+        return error.advice
+    # Both are matched, since a caller that adds context would otherwise hide the error text the rules read
+    message = " ".join(part for part in (str(detail or ""), str(error or "")) if part).lower()
+    safe_detail = sanitize_error_text(detail or error) if (detail or error) else ""
+    status = recovery_http_status(error)
+
+    def advice(code, summary, fix, retryable, guide_url=None):
+        return make_recovery_advice(code, summary, recovery_fix_with_guide(fix, guide_url) if guide_url else fix, retryable, safe_detail)
+
+    # Checked ahead of every context, since a local descriptor limit is not a failure of whatever call hit it
+    if error is not None and is_too_many_open_files(error):
+        return advice("resource.exhausted", "This process ran out of file descriptors, which is a local limit and not a Steam problem", "Raise the file descriptor limit, for example with 'ulimit -n 4096', or set LimitNOFILE= if you run under systemd, then restart the tool", False, DIAGNOSTICS_GUIDE_URL)
+
+    if context == "config":
+        if "does not exist" in message:
+            return advice("config.missing", safe_detail or "The configuration file was not found", f"Create one with '{render_command(['--generate-config', 'steam_monitor.conf'], include_paths=False)}' or correct the --config-file path", False, CONFIG_GUIDE_URL)
+        return advice("config.invalid", safe_detail or "The configuration file could not be read", f"Correct the reported line, or start from a fresh template with '{render_command(['--generate-config', 'steam_monitor.conf'], include_paths=False)}'", False, CONFIG_GUIDE_URL)
+
+    if context == "secret.missing":
+        return advice("secret.missing", safe_detail or "No Steam Web API key reached the tool", f"Save one with '{render_command(['--set-steam-api-key'])}', export STEAM_API_KEY or add it to a dotenv file", False, STEAM_API_KEY_GUIDE_URL)
+
+    if context in ("set_steam_api_key", "set_smtp_password", "set_webhook_url"):
+        flag = {"set_steam_api_key": "--set-steam-api-key", "set_smtp_password": "--set-smtp-password"}.get(context, "--set-webhook-url")
+        guide = {"set_steam_api_key": STEAM_API_KEY_GUIDE_URL, "set_smtp_password": SMTP_GUIDE_URL}.get(context, WEBHOOK_GUIDE_URL)
+        if "interactive terminal" in message:
+            return advice("unknown", f"{flag} requires an interactive terminal", f"Run {flag} in a terminal window so the value stays hidden while you paste it", False, guide)
+        if "cancelled" in message:
+            return advice("unknown", safe_detail or "Setup was cancelled", f"Run {flag} again when you have the value ready", False, guide)
+        if any(term in message for term in ("could not save", "file permissions", "writable path", "dotenv destination")):
+            return advice("file.unwritable", safe_detail or "The private settings file could not be updated", "Check file permissions or choose another path with --env-file PATH", False, SECRETS_GUIDE_URL)
+        if context == "set_steam_api_key":
+            return advice("auth.api_key_invalid", safe_detail or "Steam rejected the entered Web API key", f"Copy a fresh key from {STEAM_API_KEY_REGISTRATION_URL} then run {flag} again", False, guide)
+        if context == "set_smtp_password":
+            if "settings are incomplete" in message:
+                return advice("smtp.invalid", safe_detail or "The mail server settings are incomplete", f"Set SMTP_HOST, SMTP_USER, SENDER_EMAIL and RECEIVER_EMAIL, or run {render_command(['--setup'])}", False, guide)
+            return advice("smtp.authentication", safe_detail or "The mail server did not accept the password", f"Use an app password when the provider requires one then run {flag} again", False, guide)
+        return advice("webhook.invalid", safe_detail or "The webhook URL was not changed", f"Copy a complete Discord or ntfy webhook URL then run {flag} again", False, guide)
+
+    if context == "target.missing":
+        return advice("target.missing", safe_detail or "No Steam profile was provided", f"Pass the profile to watch as a {STEAM_TARGET_FORMS}: {render_command(['<steam_target>'])}", False, QUICK_START_GUIDE_URL)
+
+    if context == "target":
+        if "rate limit" in message or mentions_status_code("429", message) or status == 429:
+            return advice("steam.rate_limited", "Steam rate limited the profile lookup", "Wait for the reported period then try again", True, INTERVALS_GUIDE_URL)
+        if any(term in message for term in ("timed out", "timeout")):
+            return advice("network.timeout", "The Steam Web API request timed out", "Check connectivity then try again", True, DIAGNOSTICS_GUIDE_URL)
+        if "cannot connect" in message:
+            return advice("network.unavailable", "The Steam Web API could not be reached", "Check connectivity, DNS and any proxy then try again", True, DIAGNOSTICS_GUIDE_URL)
+        if any(term in message for term in ("invalid steam", "only steam user", "not supported")):
+            return advice("target.invalid", safe_detail or "That is not a recognized Steam profile", f"Pass a {STEAM_TARGET_FORMS}", False, USAGE_GUIDE_URL)
+        return advice("target.not_found", safe_detail or "No Steam user matches that profile", "Check the Steam64 ID or profile URL and try again", False, USAGE_GUIDE_URL)
+
+    if context == "connectivity":
+        # Classified from the error, because the detail names the endpoint rather than the failure
+        # No guide, since no page covers this check and the doctor report already ends with the troubleshooting link
+        cause = str(error or "").lower()
+        if "timed out" in cause or "timeout" in cause:
+            return advice("network.timeout", "The connectivity endpoint did not answer in time", "Check network, DNS, proxy and CHECK_INTERNET_URL settings", True)
+        return advice("network.unavailable", "The connectivity endpoint could not be reached", "Check network, DNS, proxy and CHECK_INTERNET_URL settings", True)
+
+    if context == "email":
+        if any(term in message for term in ("authentication", "auth", "username and password", "535")):
+            return advice("smtp.authentication", "The SMTP server rejected the sign-in", "Check SMTP_USER and SMTP_PASSWORD, and use an app password if the provider requires one", False, SMTP_GUIDE_URL)
+        if any(term in message for term in ("settings are incorrect", "invalid")):
+            return advice("smtp.invalid", safe_detail or "The SMTP settings are incomplete or invalid", "Check SMTP_HOST, SMTP_PORT, SENDER_EMAIL and RECEIVER_EMAIL in the configuration file", False, SMTP_GUIDE_URL)
+        return advice("smtp.connection", "The SMTP server could not be reached", "Check SMTP_HOST, SMTP_PORT and SMTP_SSL, then confirm the host is reachable from this machine", True, SMTP_GUIDE_URL)
+
+    if context == "webhook":
+        if status == 429 or "rate limit" in message:
+            return advice("webhook.rate_limited", "The webhook service is rate limiting deliveries", "Reduce how many alert types are enabled, or wait for the service to accept deliveries again", True, WEBHOOK_GUIDE_URL)
+        if any(term in message for term in ("must contain", "must be discord", "could not be formatted", "header", "priority", "tags")):
+            return advice("webhook.invalid", safe_detail or "The webhook configuration is not usable", f"Check WEBHOOK_URL, WEBHOOK_PROVIDER and the alert settings, then verify with '{render_command(['--send-test-webhook'])}'", False, WEBHOOK_GUIDE_URL)
+        if any(term in message for term in ("could not be reached", "connection", "timed out")):
+            return advice("webhook.connection", "The webhook service could not be reached", "Check connectivity and the webhook host, then try again", True, WEBHOOK_GUIDE_URL)
+        return advice("webhook.rejected", safe_detail or "The webhook service refused the delivery", f"Confirm the webhook still exists and the URL is current, then verify with '{render_command(['--send-test-webhook'])}'", status is not None and status >= 500, WEBHOOK_GUIDE_URL)
+
+    if context == "file":
+        if any(term in message for term in ("cannot load", "unreadable", "not valid utf-8", "no such file")):
+            return advice("file.unreadable", safe_detail or "A file the tool keeps could not be read", "Check the path and its permissions, or delete the file so it is recreated", False, DIAGNOSTICS_GUIDE_URL)
+        return advice("file.unwritable", safe_detail or "A file the tool keeps could not be written", "Check that the directory exists and is writable, or choose another path", False, DIAGNOSTICS_GUIDE_URL)
+
+    if context == "file.exists":
+        return advice("file.exists", safe_detail or "The destination file already exists", f"Re-run with --force to replace it after a timestamped backup, or write to a different path with '{render_command(['--generate-config', '<new-file>'], include_paths=False)}'", False, CONFIG_GUIDE_URL)
+
+    if context == "file.unwritable":
+        # The wizard reaches this either because a destination was switched off or because the path cannot be written
+        if "nowhere to write the private settings" in message:
+            return advice("file.unwritable", safe_detail or "--setup has nowhere to write the private settings", "Replace '--env-file none' with a writable path, or drop the flag to write .env in the current directory", False, SECRETS_GUIDE_URL)
+        if "nowhere to write the configuration" in message:
+            return advice("file.unwritable", safe_detail or "--setup has nowhere to write the configuration", f"Replace '--config-file none' with a writable path, or drop the flag to write {DEFAULT_CONFIG_FILENAME} in the current directory", False, CONFIG_GUIDE_URL)
+        return advice("file.unwritable", safe_detail or "A file the tool keeps could not be written", "Check that the directory exists and is writable, or choose another path", False, DIAGNOSTICS_GUIDE_URL)
+
+    # Runtime, which is the monitoring loop and every Steam Web API call it makes
+    if status == 429 or "rate limit" in message or "too many requests" in message:
+        return advice("steam.rate_limited", "Steam is rate limiting requests", "The tool will wait and retry. Increase the polling intervals if this repeats", True, INTERVALS_GUIDE_URL)
+    if status in (401, 403) or "forbidden" in message or "unauthorized" in message:
+        return advice("auth.api_key_invalid", "Steam rejected the configured Web API key", f"Validate and replace it with '{render_command(['--set-steam-api-key'])}'", False, STEAM_API_KEY_GUIDE_URL)
+    if status == 404 or "not found" in message:
+        return advice("target.not_found", "Steam has no profile for the monitored Steam64 ID", "Check the Steam64 ID, since a deleted or renamed account cannot be monitored", False, USAGE_GUIDE_URL)
+    if status is not None and status >= 500 or "service unavailable" in message or "bad gateway" in message:
+        return advice("steam.unavailable", "The Steam Web API is temporarily unavailable", "This is usually a Steam outage. The tool will keep retrying", True, DIAGNOSTICS_GUIDE_URL)
+    if "timed out" in message or "timeout" in message:
+        return advice("network.timeout", "The Steam Web API request timed out", "Check connectivity. The tool will keep retrying", True, DIAGNOSTICS_GUIDE_URL)
+    if any(term in message for term in ("connection", "name resolution", "network is unreachable", "no connectivity")):
+        return advice("network.unavailable", "Steam could not be reached", "Check connectivity, DNS and any proxy. The tool will keep retrying", True, DIAGNOSTICS_GUIDE_URL)
+    if "private" in message or "visibility" in message:
+        return advice("target.not_visible", "The monitored profile is not publicly visible", "Ask the user to set game details and profile visibility to Public", False, PRIVACY_GUIDE_URL)
+    return advice("unknown", safe_detail or "The request could not be completed", unknown_failure_fix(), True, DIAGNOSTICS_GUIDE_URL)
+
+
+# Renders one built advice as the shared Error, To fix and optional Technical detail block
+def render_recovery_advice(advice, debug=None, retry_note="", with_fix=True, label="Error"):
+    lines = [f"* {label}: {advice.summary}" + (f" ({retry_note})" if retry_note else "")]
+    if with_fix:
+        lines.append(f"To fix: {advice.fix}")
+        # A detail that only repeats the summary spends a line saying nothing
+        if (DEBUG_MODE if debug is None else debug) and advice.detail and advice.detail != advice.summary:
+            lines.append(f"Technical detail: {sanitize_error_text(advice.detail)}")
+    return "\n".join(lines)
+
+
+# Classifies one failure and renders it through the shared recovery block
+def render_recovery_error(error=None, context="runtime", debug=None, detail="", retry_note="", with_fix=True, label="Error"):
+    return render_recovery_advice(classify_recovery_error(error, context, detail), debug, retry_note, with_fix, label)
+
+
+# Prints one built advice through the shared recovery block and returns it
+def print_recovery_advice(advice, debug=None, retry_note="", with_fix=True, label="Error"):
+    print(render_recovery_advice(advice, debug, retry_note, with_fix, label))
+    return advice
+
+
+# Classifies one failure, prints it through the shared recovery block and returns its stable advice
+def print_recovery_error(error=None, context="runtime", debug=None, detail="", retry_note="", with_fix=True, label="Error"):
+    return print_recovery_advice(classify_recovery_error(error, context, detail), debug, retry_note, with_fix, label)
+
+
+# Decides how a lasting failure is reported: in full when it is new, then on the liveness cadence while it lasts
+# How long a reported failure may go on before the run reminds about it, whatever the liveness banner is set to
+OUTAGE_REMINDER_SECONDS = 3600  # 1 hour
+
+
+# Returns the family a failure code belongs to, so the DNS and timeout failures of one internet outage count as one
+def outage_family(code):
+    return "network" if str(code or "").startswith("network.") else str(code or "")
+
+
+class OutageReporter:
+    # Starts with no failure recorded and reports a new retryable failure once confirm_checks checks in a row failed
+    def __init__(self, confirm_checks=1):
+        self.confirm_checks = max(1, confirm_checks)
+        self.code = None
+        self.since = 0
+        self.reported_at = 0
+        self.failures = 0
+        self.reported = False
+
+    # Records one failed check and returns "full" when the failure is to be reported in full, "changed" when a
+    # reported outage moved to another failure family, "reminder" once OUTAGE_REMINDER_SECONDS passed since the
+    # last report or "" while nothing new is to be said
+    def failed(self, advice):
+        now = int(time.time())
+        if not self.code:
+            self.since = now
+        self.failures += 1
+        changed = self.code is not None and outage_family(advice.code) != outage_family(self.code)
+        self.code = advice.code
+        if not self.reported:
+            # A failure the tool cannot retry away is reported at once, one it can waits for the next check to confirm it
+            if advice.retryable and self.failures < self.confirm_checks:
+                return ""
+            self.reported = True
+            self.reported_at = now
+            return "full"
+        if changed:
+            self.reported_at = now
+            return "changed" if advice.retryable else "full"
+        # Timed rather than counted, because a failing run usually retries on a different interval than a healthy one
+        if now - self.reported_at >= OUTAGE_REMINDER_SECONDS:
+            self.reported_at = now
+            return "reminder"
+        return ""
+
+    # Clears the failure after a successful check and returns how long it lasted, or None when nothing was reported
+    def recovered(self):
+        lasted = int(time.time()) - self.since if self.code and self.reported else None
+        self.code = None
+        self.since = 0
+        self.reported_at = 0
+        self.failures = 0
+        self.reported = False
+        return lasted
+
+
+# Reports that nothing changed, so a quiet run still says it is alive on the liveness cadence
+def print_liveness_banner(message):
+    print(f"* {sanitize_error_text(message)}")
+    print_cur_ts("Liveness check, timestamp:\t")
+
+
+# Reminds about a lasting failure once an hour, so a broken run still says it is alive without repeating itself
+def print_outage_liveness(target, advice, since, failures=0):
+    count = f", {failures} failed {'check' if failures == 1 else 'checks'}" if failures else ""
+    print(f"* Monitoring degraded for {target}. {advice.summary} since {get_date_from_ts(since)}{count}")
+    print_cur_ts("Liveness check, timestamp:\t")
+
+
+# Notes that a reported outage now fails differently, in one line rather than a second full report
+def print_outage_change(target, advice):
+    print(f"* Monitoring failure changed for {target}. {advice.summary}")
+
+
+# Reports that a failure cleared, since a throttled failure no longer stops printing when it is over
+def print_outage_recovery(target, lasted):
+    print(f"* Monitoring recovered for {target} after {display_time(max(1, lasted))}")
+    print_cur_ts("Timestamp:\t\t\t")
+
+
+# Tracks which features are currently unavailable, so a lasting outage is reported once instead of every cycle
+class FeatureOutageTracker:
+    # Starts with every feature available, so the first outage of any of them is reported
+    def __init__(self):
+        self.unavailable = {}
+
+    # Takes the features unavailable right now, each with its outage and recovery wording, and returns what changed
+    def transitions(self, current):
+        recovered = [messages[1] for key, messages in self.unavailable.items() if key not in current]
+        started = [messages[0] for key, messages in current.items() if key not in self.unavailable]
+        self.unavailable = dict(current)
+        return recovered + started
+
+
+# Returns the spelling each webhook service uses for itself, since the stored value is casefolded for comparisons
+def webhook_provider_display_name(provider=None):
+    normalized = normalized_webhook_provider(provider)
+    return {"discord": "Discord", "ntfy": "ntfy"}.get(normalized, normalized or "an unset provider")
+
+
+# The four shared status markers. A fifth neutral marker is the single biggest source of drift between these
+# tools, because every state it would cover is a state the others already call PASS
+DOCTOR_STATUSES = ("PASS", "WARN", "FAIL", "SKIP")
+
+# An active check interval below this invites the Steam rate limiter, which stops the tool seeing anything
+DOCTOR_MIN_SAFE_ACTIVE_INTERVAL = 30
+
+
+# One doctor result, held until the whole report is rendered
+DoctorCheck = namedtuple("DoctorCheck", ["section", "status", "label", "detail", "advice"])
+DoctorCheck.__new__.__defaults__ = ("", None)
+
+
+# Collects doctor checks plus the work later checks reuse, so nothing is fetched or authenticated twice
+class DoctorReport:
+    # Starts an empty report with no shared Steam state and no channel marked ready for a delivery test
+    def __init__(self):
+        self.checks = []
+        self.steam_client: Any = None
+        self.player_summary = None
+        self.steam_id = None
+        # Structural flags, so offering a delivery test never depends on matching a rendered label
+        self.email_ready = False
+        self.webhook_ready = False
+
+
+# Builds one doctor check, keeping construction in one place so the shape cannot drift between sections
+def make_doctor_check(section, status, label, detail="", advice=None):
+    if status not in DOCTOR_STATUSES:
+        raise ValueError(f"Unsupported doctor status: {status}")
+    # A row the user has to act on is useless without an action, so the row is rejected rather than printed bare
+    if status in ("WARN", "FAIL") and (advice is None or not advice.fix):
+        raise ValueError(f"Doctor {status} rows require a fix")
+    # Several advice objects carry the same text as their summary and printing it twice reads as two problems
+    return DoctorCheck(section, status, label, "" if str(detail).strip() == str(label).strip() else detail, advice)
+
+
+# Returns whether a configured value is a real value rather than an unedited placeholder
+def doctor_value_is_set(value):
+    return isinstance(value, str) and bool(value.strip()) and not value.strip().startswith("your_")
 
 
 # Returns whether one configured webhook alert is enabled independently of email settings
 def webhook_event_enabled(notification_type):
     settings = {
-        "active": WEBHOOK_ACTIVE_NOTIFICATION,
-        "inactive": WEBHOOK_INACTIVE_NOTIFICATION,
+        "active": WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION,
+        "inactive": WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION,
         "status": WEBHOOK_STATUS_NOTIFICATION,
         "game": WEBHOOK_GAME_CHANGE_NOTIFICATION,
         "level_xp": WEBHOOK_LEVEL_XP_NOTIFICATION,
@@ -1397,31 +3357,54 @@ def webhook_event_enabled(notification_type):
     return bool(WEBHOOK_ENABLED and settings.get(notification_type, False))
 
 
+# Parses one numeric or HTTP-date retry value into seconds
+def parse_retry_after_seconds(candidate):
+    if candidate is None or candidate == "":
+        return None
+    try:
+        seconds = float(candidate)
+        return seconds if math.isfinite(seconds) else None
+    except (TypeError, ValueError):
+        try:
+            retry_at = parsedate_to_datetime(str(candidate))
+            seconds = (retry_at - datetime.now(retry_at.tzinfo)).total_seconds()
+            return seconds if math.isfinite(seconds) else None
+        except Exception:
+            return None
+
+
+# Returns the first valid retry delay bounded between zero and a caller-selected maximum
+def bounded_retry_after_seconds(candidates, fallback, maximum):
+    for candidate in candidates:
+        seconds = parse_retry_after_seconds(candidate)
+        if seconds is not None:
+            return max(0.0, min(seconds, maximum))
+    return max(0.0, min(float(fallback), maximum))
+
+
 # Parses a webhook rate-limit delay and caps untrusted server values to a short wait
 def webhook_retry_after_seconds(response):
-    candidates = []
     headers = getattr(response, "headers", {}) or {}
-    if hasattr(headers, "get"):
-        candidates.append(headers.get("Retry-After"))
+    candidates = [headers.get("Retry-After")] if hasattr(headers, "get") else []
     try:
         payload = response.json()
     except Exception:
         payload = None
     if isinstance(payload, dict):
         candidates.append(payload.get("retry_after"))
-    for candidate in candidates:
-        if candidate is None or candidate == "":
-            continue
-        try:
-            seconds = float(candidate)
-        except (TypeError, ValueError):
-            try:
-                retry_at = parsedate_to_datetime(str(candidate))
-                seconds = (retry_at - datetime.now(retry_at.tzinfo)).total_seconds()
-            except Exception:
-                continue
-        return max(0.0, min(seconds, WEBHOOK_MAX_RETRY_AFTER_SECONDS))
-    return WEBHOOK_FALLBACK_RETRY_SECONDS
+    return bounded_retry_after_seconds(candidates, WEBHOOK_FALLBACK_RETRY_SECONDS, WEBHOOK_MAX_RETRY_AFTER_SECONDS)
+
+
+# Parses a Steam rate-limit delay and caps untrusted server values to one hour
+def steam_retry_after_seconds(response, fallback):
+    headers = getattr(response, "headers", {}) or {}
+    candidate = headers.get("Retry-After") if hasattr(headers, "get") else None
+    seconds = parse_retry_after_seconds(candidate)
+    if seconds is not None:
+        return max(1, int(round(min(max(0.0, seconds), STEAM_MAX_RETRY_AFTER_SECONDS))))
+    # The fallback is this tool's own polling interval, so the cap on what a service asked for does not apply
+    # to it. Clamping it would make a rate-limited run poll faster than it was configured to
+    return max(1, int(round(fallback)))
 
 
 # Applies configured placeholders recursively to a webhook template
@@ -1439,9 +3422,28 @@ def format_payload(template, payload):
             return payload.get("color", 0x1B2838)
         try:
             return template.format(**payload)
-        except KeyError:
-            return template
+        # A placeholder the payload cannot fill, such as {title[9]} or the positional {0}, is a setting
+        # to correct rather than a delivery failure, so it names the template text that could not render
+        except Exception as exc:
+            raise ValueError(f"WEBHOOK_TEMPLATE cannot render '{template}': {type(exc).__name__}: {exc}. Use plain placeholders such as {{title}} and {{description}}") from exc
     return template
+
+
+# Parses legacy and current Discord templates before validating their object shape
+def render_discord_template(template, values):
+    if isinstance(template, str):
+        try:
+            template = json.loads(template)
+        except json.JSONDecodeError:
+            try:
+                # Legacy templates doubled JSON braces for str.format, while quoted values remain templates
+                unescaped = re.sub(r'("(?:\\.|[^"\\])*")|(\{\{|\}\})', lambda match: match.group(1) if match.group(1) is not None else match.group(2)[0], template)
+                template = json.loads(unescaped)
+            except json.JSONDecodeError as exc:
+                raise ValueError("WEBHOOK_TEMPLATE must be a dictionary or a JSON object string") from exc
+    if not isinstance(template, dict):
+        raise ValueError("WEBHOOK_TEMPLATE must be a dictionary or a JSON object string")
+    return format_payload(template, values)
 
 
 # Returns a configuration error for unsafe or unsupported webhook customization
@@ -1454,8 +3456,8 @@ def validate_webhook_customization(provider=None):
             return "WEBHOOK_AVATAR_URL must be a string"
         if WEBHOOK_AVATAR_URL.strip() and not validate_webhook_url(WEBHOOK_AVATAR_URL):
             return "WEBHOOK_AVATAR_URL must contain a complete HTTPS link without embedded credentials"
-        if not isinstance(WEBHOOK_TEMPLATE, (dict, list, str)):
-            return "WEBHOOK_TEMPLATE must be a dictionary, list or string"
+        if not isinstance(WEBHOOK_TEMPLATE, (dict, str)):
+            return "WEBHOOK_TEMPLATE must be a dictionary or a JSON object string"
     if not isinstance(WEBHOOK_TRANSFORMS, (list, tuple)):
         return "WEBHOOK_TRANSFORMS must be a list or tuple"
     for index, transform in enumerate(WEBHOOK_TRANSFORMS):
@@ -1463,6 +3465,14 @@ def validate_webhook_customization(provider=None):
             return f"WEBHOOK_TRANSFORMS entry {index + 1} must contain a field name and string method name"
         if transform[1].startswith("_") or not callable(getattr("", transform[1], None)):
             return f"WEBHOOK_TRANSFORMS entry {index + 1} uses an unsupported string method"
+    if selected_provider == "discord":
+        try:
+            render_discord_template(WEBHOOK_TEMPLATE, {"title": "", "description": "", "username": "", "avatar_url": "", "image_url": "", "fields_str": "", "fields": [], "color": 0, "timestamp": "", "version": VERSION})
+        # The rendering error names the placeholder to correct, which the shape message cannot
+        except ValueError as exc:
+            return str(exc)
+        except TypeError:
+            return "WEBHOOK_TEMPLATE must be a dictionary or a JSON object string"
     return None
 
 
@@ -1496,20 +3506,24 @@ def build_webhook_values(title, description, notification_type, image_url=""):
 def build_webhook_payload(title, description, notification_type, image_url="", payload_values=None):
     values = build_webhook_values(title, description, notification_type, image_url) if payload_values is None else payload_values
     try:
-        payload = format_payload(WEBHOOK_TEMPLATE, values)
-    except Exception:
-        raise ValueError("WEBHOOK_TEMPLATE could not be formatted with the supported placeholders")
-    if isinstance(payload, dict):
-        if payload.get("username") == "":
-            payload.pop("username")
-        if payload.get("avatar_url") == "":
-            payload.pop("avatar_url")
-        payload["allowed_mentions"] = {"parse": []}
-        embeds = payload.get("embeds")
-        if isinstance(embeds, list):
-            for embed in embeds:
-                if isinstance(embed, dict) and isinstance(embed.get("thumbnail"), dict) and not embed["thumbnail"].get("url"):
-                    embed.pop("thumbnail")
+        payload = render_discord_template(WEBHOOK_TEMPLATE, values)
+    # The named placeholder error is the one a user can act on, so it reaches the caller unchanged
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError("WEBHOOK_TEMPLATE could not be formatted with the supported placeholders") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("WEBHOOK_TEMPLATE must be a JSON object or a dictionary")
+    if payload.get("username") == "":
+        payload.pop("username")
+    if payload.get("avatar_url") == "":
+        payload.pop("avatar_url")
+    payload["allowed_mentions"] = {"parse": []}
+    embeds = payload.get("embeds")
+    if isinstance(embeds, list):
+        for embed in embeds:
+            if isinstance(embed, dict) and isinstance(embed.get("thumbnail"), dict) and not embed["thumbnail"].get("url"):
+                embed.pop("thumbnail")
     return payload
 
 
@@ -1639,7 +3653,7 @@ def build_ntfy_image(image_url=""):
     try:
         if not steam_image_url_is_allowed(image_url):
             raise ValueError("ntfy image URL must use a Steam HTTPS image host")
-        response = WEBHOOK_SESSION.get(image_url, headers={"User-Agent": f"SteamMonitor/{VERSION}"}, timeout=WEBHOOK_TIMEOUT_SECONDS, stream=True, allow_redirects=False)
+        response = WEBHOOK_SESSION.get(image_url, headers={"User-Agent": f"SteamMonitor/{VERSION}"}, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=VERIFY_SSL, stream=True, allow_redirects=False)
         with response:
             response.raise_for_status()
             content_type = str((response.headers or {}).get("Content-Type", "")).split(";", 1)[0].strip().casefold()
@@ -1663,7 +3677,8 @@ def build_ntfy_image(image_url=""):
             original_img.load()
             resized_img = original_img.convert("RGB")
         try:
-            resampling = getattr(getattr(PILImage, "Resampling", PILImage), "LANCZOS")
+            # Pillow moved LANCZOS into Resampling, so both the holder and the lookup stay dynamic
+            resampling = getattr(getattr(PILImage, "Resampling", PILImage), "LANCZOS")  # noqa: B009
             resized_img.thumbnail((160, 160), resampling)
             canvas = PILImage.new("RGB", (400, 160), (27, 32, 35))
             try:
@@ -1677,20 +3692,55 @@ def build_ntfy_image(image_url=""):
                 canvas.close()
         finally:
             resized_img.close()
-    except Exception:
+    except Exception as exc:
+        debug_swallowed_exception("Preparing ntfy image", exc)
         return None
 
 
-# Prints one webhook error without revealing private URLs, tokens or response bodies
-def print_webhook_error(message):
-    print(f"Error sending webhook: {message}")
+# Reports one webhook failure through the recovery block, without revealing private URLs, tokens or response bodies
+def print_webhook_error(message, error=None):
+    print_recovery_error(error, context="webhook", detail=str(message))
 
 
+# Sends one webhook request with the destination, deadline and redirect policy every delivery shares
+def post_webhook_request(destination=None, **request_kwargs):
+    destination = str(WEBHOOK_URL if destination is None else destination).strip()
+    if not validate_webhook_url(destination):
+        raise req.exceptions.InvalidURL("WEBHOOK_URL must contain a complete HTTPS link")
+    return WEBHOOK_SESSION.post(destination, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=VERIFY_SSL, allow_redirects=False, **request_kwargs)
+
+
+# Thread-local storage keeps synchronous deliveries isolated on supported Python 3.6 installations
+_DELIVERY_SECRET_VALUES = _ThreadLocal()
+
+
+# Keeps in-flight credentials available to error redaction across settings reloads
+def _retain_webhook_secrets(deliver):
+    @functools.wraps(deliver)
+    # Restores the previous redaction scope after this delivery finishes
+    def retained(*args, **kwargs):
+        settings = globals().copy()
+        values = [settings.get(name) for name in SECRET_KEYS]
+        headers = settings.get("WEBHOOK_HEADERS")
+        if isinstance(headers, dict):
+            values.extend(value for name, value in headers.items() if isinstance(name, str) and name.casefold() == "authorization")
+        secrets = tuple(value for value in values if isinstance(value, str) and value and not value.startswith("your_"))
+        previous = getattr(_DELIVERY_SECRET_VALUES, "values", ())
+        _DELIVERY_SECRET_VALUES.values = previous + secrets
+        try:
+            return deliver(*args, **kwargs)
+        finally:
+            _DELIVERY_SECRET_VALUES.values = previous
+    return retained
+
+
+@_retain_webhook_secrets
 # Sends one webhook through an isolated bounded retry path
-def send_webhook(title, description, notification_type="status", force=False, sleeper=None, image_url="", ntfy_priority=0, ntfy_tags=""):
+def send_webhook(title, description, notification_type="status", force=False, sleeper=None, image_url="", ntfy_priority=0, ntfy_tags="", report_delivery=True):
     if not force and not webhook_event_enabled(notification_type):
         return 1
-    if not validate_webhook_url():
+    destination = str(WEBHOOK_URL or "").strip()
+    if not validate_webhook_url(destination):
         print_webhook_error("WEBHOOK_URL must contain a complete HTTPS link")
         return 1
     provider = normalized_webhook_provider()
@@ -1717,6 +3767,7 @@ def send_webhook(title, description, notification_type="status", force=False, sl
     except ValueError as exc:
         print_webhook_error(str(exc))
         return 1
+    debug_print("Webhook delivery", event=notification_type, channel=provider, host=webhook_destination_host())
     sleep_func = time.sleep if sleeper is None else sleeper
     ntfy_title, ntfy_message = build_ntfy_webhook_message(str(webhook_values["title"]), str(webhook_values["description"])) if provider == "ntfy" else ("", "")
     ntfy_image = build_ntfy_image(normalized_image_url) if provider == "ntfy" and NTFY_IMAGES and normalized_image_url else None
@@ -1726,43 +3777,52 @@ def send_webhook(title, description, notification_type="status", force=False, sl
         ntfy_params["priority"] = ntfy_priority
     if provider == "ntfy" and ntfy_tags.strip():
         ntfy_params["tags"] = ntfy_tags.strip()
+    if destination != str(WEBHOOK_URL or "").strip():
+        print_recovery_error(context="webhook", detail="Webhook settings changed while preparing the delivery. Retry the notification with the current settings")
+        return 1
     for attempt in range(WEBHOOK_MAX_ATTEMPTS):
+        debug_print("Webhook delivery", channel=provider, attempt=f"{attempt + 1}/{WEBHOOK_MAX_ATTEMPTS}", image="attached" if use_ntfy_image else None)
         try:
             if provider == "ntfy":
                 if use_ntfy_image:
                     image_params = dict(ntfy_params)
                     image_params["message"] = ntfy_message
-                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), data=ntfy_image, params=image_params, headers=dict(request_headers, **{"Content-Type": "image/jpeg", "X-Filename": NTFY_IMAGE_FILENAME}), timeout=WEBHOOK_TIMEOUT_SECONDS)
+                    response = post_webhook_request(destination=destination, data=ntfy_image, params=image_params, headers=dict(request_headers, **{"Content-Type": "image/jpeg", "X-Filename": NTFY_IMAGE_FILENAME}))
                 else:
-                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), data=ntfy_message.encode("utf-8"), params=ntfy_params, headers=request_headers, timeout=WEBHOOK_TIMEOUT_SECONDS)
-            elif isinstance(discord_payload, str):
-                response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), data=discord_payload, headers=request_headers, timeout=WEBHOOK_TIMEOUT_SECONDS)
+                    response = post_webhook_request(destination=destination, data=ntfy_message.encode("utf-8"), params=ntfy_params, headers=request_headers)
             else:
-                response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), json=discord_payload, headers=request_headers, timeout=WEBHOOK_TIMEOUT_SECONDS)
-            if 200 <= response.status_code <= 299:
-                return 0
+                response = post_webhook_request(destination=destination, json=discord_payload, headers=request_headers)
             retryable = response.status_code == 429 or 500 <= response.status_code <= 599
+            debug_print("Webhook delivery", channel=provider, status=response.status_code, retryable=retryable)
+            if 200 <= response.status_code <= 299:
+                if report_delivery:
+                    verbose_delivery_print(f"Webhook sent through {webhook_provider_display_name(provider)}")
+                return 0
             if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
                 use_ntfy_image = False
                 delay = webhook_retry_after_seconds(response) if response.status_code == 429 else WEBHOOK_FALLBACK_RETRY_SECONDS if response.status_code >= 500 else 0.0
+                debug_print("Webhook delivery", channel=provider, image="dropped", retry_in=f"{delay}s")
                 if delay:
                     sleep_func(delay)
                 continue
             if not retryable or attempt == WEBHOOK_MAX_ATTEMPTS - 1:
-                print_webhook_error(f"the service returned HTTP {response.status_code}")
+                print_webhook_error(f"The webhook service returned HTTP {response.status_code}", req.HTTPError(response=response))
                 return 1
             delay = webhook_retry_after_seconds(response) if response.status_code == 429 else WEBHOOK_FALLBACK_RETRY_SECONDS
+            debug_print("Webhook delivery", channel=provider, retry_in=f"{delay}s")
             sleep_func(delay)
-        except req.RequestException:
+        except req.RequestException as exc:
+            debug_swallowed_exception("Webhook request", exc)
             if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
                 use_ntfy_image = False
+                debug_print("Webhook delivery", channel=provider, image="dropped", retry_in=f"{WEBHOOK_FALLBACK_RETRY_SECONDS}s")
                 sleep_func(WEBHOOK_FALLBACK_RETRY_SECONDS)
                 continue
             if attempt == WEBHOOK_MAX_ATTEMPTS - 1:
-                print_webhook_error("the service could not be reached")
+                print_webhook_error(f"The webhook service could not be reached ({type(exc).__name__})")
                 return 1
             sleep_func(WEBHOOK_FALLBACK_RETRY_SECONDS)
-    print_webhook_error("delivery failed")
+    print_webhook_error("The webhook delivery did not complete")
     return 1
 
 
@@ -1770,13 +3830,1993 @@ def send_webhook(title, description, notification_type="status", force=False, sl
 def send_notification_channels(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, image_url="", ntfy_priority=0, ntfy_tags=""):
     email_attempted = bool(email_enabled)
     webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    email_delivered = False
+    webhook_delivered = False
     if email_attempted:
         print(f"Sending email notification to {RECEIVER_EMAIL}")
-        send_email(subject, body, body_html, SMTP_SSL)
+        email_delivered = send_email(subject, body, body_html, SMTP_SSL) == 0
+        debug_print("Email channel", event=notification_type, outcome="OK" if email_delivered else "failed")
     if webhook_attempted:
-        print("Sending webhook notification")
-        send_webhook(subject, body, notification_type, force=True, image_url=image_url, ntfy_priority=ntfy_priority, ntfy_tags=ntfy_tags)
-    return email_attempted, webhook_attempted
+        print(f"Sending webhook notification via {webhook_provider_display_name()}")
+        webhook_delivered = send_webhook(subject, body, notification_type, force=True, image_url=image_url, ntfy_priority=ntfy_priority, ntfy_tags=ntfy_tags) == 0
+        debug_print("Webhook channel", event=notification_type, outcome="OK" if webhook_delivered else "failed")
+    # Delivery, not the attempt, so a channel that failed is retried while one that succeeded is not resent
+    return email_delivered, webhook_delivered
+
+
+# Reports the running Python version plus every required and optional dependency
+def doctor_check_environment(version_info=None, spec_finder=None):
+    checks = []
+    selected_version = sys.version_info if version_info is None else version_info
+    version_text = ".".join(str(part) for part in tuple(selected_version)[:3])
+    minimum_detail = f"Minimum supported version: {MINIMUM_PYTHON_VERSION_TEXT}"
+    if tuple(selected_version)[:2] >= MINIMUM_PYTHON_VERSION:
+        checks.append(make_doctor_check("Environment", "PASS", f"Python {version_text} is supported", minimum_detail))
+    else:
+        advice = make_recovery_advice("dependency.missing", f"Python {version_text} is unsupported", recovery_fix_with_guide(f"Install Python {MINIMUM_PYTHON_VERSION_TEXT} or newer then retry", INSTALLATION_GUIDE_URL), False)
+        checks.append(make_doctor_check("Environment", "FAIL", advice.summary, minimum_detail, advice))
+
+    find_spec = importlib.util.find_spec if spec_finder is None else spec_finder
+
+    # Returns whether one module can be located, treating an unimportable parent as absent
+    def module_present(module_name):
+        try:
+            return find_spec(module_name) is not None
+        except (ImportError, ValueError):
+            return False
+
+    for module_name, package_name in (("requests", "requests"), ("dateutil", "python-dateutil"), ("steam", "steam")):
+        if module_present(module_name):
+            checks.append(make_doctor_check("Environment", "PASS", f"Required dependency {package_name} is installed"))
+        else:
+            advice = make_recovery_advice("dependency.missing", f"Required dependency {package_name} is missing", recovery_fix_with_guide(f'Install it with: pip3 install "{package_name}"', INSTALLATION_GUIDE_URL), False)
+            checks.append(make_doctor_check("Environment", "FAIL", advice.summary, advice=advice))
+
+    if module_present("dotenv"):
+        checks.append(make_doctor_check("Environment", "PASS", "Optional dependency python-dotenv is installed", "Used only for reading secrets from a dotenv file"))
+    else:
+        advice = make_recovery_advice("dependency.missing", "Optional dependency python-dotenv is not installed", recovery_fix_with_guide("Install it with: pip3 install python-dotenv. Or export the secrets as environment variables", INSTALLATION_GUIDE_URL), False)
+        checks.append(make_doctor_check("Environment", "WARN", advice.summary, "Secrets can only come from environment variables or the configuration file. Every other feature is unaffected", advice))
+
+    # The guarded import flag is checked rather than the module, because it reflects whether artwork actually works
+    if NTFY_IMAGES_AVAILABLE:
+        checks.append(make_doctor_check("Environment", "PASS", "Optional dependency Pillow is installed", "Used only for artwork attachments in ntfy alerts"))
+    else:
+        advice = make_recovery_advice("dependency.missing", "Optional dependency Pillow is not installed", recovery_fix_with_guide(f"Install it with: {ntfy_images_install_command()}", INSTALLATION_GUIDE_URL), False)
+        checks.append(make_doctor_check("Environment", "WARN", advice.summary, "ntfy alerts are delivered as text without artwork. Every other feature is unaffected", advice))
+
+    if module_present("wcwidth"):
+        checks.append(make_doctor_check("Environment", "PASS", "Optional dependency wcwidth is installed", "Used only to measure display width for screen truncation"))
+    else:
+        advice = make_recovery_advice("dependency.missing", "Optional dependency wcwidth is not installed", recovery_fix_with_guide("Install it with: pip3 install wcwidth", INSTALLATION_GUIDE_URL), False)
+        checks.append(make_doctor_check("Environment", "WARN", advice.summary, "Wide characters count as one column, so a line holding them can run past the limit. Every other feature is unaffected", advice))
+
+    # A warning about a library that cannot affect this machine is noise, so the row is skipped off Windows
+    if platform.system() == "Windows":
+        if module_present("colorama"):
+            checks.append(make_doctor_check("Environment", "PASS", "Optional dependency colorama is installed", "Used only for coloured output in the older Windows Command Prompt"))
+        else:
+            advice = make_recovery_advice("dependency.missing", "Optional dependency colorama is not installed", recovery_fix_with_guide("Install it with: pip3 install colorama. Or use Windows Terminal, which needs nothing extra", INSTALLATION_GUIDE_URL), False)
+            checks.append(make_doctor_check("Environment", "WARN", advice.summary, "Coloured output may not render in the older Windows Command Prompt", advice))
+    return checks
+
+
+# Groups the configured secret names by the source each value actually came from
+def doctor_secret_sources(env_path=None):
+    environment_sources = secret_sources(env_path)
+    from_file = []
+    from_environment = []
+    from_settings = []
+    from_command_line = []
+    for key in SECRET_KEYS:
+        if not doctor_value_is_set(globals().get(key)):
+            continue
+        source = environment_sources.get(key)
+        # An argument overrides whatever the dotenv file or the environment held, so it is checked first
+        if key in COMMAND_LINE_SECRET_KEYS:
+            from_command_line.append(key)
+        elif source == "environment":
+            from_environment.append(key)
+        elif source:
+            from_file.append(key)
+        else:
+            from_settings.append(key)
+    return from_file, from_environment, from_settings, from_command_line
+
+
+# Returns the source each configured secret resolved from, so a debug run and the doctor cannot disagree
+def secret_source_labels(env_path=None):
+    grouped = zip(("dotenv file", "environment", "configuration file", "command line"), doctor_secret_sources(env_path))
+    labels = {name: source for source, names in grouped for name in names}
+    return {name: labels[name] for name in SECRET_KEYS if name in labels}
+
+
+# Reports which secrets are in effect and where each one was read from, by name and never by value
+def doctor_secret_checks(env_path=None):
+    from_file, from_environment, from_settings, from_command_line = doctor_secret_sources(env_path)
+    checks = []
+    if from_file:
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the dotenv file", ", ".join(from_file)))
+    if from_environment:
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the environment", ", ".join(from_environment)))
+    if from_settings:
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the configuration file", ", ".join(from_settings)))
+    if from_command_line:
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the command line", ", ".join(from_command_line)))
+    if not checks:
+        checks.append(make_doctor_check("Configuration", "PASS", "No secrets loaded", "Nothing was read from a dotenv file, the environment, the configuration file or the command line"))
+    return checks
+
+
+# Returns the log file monitoring will actually write, which needs the target-derived suffix
+def build_log_path(base_path, suffix):
+    log_path = Path(os.path.expanduser(str(base_path)))
+    if log_path.suffix == "" and suffix:
+        log_path = log_path.parent / f"{log_path.name}_{suffix}.log"
+    return log_path
+
+
+# Returns the closest parent that exists, so writability is judged without creating anything
+def nearest_existing_parent(path):
+    candidate = Path(path).expanduser()
+    if candidate.exists():
+        return candidate if candidate.is_dir() else candidate.parent
+    while not candidate.exists() and candidate != candidate.parent:
+        candidate = candidate.parent
+    return candidate
+
+
+# Reports whether one file monitoring will write can be created, without creating anything
+def doctor_destination_check(label, destination, creates_parents=False):
+    selected = Path(destination).expanduser()
+    parent = nearest_existing_parent(selected) if creates_parents else selected.parent
+    writable = selected.is_file() and os.access(selected, os.W_OK) if selected.exists() else parent.is_dir() and os.access(parent, os.W_OK)
+    if writable:
+        return make_doctor_check("Configuration", "PASS", f"{label} appears writable", f"Path: {selected}")
+    advice = classify_recovery_error(context="file", detail=f"{label} is not writable: {selected}")
+    return make_doctor_check("Configuration", "FAIL", advice.summary, advice.detail, advice)
+
+
+# Reports each file monitoring will write, resolving the log name once a target is known
+def doctor_output_destination_checks(target_value=None):
+    checks = []
+    if DISABLE_LOGGING:
+        checks.append(make_doctor_check("Configuration", "PASS", "Output logging is disabled"))
+    elif ST_LOGFILE:
+        suffix = str(FILE_SUFFIX or "") or (str(target_value) if target_value else "")
+        if suffix:
+            checks.append(doctor_destination_check("Log destination", build_log_path(ST_LOGFILE, suffix), creates_parents=True))
+        else:
+            checks.append(make_doctor_check("Configuration", "PASS", "Log destination will be finalized after a target is selected", f"Base path: {Path(os.path.expanduser(ST_LOGFILE))}"))
+    if CSV_FILE:
+        checks.append(doctor_destination_check("CSV destination", CSV_FILE))
+    else:
+        checks.append(make_doctor_check("Configuration", "PASS", "CSV logging is disabled"))
+    if PROFILE_CSV_FILE:
+        checks.append(doctor_destination_check("Profile CSV destination", PROFILE_CSV_FILE))
+    else:
+        checks.append(make_doctor_check("Configuration", "PASS", "Profile CSV logging is disabled"))
+    # A configured path is fixed, so it stays checkable without a target. The default name carries the target
+    if STEAM_STATUS_FILE or target_value:
+        checks.append(doctor_destination_check("Status destination", resolve_status_file(target_value), creates_parents=True))
+    else:
+        checks.append(make_doctor_check("Configuration", "PASS", "Status file will be finalized after a target is selected", "Base name: steam_<steam64_id>_last_status.json in the working directory"))
+    return checks
+
+
+# Names every on/off setting holding something other than True or False, since a string such as "false" would count as on
+def runtime_boolean_errors():
+    errors = []
+    for name, default in _config_template_defaults().items():
+        value = globals().get(name)
+        if isinstance(default, bool) and not isinstance(value, bool):
+            errors.append(f"{name} must be True or False, not {value!r}")
+    return errors
+
+
+# Returns all type and range errors in settings that control runtime timing or counts
+def runtime_configuration_errors():
+    errors = []
+    positive_numbers = (("STEAM_CHECK_INTERVAL", STEAM_CHECK_INTERVAL), ("STEAM_ACTIVE_CHECK_INTERVAL", STEAM_ACTIVE_CHECK_INTERVAL), ("CHECK_INTERNET_TIMEOUT", CHECK_INTERNET_TIMEOUT))
+    nonnegative_numbers = (("OFFLINE_INTERRUPT", OFFLINE_INTERRUPT), ("STEAM_AWAY_INACTIVITY_THRESHOLD", STEAM_AWAY_INACTIVITY_THRESHOLD), ("STEAM_SNOOZE_INACTIVITY_THRESHOLD", STEAM_SNOOZE_INACTIVITY_THRESHOLD), ("LIVENESS_CHECK_INTERVAL", LIVENESS_CHECK_INTERVAL))
+    for name, value in positive_numbers:
+        if not finite_number(value) or value <= 0:
+            errors.append(f"{name} must be a number greater than zero, not {value!r}")
+    for name, value in nonnegative_numbers:
+        if not finite_number(value) or value < 0:
+            errors.append(f"{name} must be a number zero or greater, not {value!r}")
+    if not isinstance(SMTP_PORT, int) or isinstance(SMTP_PORT, bool) or not 1 <= SMTP_PORT <= 65535:
+        errors.append(f"SMTP_PORT must be an integer from 1 through 65535, not {SMTP_PORT!r}")
+    return errors
+
+
+# The values this file defines for the settings checked below, so a configuration file that makes one
+# unusable can be reported and then ignored instead of stopping the commands that exist to correct it
+BUILT_IN_SHAPE_SETTINGS = {name: globals()[name] for name in ('ST_LOGFILE', 'CSV_FILE', 'PROFILE_CSV_FILE', 'STEAM_STATUS_FILE', 'DOTENV_FILE', 'COLOR_THEME', 'TRUNCATE_CHARS') if name in globals()}
+
+# Shape errors whose settings were replaced with the built-in values, so doctor still names them
+DISCARDED_SETTING_ERRORS = []
+
+DOTENV_STARTUP_ERRORS = {}
+
+
+# Names the cause of a dotenv file the run could not load, so startup and doctor word the same failure the same way
+def dotenv_load_problem(path, error):
+    if isinstance(error, UnicodeError):
+        return f"Dotenv file '{path}' is not valid UTF-8 text", "Save the dotenv file as UTF-8"
+    if isinstance(error, OSError):
+        return f"Dotenv file '{path}' could not be opened", "Check the dotenv file path and its read permissions"
+    return f"Dotenv file '{path}' could not be read", "Check that the dotenv file is readable UTF-8 text"
+
+
+# True when the selected command exists to correct the configuration, so a malformed setting is reported
+# there instead of stopping the one run that could repair it
+def command_reports_configuration(args=None):
+    # Read from the parsed namespace rather than the raw words, since argparse also accepts abbreviations
+    return any(getattr(args, name, False) for name in ("doctor", "setup", "set_smtp_password", "set_steam_api_key", "set_webhook_url"))
+
+
+# Validates effective path settings before startup expands or opens them
+def prepare_configured_paths(args):
+    overrides = {'DOTENV_FILE': 'env_file', 'CSV_FILE': 'csv_file', 'STEAM_STATUS_FILE': 'status_file', 'PROFILE_CSV_FILE': 'profile_csv_file'}
+    settings = globals().copy()
+    for name, argument in overrides.items():
+        value = getattr(args, argument, None)
+        if value:
+            settings[name] = value
+    if getattr(args, "truncate", None) is not None:
+        settings["TRUNCATE_CHARS"] = args.truncate
+        globals()["TRUNCATE_CHARS"] = args.truncate
+    errors = configuration_shape_errors(settings)
+    if not errors:
+        # Cleared here so a run that starts with usable settings cannot inherit an earlier run's report
+        DISCARDED_SETTING_ERRORS.clear()
+        return
+    advice = make_recovery_advice("config.invalid", "Invalid settings: " + ". ".join(errors), recovery_fix_with_guide("Correct the named settings in the configuration file or command line", CONFIG_GUIDE_URL), False)
+    # A monitoring run cannot continue on a value this broken, but doctor, the setup wizard and the secret
+    # commands are how it gets corrected, so they fall back to the built-in values and report the setting
+    if not command_reports_configuration(args):
+        print_recovery_advice(advice)
+        raise SystemExit(1)
+    DISCARDED_SETTING_ERRORS[:] = errors
+    # Only the values that are broken after command-line overrides are replaced, so an override still wins
+    for name, built_in in BUILT_IN_SHAPE_SETTINGS.items():
+        if name in settings and configuration_shape_errors({name: settings[name]}):
+            globals()[name] = built_in
+    # Doctor lists the same settings as report rows, so a warning above it would only say them twice
+    if not getattr(args, "doctor", False):
+        print_recovery_advice(advice, label="Warning")
+        print()
+
+
+# Names malformed path and color settings before diagnostics consume their values
+def configuration_shape_errors(settings=None):
+    errors = list(DISCARDED_SETTING_ERRORS) if settings is None else []
+    settings = globals() if settings is None else settings
+    for name in ('ST_LOGFILE', 'CSV_FILE', 'PROFILE_CSV_FILE', 'STEAM_STATUS_FILE', 'DOTENV_FILE'):
+        if name in settings and not isinstance(settings[name], (str, os.PathLike)):
+            errors.append(f"{name} must be a path string")
+    width = settings.get("TRUNCATE_CHARS", 0)
+    if not isinstance(width, int) or isinstance(width, bool) or width < 0:
+        errors.append("TRUNCATE_CHARS must be an integer zero or greater")
+    theme = settings.get("COLOR_THEME", {})
+    if not isinstance(theme, dict):
+        errors.append("COLOR_THEME must be a dictionary of style strings")
+    else:
+        errors.extend(f"COLOR_THEME[{key!r}] must be a style string" for key, value in theme.items() if not isinstance(value, str))
+    return errors
+
+
+# Replaces every setting still holding a value this file cannot use with the built-in one, so a report reached
+# from any entry point reads a usable value after it has named the setting
+def discard_invalid_shape_settings():
+    for name, built_in in BUILT_IN_SHAPE_SETTINGS.items():
+        if configuration_shape_errors({name: globals().get(name)}):
+            globals()[name] = built_in
+
+
+# Reports the configuration and dotenv files in effect plus every file the tool will generate
+def doctor_check_configuration(config_path=None, env_path=None, target_value=None):
+    # Read before the unusable values are replaced, so each row names the value the user configured
+    # Reported as ordinary rows so one malformed setting cannot hide the rest of the configuration report
+    checks = [make_doctor_check("Configuration", "FAIL", detail, advice=make_recovery_advice("config.invalid", detail, recovery_fix_with_guide("Correct the named setting in the configuration file", CONFIG_GUIDE_URL), False)) for detail in configuration_shape_errors()]
+    discard_invalid_shape_settings()
+    if config_path:
+        checks.append(make_doctor_check("Configuration", "PASS", "Configuration file loaded", f"Path: {config_path}"))
+    else:
+        checks.append(make_doctor_check("Configuration", "PASS", "No configuration file selected", "Using built-in defaults and command-line overrides"))
+    if env_path and str(env_path) in DOTENV_STARTUP_ERRORS:
+        detail, fix = DOTENV_STARTUP_ERRORS[str(env_path)]
+        advice = make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide(f"{fix}, then run Doctor again", CONFIG_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "FAIL", "Dotenv file could not be loaded", detail, advice))
+    elif env_path and os.path.isfile(str(env_path)):
+        checks.append(make_doctor_check("Configuration", "PASS", "Dotenv file loaded", f"Path: {env_path}"))
+    elif env_path:
+        advice = make_recovery_advice("config.missing", "The requested dotenv file was not found", recovery_fix_with_guide("Create the file or select an existing path with --env-file", SECRETS_GUIDE_URL), False, f"Path: {env_path}")
+        checks.append(make_doctor_check("Configuration", "WARN", advice.summary, advice.detail, advice))
+    else:
+        checks.append(make_doctor_check("Configuration", "PASS", "No dotenv file selected", "Using environment variables and other configured sources"))
+    checks.extend(doctor_secret_checks(env_path))
+
+    if not runtime_configuration_errors() and 0 < STEAM_ACTIVE_CHECK_INTERVAL < DOCTOR_MIN_SAFE_ACTIVE_INTERVAL:
+        intervals = f"{display_time(STEAM_CHECK_INTERVAL)} while offline, {display_time(STEAM_ACTIVE_CHECK_INTERVAL)} while online"
+        advice = make_recovery_advice("steam.rate_limited", "Check intervals are short enough to be rate limited", recovery_fix_with_guide(f"Raise STEAM_ACTIVE_CHECK_INTERVAL to at least {DOCTOR_MIN_SAFE_ACTIVE_INTERVAL} seconds", INTERVALS_GUIDE_URL), True)
+        checks.append(make_doctor_check("Configuration", "WARN", "Check intervals are short", intervals, advice))
+
+    if VERIFY_SSL:
+        checks.append(make_doctor_check("Configuration", "PASS", "TLS certificate verification is on", "Every outbound request checks the server certificate"))
+    else:
+        advice = make_recovery_advice("config.insecure", "TLS certificate verification is off", recovery_fix_with_guide("Set VERIFY_SSL back to True unless this network intercepts TLS with its own certificate authority", TLS_GUIDE_URL), False)
+        checks.append(make_doctor_check("Configuration", "WARN", "TLS certificate verification is off", "VERIFY_SSL is False, so an intercepted connection cannot be told apart from the real service", advice))
+
+    numeric_errors = runtime_configuration_errors()
+    if numeric_errors:
+        numeric_detail = "Invalid numeric settings: " + "; ".join(numeric_errors)
+        advice = make_recovery_advice("config.invalid", "One or more numeric settings are invalid", recovery_fix_with_guide("Correct the reported settings in the configuration file", CONFIG_GUIDE_URL), False, numeric_detail)
+        checks.append(make_doctor_check("Configuration", "FAIL", "One or more numeric settings are invalid", numeric_detail, advice))
+    boolean_errors = runtime_boolean_errors()
+    if boolean_errors:
+        boolean_detail = "Invalid on/off settings: " + "; ".join(boolean_errors)
+        advice = make_recovery_advice("config.invalid", "One or more on/off settings are invalid", recovery_fix_with_guide("Set the reported settings to True or False in the configuration file", CONFIG_GUIDE_URL), False, boolean_detail)
+        checks.append(make_doctor_check("Configuration", "FAIL", "One or more on/off settings are invalid", boolean_detail, advice))
+
+    checks.extend(doctor_output_destination_checks(target_value))
+    return checks
+
+
+# Confirms the configured connectivity endpoint is reachable, reusing the settings monitoring will use
+def doctor_check_connectivity():
+    global LAST_CONNECTIVITY_ERROR
+    LAST_CONNECTIVITY_ERROR = None
+    if check_internet(quiet=True):
+        return [make_doctor_check("Connectivity", "PASS", "The connectivity endpoint is reachable", f"Endpoint: {CHECK_INTERNET_URL}")]
+    advice = classify_recovery_error(LAST_CONNECTIVITY_ERROR, context="connectivity", detail=f"Could not reach {CHECK_INTERNET_URL}")
+    return [make_doctor_check("Connectivity", "FAIL", "The connectivity endpoint could not be reached", f"Endpoint: {CHECK_INTERNET_URL}", advice)]
+
+
+# Validates the Steam Web API key once and stores the client so later checks reuse it
+def doctor_check_authentication(report):
+    if not doctor_value_is_set(STEAM_API_KEY):
+        advice = classify_recovery_error(context="secret.missing", detail="No Steam Web API key is configured")
+        return [make_doctor_check("Authentication", "FAIL", "No Steam Web API key is configured", "Nothing can be monitored without one", advice)]
+    try:
+        report.steam_client = steam_web_api_client()
+    except Exception as exc:
+        advice = classify_recovery_error(exc, context="runtime")
+        return [make_doctor_check("Authentication", "FAIL", advice.summary, advice.detail, advice)]
+    return [make_doctor_check("Authentication", "PASS", "Steam accepted the configured Web API key", "The key itself was not displayed")]
+
+
+# Confirms the monitored profile exists and is visible, reusing the client the authentication check opened
+def doctor_check_target(report, target_value=None):
+    if not target_value:
+        advice = classify_recovery_error(context="target.missing")
+        return [make_doctor_check("Target", "WARN", advice.summary, "Nothing will be monitored until one is given", advice)]
+    if report.steam_client is None:
+        return [make_doctor_check("Target", "SKIP", "The monitored profile was not checked", "The Steam Web API key did not validate, so no lookup was attempted")]
+    try:
+        steam_id = resolve_steam_target(target_value, STEAM_API_KEY)
+        summary = report.steam_client.call("ISteamUser.GetPlayerSummaries", steamids=str(steam_id))
+        players = summary["response"]["players"]
+    except Exception as exc:
+        advice = classify_recovery_error(exc, context="target")
+        return [make_doctor_check("Target", "FAIL", advice.summary, advice.detail, advice)]
+    if not players:
+        advice = classify_recovery_error(context="target", detail=f"Steam returned no profile for Steam64 ID {steam_id}")
+        return [make_doctor_check("Target", "FAIL", advice.summary, advice.detail, advice)]
+    report.player_summary = players[0]
+    report.steam_id = steam_id
+    checks = [make_doctor_check("Target", "PASS", "The monitored profile exists", f"Display name: {sanitize_untrusted_text(players[0].get('personaname'))} (Steam64 ID {steam_id})")]
+    visibility = int(players[0].get("communityvisibilitystate", 1))
+    if visibility >= 3:
+        checks.append(make_doctor_check("Target", "PASS", "The monitored profile is publicly visible", "Status and game details can be read"))
+    else:
+        advice = make_recovery_advice("target.not_visible", "The monitored profile is not publicly visible", recovery_fix_with_guide("Ask the user to set profile and game details visibility to Public", PRIVACY_GUIDE_URL), False)
+        checks.append(make_doctor_check("Target", "WARN", advice.summary, "Status and game changes cannot be detected while it is private", advice))
+    return checks
+
+
+# Joins setting names the way every doctor detail and action in this family lists them
+def join_setting_names(names, conjunction):
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} {conjunction} {names[-1]}"
+
+
+# Returns the doctor row for email alerts whose settings cannot deliver, worded the same way by every sibling monitor
+def doctor_email_unusable_check(detail, fix):
+    advice = make_recovery_advice("smtp.invalid", EMAIL_UNUSABLE_CHECK_LABEL, recovery_fix_with_guide(fix, SMTP_GUIDE_URL), False, detail)
+    return make_doctor_check("Notifications", "WARN", EMAIL_UNUSABLE_CHECK_LABEL, detail, advice)
+
+
+# Checks email alert settings then confirms the SMTP sign-in without sending anything
+def doctor_check_email_notifications(report):
+    enabled_categories = _startup_email_notification_categories()
+    configured = doctor_value_is_set(SMTP_HOST) and doctor_value_is_set(SENDER_EMAIL) and doctor_value_is_set(RECEIVER_EMAIL)
+    # The error alert ships on by default, so it alone cannot mean the channel is switched on
+    deliberate_categories = [category for category in enabled_categories if category != "errors"]
+    if not deliberate_categories and not configured:
+        return [make_doctor_check("Notifications", "PASS", "Email notifications are disabled", "No SMTP connection was attempted and no email was sent")]
+    if not configured:
+        unset = [name for name, value in (("SMTP_HOST", SMTP_HOST), ("SENDER_EMAIL", SENDER_EMAIL), ("RECEIVER_EMAIL", RECEIVER_EMAIL)) if not doctor_value_is_set(value)]
+        return [doctor_email_unusable_check(f"{join_setting_names(unset, 'or')} is empty or still set to its placeholder", f"Set {join_setting_names(unset, 'and')} or turn the email alerts off")]
+    if not enabled_categories:
+        advice = make_recovery_advice("smtp.invalid", "Email is configured but no alert types are selected", recovery_fix_with_guide("Turn on at least one email alert in the configuration file", SMTP_GUIDE_URL), False)
+        return [make_doctor_check("Notifications", "WARN", advice.summary, "Nothing would ever be emailed", advice)]
+    if not doctor_value_is_set(SMTP_USER) or not doctor_value_is_set(SMTP_PASSWORD):
+        return [doctor_email_unusable_check("SMTP_USER or SMTP_PASSWORD is empty or still set to its placeholder", "Set SMTP_USER and SMTP_PASSWORD or turn the email alerts off")]
+    smtp_object = None
+    try:
+        smtp_object = smtp_connect_and_login(SMTP_SSL, smtp_timeout=5)
+    except Exception as exc:
+        advice = classify_recovery_error(exc, "email")
+        return [make_doctor_check("Notifications", "FAIL", advice.summary, advice.detail, advice)]
+    finally:
+        if smtp_object is not None:
+            try:
+                smtp_object.quit()
+            except Exception:
+                pass
+    report.email_ready = True
+    return [make_doctor_check("Notifications", "PASS", SMTP_READY_CHECK_LABEL, f"Alerts: {', '.join(enabled_categories)}. No email was sent during this passive check")]
+
+
+# Checks webhook alert settings without sending anything, asking whether the channel can fire before validating it
+def doctor_check_webhook_notifications(report):
+    selected_categories = _selected_webhook_notification_categories()
+    deliberate_categories = [category for category in selected_categories if category != "errors"]
+    if not WEBHOOK_ENABLED and not deliberate_categories:
+        return [make_doctor_check("Notifications", "PASS", "Webhook alerts are disabled")]
+    if not WEBHOOK_ENABLED:
+        advice = make_recovery_advice("webhook.invalid", "Webhook alert types are selected but webhooks are switched off", recovery_fix_with_guide("Set WEBHOOK_ENABLED to True, or turn the alert types off", WEBHOOK_GUIDE_URL), False)
+        return [make_doctor_check("Notifications", "WARN", advice.summary, "Nothing would ever be delivered", advice)]
+    if not normalized_webhook_provider():
+        advice = classify_recovery_error(context="webhook", detail="WEBHOOK_PROVIDER must be discord or ntfy")
+        return [make_doctor_check("Notifications", "FAIL", advice.summary, advice.detail, advice)]
+    if not validate_webhook_url():
+        advice = classify_recovery_error(context="webhook", detail="WEBHOOK_URL must contain a complete HTTPS link")
+        return [make_doctor_check("Notifications", "FAIL", advice.summary, advice.detail, advice)]
+    for validation_error in (validate_webhook_customization(normalized_webhook_provider()), validate_webhook_headers(normalized_webhook_provider())):
+        if validation_error is not None:
+            advice = classify_recovery_error(context="webhook", detail=validation_error)
+            return [make_doctor_check("Notifications", "FAIL", advice.summary, advice.detail, advice)]
+    if not selected_categories:
+        advice = make_recovery_advice("webhook.invalid", "Webhook alerts are on but no alert types are selected", recovery_fix_with_guide("Turn on at least one webhook alert in the configuration file, or set WEBHOOK_ENABLED to False", WEBHOOK_GUIDE_URL), False)
+        return [make_doctor_check("Notifications", "WARN", advice.summary, "Nothing would ever be delivered", advice)]
+    report.webhook_ready = True
+    return [make_doctor_check("Notifications", "PASS", f"{WEBHOOK_READY_CHECK_LABEL} for {webhook_provider_display_name()}", f"Alerts: {', '.join(selected_categories)}. The private link was not displayed. No webhook was sent during this passive check")]
+
+
+# The fixed section order the report renders in, chosen so each section depends only on the ones above it
+DOCTOR_SECTIONS = ("Environment", "Configuration", "Authentication", "Connectivity", "Target", "Notifications")
+
+# Delivery results are printed as they happen rather than inside a section, but they still count in the summary
+DOCTOR_DELIVERY_SECTION = "Optional delivery tests"
+
+# The theme entry each doctor result marker is drawn in, so a failure reads as one at a glance
+DOCTOR_MARK_STYLES = {"PASS": "boolean_true", "WARN": "warning", "FAIL": "error", "SKIP": "info"}
+
+# Width of the transient progress line currently on screen, so the next write can erase exactly what it drew
+DOCTOR_PROGRESS_WIDTH = 0
+
+
+# Renders one doctor result marker in the colour its status calls for
+def render_doctor_marker(status):
+    return colorize(DOCTOR_MARK_STYLES.get(status, "info"), f"[{status}]")
+
+
+# Prints one result the way the report renders it, so a row printed after the report matches the rows above it
+def print_doctor_check(check):
+    print(f"{render_doctor_marker(check.status)} {check.label}")
+    if check.detail:
+        print(f"  {colorize_links(check.detail)}")
+
+
+# Renders the heading and every non-empty section, with a fix line on the rows that are not a pass
+def render_doctor_sections(report):
+    # The install method is context rather than a check: it cannot fail, so it is stated once here
+    # instead of occupying a result row that no marker describes
+    lines = [colorize("header", "Doctor"), f"Detected install method: {colorize('username', install_method())}"]
+    for section in DOCTOR_SECTIONS:
+        section_checks = [check for check in report.checks if check.section == section]
+        if not section_checks:
+            continue
+        lines.extend(("", colorize("section", section)))
+        for check in section_checks:
+            lines.append(f"{render_doctor_marker(check.status)} {check.label}")
+            if check.detail:
+                lines.append(f"  {colorize_links(check.detail)}")
+            if check.status != "PASS" and check.advice is not None:
+                # The fix carries its own guide line, so each line is indented and styled on its own rather
+                # than leaving one colour sequence open across the newline
+                lines.extend(f"  {colorize_fix_line(advice_line)}" for advice_line in f"To fix: {check.advice.fix}".splitlines())
+    return sanitize_error_text("\n".join(lines))
+
+
+# Renders the one sentence that says whether the setup is usable and where to read more
+def render_doctor_summary(checks):
+    failures = sum(check.status == "FAIL" for check in checks)
+    warnings = sum(check.status == "WARN" for check in checks)
+    if failures:
+        summary_line = colorize("error", f"  {failures} check(s) failed, {warnings} warning(s). Fix the failures above before relying on the tool.")
+    elif warnings:
+        summary_line = colorize("warning", f"  All critical checks passed with {warnings} warning(s). Review the warnings above.")
+    else:
+        summary_line = colorize("boolean_true", "  All checks passed. You are good to go!")
+    return "\n".join(("", colorize("header", "Summary"), summary_line, "", colorize_links(f"Guide: {DOCTOR_GUIDE_URL}")))
+
+
+# Returns the real terminal underneath the logger wrapper, so progress can move the cursor safely
+def _doctor_terminal_stream():
+    stream = sys.stdout
+    while isinstance(stream, (Logger, ColorStream)):
+        stream = stream.terminal
+    return stream
+
+
+# Shows one transient doctor step, only on an interactive terminal
+# The line stays uncoloured on purpose: it is erased by writing exactly len(line) spaces, and escape
+# sequences would make that width wrong and leave a styled remnant behind
+def _doctor_progress(label):
+    global DOCTOR_PROGRESS_WIDTH
+    terminal = _doctor_terminal_stream()
+    if terminal.isatty():
+        if DOCTOR_PROGRESS_WIDTH:
+            terminal.write("\r" + (" " * DOCTOR_PROGRESS_WIDTH) + "\r")
+        line = f"* Checking {ANSI_ESCAPE_RE.sub('', sanitize_untrusted_text(label))} ..."
+        DOCTOR_PROGRESS_WIDTH = len(line)
+        terminal.write("\r" + line)
+        terminal.flush()
+
+
+# Clears the transient doctor progress line on an interactive terminal
+def _doctor_progress_clear():
+    global DOCTOR_PROGRESS_WIDTH
+    terminal = _doctor_terminal_stream()
+    if terminal.isatty() and DOCTOR_PROGRESS_WIDTH:
+        terminal.write("\r" + (" " * DOCTOR_PROGRESS_WIDTH) + "\r")
+        terminal.flush()
+    DOCTOR_PROGRESS_WIDTH = 0
+
+
+# States what doctor will and will not do, before the first slow check starts rather than after
+def render_doctor_notice():
+    print("Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval.\n")
+
+
+# Prompts for explicit delivery consent and defaults safely to no
+def _doctor_ask_yes_no(question):
+    while True:
+        try:
+            value = read_interactively(input, colorize("info", f"{question} [y/N]: ")).strip().casefold()
+        except EOFError:
+            print("\nDelivery test skipped.")
+            return False
+        except KeyboardInterrupt:
+            # Ctrl+C ends the run here the way it does anywhere else, rather than only declining this one test
+            signal_handler(signal.SIGINT, None)
+            raise
+        if not value or value in ("n", "no"):
+            return False
+        if value in ("y", "yes"):
+            return True
+        print("  Please answer 'y' or 'n'.")
+
+
+# Offers one real delivery per ready channel, only after separate interactive approval
+def _doctor_offer_notification_tests(report):
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        return []
+    if not report.email_ready and not report.webhook_ready:
+        return []
+    print("\n" + colorize("section", "Optional delivery tests") + "\n")
+    print("Doctor will not write files. Each approved test sends one real message.\n")
+    checks = []
+    if report.email_ready:
+        if _doctor_ask_yes_no("Send one test email now? This will deliver a real message"):
+            delivered = send_email("Steam Monitor doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "", SMTP_SSL, smtp_timeout=5, report_delivery=False) == 0
+            if delivered:
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", "Doctor test email delivered", "One real test email was sent after confirmation")
+            else:
+                advice = make_recovery_advice("smtp.connection", "Doctor test email delivery failed", recovery_fix_with_guide("Review the SMTP error above and correct the email settings", SMTP_GUIDE_URL), True)
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", advice.summary, "The approved test email could not be delivered", advice)
+        else:
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test email was not sent", "You declined the real delivery test. Run doctor again and approve the email test when ready")
+        checks.append(check)
+        # Recorded on the report so the summary sentence and the exit code cannot disagree about the same run
+        report.checks.append(check)
+        print_doctor_check(check)
+    if report.webhook_ready:
+        provider = webhook_provider_display_name()
+        if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
+            delivered = send_webhook("Steam Monitor doctor test webhook", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", "status", force=True, report_delivery=False) == 0
+            if delivered:
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", f"Doctor test webhook through {provider} delivered", "One real test webhook was sent after confirmation")
+            else:
+                advice = make_recovery_advice("webhook.connection", f"Doctor test webhook through {provider} delivery failed", recovery_fix_with_guide("Review the webhook error above and correct the destination settings", WEBHOOK_GUIDE_URL), True)
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", advice.summary, "The approved test webhook could not be delivered", advice)
+        else:
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", f"Test webhook through {provider} was not sent", "You declined the real delivery test. Run doctor again and approve the webhook test when ready")
+        checks.append(check)
+        report.checks.append(check)
+        print_doctor_check(check)
+    return checks
+
+
+# Runs every preflight check, then the approved delivery tests, returning zero only when nothing failed
+def run_doctor(target_value=None, config_path=None, env_path=None):
+    report = DoctorReport()
+    progress = _doctor_progress if _doctor_terminal_stream().isatty() else None
+    render_doctor_notice()
+    try:
+        for label, collect in (
+            ("environment", lambda: doctor_check_environment()),
+            ("configuration", lambda: doctor_check_configuration(config_path, env_path, target_value)),
+            ("connectivity", lambda: doctor_check_connectivity()),
+            ("authentication", lambda: doctor_check_authentication(report)),
+            ("the monitored profile", lambda: doctor_check_target(report, target_value)),
+            ("notifications", lambda: doctor_check_email_notifications(report) + doctor_check_webhook_notifications(report)),
+        ):
+            if progress is not None:
+                progress(label)
+            report.checks.extend(collect())
+    finally:
+        _doctor_progress_clear()
+    print(render_doctor_sections(report))
+    _doctor_offer_notification_tests(report)
+    print(render_doctor_summary(report.checks))
+    # The next steps block is the one place that prints the monitoring command, so it is not repeated here
+    return 1 if any(check.status == "FAIL" for check in report.checks) else 0
+
+
+# Returns a stored value only when it is a real answer, so template placeholders are never offered as defaults
+def _wizard_default(value):
+    return str(value) if doctor_value_is_set(value if isinstance(value, str) else str(value or "")) else ""
+
+
+# Prints the shared line telling the user how defaults and cancelling work
+def _wizard_print_default_guidance():
+    print("Press Enter to accept the shown default. Ctrl+C cancels.\n")
+
+
+# Reads one setup line, colorized like the sibling monitors. Cancelling propagates to the one
+# handler in run_setup_wizard, which reports that nothing was written
+def _wizard_input(prompt_text, input_func=None):
+    prompt = input if input_func is None else input_func
+    try:
+        return read_interactively(prompt, colorize("info", prompt_text))
+    except (EOFError, KeyboardInterrupt):
+        # The interrupted prompt owns the line break, so every handler prints its message alone
+        print()
+        raise
+
+
+# Asks one free-text question, returning the shown default when the answer is empty
+def _wizard_ask_text(question, default="", required=False, input_func=None):
+    suffix = f" [{default}]" if default else ""
+    while True:
+        answer = _wizard_input(f"{question}{suffix}: ", input_func=input_func).strip()
+        if not answer:
+            answer = default
+        if answer or not required:
+            return answer
+        print("  This value is required.")
+        if not _wizard_offer_retry(question, input_func=input_func):
+            return ""
+
+
+# Asks one yes or no question with a visible default
+def _wizard_ask_yes_no(question, default=True, input_func=None):
+    hint = "[Y/n]" if default else "[y/N]"
+    while True:
+        answer = _wizard_input(f"{question} {hint}: ", input_func=input_func).strip().casefold()
+        if not answer:
+            return default
+        if answer in ("y", "yes"):
+            return True
+        if answer in ("n", "no"):
+            return False
+        print("  Please answer 'y' or 'n'.")
+
+
+# Offers the one way out after an entry the wizard cannot use, so declining keeps every answer already given
+def _wizard_offer_retry(label, consequence="", input_func=None):
+    if consequence:
+        return not _wizard_ask_yes_no(f"Continue without the {label}? {consequence}", default=False, input_func=input_func)
+    return _wizard_ask_yes_no(f"Try entering the {label} again?", default=True, input_func=input_func)
+
+
+# Asks one numbered multiple-choice question and returns the chosen index
+def _wizard_ask_choice(question, options, default_index=0, input_func=None):
+    print()
+    print(question)
+    for index, (label, description) in enumerate(options, 1):
+        marker = " (default)" if index - 1 == default_index else ""
+        print(f"  {colorize('username', str(index))}. {label}{colorize('info', marker)}")
+        if description:
+            for line in description.splitlines():
+                print(f"     {line}")
+    while True:
+        answer = _wizard_input(f"Choose [1-{len(options)}]: ", input_func=input_func).strip()
+        if not answer:
+            return default_index
+        if answer.isdigit() and 1 <= int(answer) <= len(options):
+            return int(answer) - 1
+        print(f"  Enter a number between 1 and {len(options)}.")
+
+
+# Trims the parenthetical hint from a question, so the retry offer that repeats it stays one readable line
+def _wizard_retry_label(question):
+    return question.split(" (")[0].strip()
+
+
+# Asks until the user provides a positive whole number or accepts the default
+def _wizard_ask_positive_int(question, default, maximum=None, input_func=None):
+    while True:
+        answer = _wizard_ask_text(question, default=str(default), required=True, input_func=input_func)
+        # An empty answer means the retry offer was declined, so the default stands instead of asking again
+        if not answer:
+            return int(default)
+        try:
+            parsed = int(answer)
+        except ValueError:
+            parsed = 0
+        if parsed > 0 and (maximum is None or parsed <= maximum):
+            return parsed
+        print(f"  Enter a whole number from 1 through {maximum}." if maximum is not None else "  Enter a positive whole number.")
+        # A value the helper cannot use is a rejected entry, so it gets the same way out an empty one gets
+        if not _wizard_offer_retry(_wizard_retry_label(question), input_func=input_func):
+            print(f"  Keeping {default}.")
+            return int(default)
+
+
+# Renders a wizard duration as raw seconds plus a readable form, so the stored config value stays visible
+def _wizard_format_duration(seconds):
+    remaining = seconds
+    parts = []
+    for suffix, count in (("d", 86400), ("h", 3600), ("m", 60), ("s", 1)):
+        value, remaining = divmod(remaining, count)
+        if value:
+            parts.append(f"{value}{suffix}")
+    raw = f"{seconds}s"
+    readable = " ".join(parts) or raw
+    return raw if readable == raw else f"{raw} - {readable}"
+
+
+# Asks one duration, accepting the formats people actually type
+def _wizard_ask_duration(question, default, input_func=None):
+    prompt_text = f"{question} [{_wizard_format_duration(default)}]: "
+    while True:
+        answer = _wizard_input(prompt_text, input_func=input_func).strip()
+        if not answer:
+            return default
+        seconds = parse_duration_input(answer)
+        if seconds is not None:
+            return seconds
+        print("  Enter a positive duration such as 120, 2m, 1.5h, 1h 30m or 1d.")
+        if not _wizard_offer_retry(_wizard_retry_label(question), input_func=input_func):
+            print(f"  Keeping {_wizard_format_duration(default)}.")
+            return default
+
+
+# Asks one secret through a hidden prompt with debug output off, so it never reaches the screen, the shell history or the debug stream
+def _wizard_ask_secret(question, getpass_func=None, strip=True):
+    hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
+    try:
+        # Colorized like the visible prompts, so a hidden answer does not look like a different question
+        with debug_output_suppressed():
+            return_value = str(read_secret_interactively(hidden_prompt, colorize("info", f"{question}: ")))
+            return return_value.strip() if strip else return_value
+    except (EOFError, KeyboardInterrupt):
+        print()
+        raise
+
+
+# Renders an explicit assignment for a setting the template ships commented out, so overrides the user wrote
+# survive a rewrite instead of being replaced by the commented default
+def _rendered_commented_setting(variable, values):
+    value = values.get(variable)
+    if not isinstance(value, dict) or not value:
+        return []
+    lines = ["", f"{variable} = {{"]
+    lines.extend(f"    {repr(str(name))}: {repr(str(setting))}," for name, setting in value.items())
+    lines.append("}")
+    return lines
+
+
+# Renders one configuration file from the built-in template with the chosen values substituted in
+def generate_config_with_current_values(config_values):
+    tree = ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec")
+    template_defaults = _config_template_defaults()
+    replacements = {}
+    for statement in tree.body:
+        if not isinstance(statement, ast.Assign) or len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
+            continue
+        name = statement.targets[0].id
+        # A secret belongs in the dotenv file, so its template placeholder stays even when the running values hold the real one
+        if name not in config_values or name in SECRET_KEYS:
+            continue
+        # A setting still holding what the template ships keeps the template's own lines, so a multi-line
+        # value such as WEBHOOK_TEMPLATE is not collapsed into one unreadable line by a wizard that changed nothing
+        if name in template_defaults and config_values[name] == template_defaults[name] and type(config_values[name]) is type(template_defaults[name]):
+            continue
+        replacements[name] = (statement.lineno, config_node_end(statement, CONFIG_BLOCK)[0], repr(config_values[name]))
+    lines = CONFIG_BLOCK.strip("\n").split("\n")
+    # The template keeps its own leading blank line, so template line numbers are one ahead of this list
+    offset = 1 if CONFIG_BLOCK.startswith("\n") else 0
+    commented_pattern = re.compile(r"^#\s*([A-Z][A-Z0-9_]*)\s*=\s*\{$")
+    commented_block = ""
+    skip_until = 0
+    output = []
+    for number, line in enumerate(lines, 1):
+        template_line = number + offset
+        if template_line < skip_until:
+            continue
+        replaced = next((name for name, (start, _end, _value) in replacements.items() if start == template_line), None)
+        if replaced is None:
+            output.append(line)
+            stripped = line.strip()
+            commented_match = commented_pattern.match(stripped)
+            if commented_match and commented_match.group(1) in COMMENTED_CONFIG_SETTINGS:
+                commented_block = commented_match.group(1)
+            elif commented_block and stripped == "# }":
+                output.extend(_rendered_commented_setting(commented_block, config_values))
+                commented_block = ""
+            continue
+        start, end, rendered = replacements[replaced]
+        output.append(f"{replaced} = {rendered}")
+        skip_until = end + 1
+    return "\n".join(output) + "\n"
+
+
+# Checks one setup destination without creating or modifying it, so an unwritable path is caught before any question
+def _wizard_validate_destination(path, label):
+    destination = Path(path).expanduser().resolve()
+    if destination.exists() and destination.is_dir():
+        raise ValueError(f"{label} must be a file path, not a directory")
+    parent = nearest_existing_parent(destination)
+    if not parent.is_dir():
+        raise ValueError(f"{label} does not have a usable parent directory")
+    if not os.access(str(parent), os.W_OK):
+        raise ValueError(f"{label} is not writable through parent '{parent}'")
+    return destination
+
+
+# Loads the selected setup baseline and preserves its dotenv path unless explicitly overridden
+def _wizard_seed_destination(state, env_file):
+    saved = {}
+    if state.config_path.is_file() and not load_config_file(state.config_path, namespace=saved):
+        raise ValueError(f"Configuration file '{state.config_path}' could not be read. Correct it before retrying setup.")
+    state.baseline_values.update({key: value for key, value in saved.items() if key not in SECRET_KEYS})
+    state.config_values.update(state.baseline_values)
+    selected = env_file if env_file is not None else saved.get("DOTENV_FILE") or state.env_path
+    if str(selected).casefold() == "none":
+        raise ValueError("Setup needs a writable dotenv destination. Pass --env-file PATH to choose one.")
+    state.env_path = _wizard_validate_destination(selected, "Dotenv destination")
+    if state.env_path == state.config_path.resolve():
+        raise ValueError("Configuration and dotenv destinations must be different files. Pass --env-file with another path.")
+    state.config_values["DOTENV_FILE"] = str(state.env_path)
+
+
+# Resolves both setup destinations, refusing the disabled settings that leave nowhere to write
+def _wizard_destinations(config_file=None, env_file=None):
+    if config_file is not None and str(config_file).casefold() == "none":
+        raise ValueError("--setup has nowhere to write the configuration")
+    if env_file is not None and str(env_file).casefold() == "none":
+        raise ValueError("--setup has nowhere to write the private settings")
+    config_path = Path(config_file).expanduser() if config_file is not None else Path.cwd() / DEFAULT_CONFIG_FILENAME
+    env_path = Path(env_file).expanduser() if env_file is not None else Path.cwd() / ".env"
+    return _wizard_validate_destination(config_path, "Configuration destination"), _wizard_validate_destination(env_path, "Dotenv destination")
+
+
+# Confirms replacing an existing config before any question is asked, so a long run cannot end in a surprise
+def _wizard_choose_config_destination(config_path, input_func=None):
+    selected = Path(config_path)
+    while selected.exists() and not _wizard_ask_yes_no(f"Configuration file '{selected}' exists. A timestamped backup is kept. Rebuild it from your answers, starting from its current settings?", default=False, input_func=input_func):
+        alternative = _wizard_ask_text("Another config destination or leave empty to cancel", input_func=input_func)
+        if not alternative:
+            return None
+        try:
+            selected = _wizard_validate_destination(alternative, "Configuration destination")
+        except ValueError as exc:
+            print(f"  {exc}.")
+    return selected
+
+
+# Queues one secret for the save step, asking first when the dotenv file already assigns it
+def _wizard_queue_secret(state, key, value, input_func=None):
+    if not value:
+        return False
+    if _dotenv_contains_key(state.env_path, key) and not _wizard_ask_yes_no(f"The dotenv file already contains {key}. Replace that value?", default=False, input_func=input_func):
+        print(f"  Existing {key} will be retained without being displayed or rewritten.")
+        return False
+    state.secret_updates[key] = value
+    return True
+
+
+# Holds every wizard answer until the user explicitly saves, so nothing is written during questioning
+class WizardSetupState:
+    # Starts from the values already in effect, which become both the defaults and the revert target
+    def __init__(self, config_path, env_path, baseline_values):
+        self.config_path = Path(config_path)
+        self.env_path = Path(env_path)
+        self.baseline_values = dict(baseline_values)
+        self.config_values = dict(baseline_values)
+        self.secret_updates = {}
+        self.retained_secrets = {}
+        self.target = ""
+        self.pending_vanity = ""
+        self.persist_target = True
+
+
+# The mail server settings the wizard collects, and how long its sign-in check waits for the server
+WIZARD_SMTP_CONFIG_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL")
+WIZARD_SMTP_TIMEOUT = 5
+
+# The email and webhook alert settings the wizard offers, in the order the questions are asked
+WIZARD_EMAIL_NOTIFICATION_KEYS = ("ACTIVE_INACTIVE_NOTIFICATION", "GAME_CHANGE_NOTIFICATION", "STATUS_NOTIFICATION", "NAME_CHANGE_NOTIFICATION", "ERROR_NOTIFICATION")
+WIZARD_WEBHOOK_NOTIFICATION_KEYS = ("WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION", "WEBHOOK_GAME_CHANGE_NOTIFICATION", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_NAME_CHANGE_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION")
+
+
+# Each editable section: internal name, menu label and description, then the keys reverted when it is re-entered
+WIZARD_SECTIONS = (
+    ("Target", "Target", "Change the Steam profile that is monitored.", ("TARGET_STEAM_ID",), ()),
+    ("Polling", "Polling interval", "Change how often Steam is checked.", ("STEAM_CHECK_INTERVAL", "STEAM_ACTIVE_CHECK_INTERVAL"), ()),
+    ("Authentication", "Authentication", "Enter the Steam Web API key again.", (), ("STEAM_API_KEY",)),
+    ("Email", "Email notifications", "Change SMTP details and email events.", WIZARD_SMTP_CONFIG_KEYS + WIZARD_EMAIL_NOTIFICATION_KEYS, ("SMTP_PASSWORD",)),
+    ("Webhook", "Webhook alerts", "Change Discord or ntfy details and events.", ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "NTFY_IMAGES") + WIZARD_WEBHOOK_NOTIFICATION_KEYS, ("WEBHOOK_URL", "NTFY_ACCESS_TOKEN")),
+    ("Output", "Output files", "Change the log, CSV and status file destinations.", ("DISABLE_LOGGING", "CSV_FILE", "STEAM_STATUS_FILE"), ()),
+    ("Destinations", "File destinations", "Change the configuration or dotenv output path.", (), ()),
+)
+
+
+# Restores one section to the values setup started with and drops any secret it had queued
+def _wizard_reset_section(state, config_keys, secret_keys):
+    for key in config_keys:
+        if key in state.baseline_values:
+            state.config_values[key] = state.baseline_values[key]
+        else:
+            state.config_values.pop(key, None)
+    for key in secret_keys:
+        state.secret_updates.pop(key, None)
+        if key in state.retained_secrets:
+            state.secret_updates[key] = state.retained_secrets[key]
+
+
+# Returns one declined section to the built-in template values, so nothing the user turned down is written
+def _wizard_clear_section(state, config_keys, secret_keys=()):
+    defaults = _config_template_defaults()
+    for key in config_keys:
+        if key in defaults:
+            state.config_values[key] = defaults[key]
+        else:
+            state.config_values.pop(key, None)
+    for key in secret_keys:
+        state.secret_updates.pop(key, None)
+
+
+# Asks for the monitored profile, accepting every form people paste and storing one canonical Steam64 ID
+def _wizard_collect_target_section(state, initial_target=None, input_func=None):
+    state.pending_vanity = ""
+    question = "Steam profile URL or ID to monitor"
+    while True:
+        answer = _wizard_ask_text(question, default=str(initial_target or state.target or ""), required=True, input_func=input_func)
+        if not answer:
+            # The question already offered another attempt and it was declined, so the section ends instead of asking again
+            break
+        try:
+            steam64, vanity = normalize_steam_target(answer)
+        except ValueError as exc:
+            print(f"  {exc}")
+            if not _wizard_offer_retry(question, input_func=input_func):
+                break
+            continue
+        if steam64 is not None:
+            state.target = str(steam64)
+            break
+        resolved = None
+        if doctor_value_is_set(state.secret_updates.get("STEAM_API_KEY") or state.config_values.get("STEAM_API_KEY")):
+            api_key = state.secret_updates.get("STEAM_API_KEY") or state.config_values.get("STEAM_API_KEY")
+            try:
+                resolved = resolve_steam_community_url(f"https://steamcommunity.com/id/{vanity}/", api_key)
+            except ValueError as exc:
+                print(f"  Could not resolve '{vanity}': {exc}")
+        if resolved is not None:
+            state.target = str(resolved)
+            print(f"  Resolved '{vanity}' to Steam64 ID {resolved}.")
+            break
+        state.pending_vanity = vanity
+        print(f"  '{vanity}' will be resolved after the Steam Web API key is set up.")
+        break
+    if not state.target and not state.pending_vanity:
+        print("  No target selected. Nothing can be monitored until one is set. Run --setup again or pass the target on the command line.")
+        _wizard_apply_target(state)
+        return
+    state.persist_target = _wizard_ask_yes_no("Persist this target in the generated config?", default=state.persist_target, input_func=input_func)
+    _wizard_apply_target(state)
+
+
+# Mirrors the settled target into the config values, so an unpersisted target is left out of the file
+def _wizard_apply_target(state):
+    state.config_values["TARGET_STEAM_ID"] = state.target if state.persist_target and state.target else ""
+
+
+# Resolves a vanity target after authentication or asks for another target when resolution is unavailable
+def _wizard_resolve_pending_target(state, input_func=None):
+    while state.pending_vanity:
+        vanity = state.pending_vanity
+        api_key = state.secret_updates.get("STEAM_API_KEY") or state.config_values.get("STEAM_API_KEY")
+        if doctor_value_is_set(api_key):
+            try:
+                resolved = resolve_steam_community_url(f"https://steamcommunity.com/id/{vanity}/", api_key)
+                state.target = str(resolved)
+                state.pending_vanity = ""
+                print(f"  Resolved '{vanity}' to Steam64 ID {resolved}.")
+                _wizard_apply_target(state)
+                return
+            except ValueError as exc:
+                print(f"  Could not resolve '{vanity}': {exc}")
+        else:
+            print(f"  '{vanity}' cannot be resolved without a Steam Web API key.")
+        print("  Enter another supported profile value.")
+        _wizard_collect_target_section(state, input_func=input_func)
+
+
+# Asks how often the tool checks, in whichever duration format the user prefers
+def _wizard_collect_polling_section(state, input_func=None):
+    state.config_values["STEAM_CHECK_INTERVAL"] = _wizard_ask_duration("Steam polling interval while offline (seconds or use s/m/h/d)", int(state.config_values.get("STEAM_CHECK_INTERVAL") or STEAM_CHECK_INTERVAL), input_func=input_func)
+    state.config_values["STEAM_ACTIVE_CHECK_INTERVAL"] = _wizard_ask_duration("Steam polling interval while online (seconds or use s/m/h/d)", int(state.config_values.get("STEAM_ACTIVE_CHECK_INTERVAL") or STEAM_ACTIVE_CHECK_INTERVAL), input_func=input_func)
+
+
+# Asks for the Steam Web API key through a hidden prompt and validates it against Steam before accepting it
+def _wizard_collect_auth_section(state, input_func=None, getpass_func=None, validator=None):
+    print(colorize_links(f"Create or view your Steam Web API key: {STEAM_API_KEY_REGISTRATION_URL}"))
+    existing = doctor_value_is_set(state.config_values.get("STEAM_API_KEY"))
+    if existing and not _wizard_ask_yes_no("Replace the Steam Web API key already configured?", default=False, input_func=input_func):
+        return
+    validate = validate_steam_api_key if validator is None else validator
+    while True:
+        api_key = _wizard_ask_secret("Steam Web API key", getpass_func=getpass_func)
+        if not api_key:
+            # Monitoring cannot run without it, so leaving it unset has to be a decision rather than a fallthrough
+            if not _wizard_offer_retry("Steam Web API key", "Nothing can be monitored until one is set", input_func=input_func):
+                return
+            continue
+        # Steam is contacted here, which takes long enough to look like a hang without a notice
+        print("  Checking the key with Steam ...")
+        if validate(api_key):
+            state.secret_updates["STEAM_API_KEY"] = api_key
+            print("  Steam accepted the key.")
+            return
+        print("  Steam rejected that key. Check it was copied in full.")
+        # A key Steam keeps rejecting cannot be corrected from inside the loop, so the wizard must be leavable here too
+        if not _wizard_offer_retry("Steam Web API key", input_func=input_func):
+            return
+
+
+# Switches every email alert off together, so an abandoned answer cannot leave half a mail server configured
+def _wizard_disable_email(state):
+    _wizard_clear_section(state, WIZARD_SMTP_CONFIG_KEYS, ("SMTP_PASSWORD",))
+    # Only the alerts the wizard offers are cleared, so alerts enabled by hand survive a declined email section
+    for key in WIZARD_EMAIL_NOTIFICATION_KEYS:
+        state.config_values[key] = False
+
+
+# Signs in to the collected mail server without sending anything, so a refused login is caught during setup
+def _wizard_verify_smtp(values, password):
+    names = ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SMTP_PASSWORD", "SENDER_EMAIL", "RECEIVER_EMAIL")
+    previous = {name: globals()[name] for name in names}
+    smtp_object = None
+    try:
+        globals().update(values)
+        # A blank answer keeps the password already stored, which is the one the sign-in must then prove
+        globals()["SMTP_PASSWORD"] = password or previous["SMTP_PASSWORD"]
+        smtp_object = smtp_connect_and_login(SMTP_SSL, smtp_timeout=WIZARD_SMTP_TIMEOUT)
+        return None
+    except Exception as exc:
+        return classify_recovery_error(exc, "email")
+    finally:
+        if smtp_object is not None:
+            try:
+                smtp_object.quit()
+            except Exception:
+                pass
+        globals().update(previous)
+
+
+# Reports the outcome of the sign-in check: True to continue, False to ask again, None to switch email off
+def _wizard_smtp_sign_in_accepted(values, password, input_func=None):
+    print("  Checking the sign-in with the mail server ...")
+    advice = _wizard_verify_smtp(values, password)
+    if advice is None:
+        print("  The mail server accepted the sign-in. No email was sent.")
+        return True
+    print(f"  {advice.summary}: {advice.detail}" if advice.detail else f"  {advice.summary}")
+    print(f"  To fix: {advice.fix}")
+    if _wizard_offer_retry("mail server settings", input_func=input_func):
+        return False
+    if advice.retryable:
+        # Being offline is the usual reason a correct setup fails here, so the answers are kept rather than discarded
+        print("  The settings were kept without being checked. Run --doctor to check the sign-in again.")
+        return True
+    print("  Email notifications stay off until the mail server accepts the settings.")
+    return None
+
+
+# Reports whether one required mail server answer was abandoned, switching the channel off when it was
+def _wizard_email_answer_missing(state, key):
+    if state.config_values.get(key):
+        return False
+    print("  Email notifications stay off until every mail server setting is answered.")
+    _wizard_disable_email(state)
+    return True
+
+
+# Reports whether the saved settings already send email, so a rerun proposes keeping the channel it has
+def _wizard_email_enabled(config_values):
+    # The error alert ships switched on, so on its own it counts only once a mail server has been named
+    for key in WIZARD_EMAIL_NOTIFICATION_KEYS:
+        if key != "ERROR_NOTIFICATION" and bool(config_values.get(key)):
+            return True
+    return bool(config_values.get("ERROR_NOTIFICATION")) and doctor_value_is_set(config_values.get("SMTP_HOST"))
+
+
+# Asks whether to send email alerts and collects only the settings that choice needs
+def _wizard_collect_email_section(state, input_func=None, getpass_func=None):
+    if not _wizard_ask_yes_no("Configure email notifications?", default=_wizard_email_enabled(state.config_values), input_func=input_func):
+        _wizard_disable_email(state)
+        return
+    while True:
+        state.config_values["SMTP_HOST"] = _wizard_ask_text("SMTP host", default=_wizard_default(state.config_values.get("SMTP_HOST")), required=True, input_func=input_func)
+        if _wizard_email_answer_missing(state, "SMTP_HOST"):
+            return
+        state.config_values["SMTP_PORT"] = _wizard_ask_positive_int("SMTP port", int(state.config_values.get("SMTP_PORT") or 587), maximum=65535, input_func=input_func)
+        state.config_values["SMTP_SSL"] = _wizard_ask_yes_no("Enable TLS/SSL for SMTP?", default=bool(state.config_values.get("SMTP_SSL")), input_func=input_func)
+        state.config_values["SMTP_USER"] = _wizard_ask_text("SMTP username", default=_wizard_default(state.config_values.get("SMTP_USER")), required=True, input_func=input_func)
+        if _wizard_email_answer_missing(state, "SMTP_USER"):
+            return
+        state.config_values["SENDER_EMAIL"] = _wizard_ask_text("Sender email", default=_wizard_default(state.config_values.get("SENDER_EMAIL")), required=True, input_func=input_func)
+        if _wizard_email_answer_missing(state, "SENDER_EMAIL"):
+            return
+        state.config_values["RECEIVER_EMAIL"] = _wizard_ask_text("Receiver email", default=_wizard_default(state.config_values.get("RECEIVER_EMAIL")), required=True, input_func=input_func)
+        if _wizard_email_answer_missing(state, "RECEIVER_EMAIL"):
+            return
+        password = _wizard_ask_secret("SMTP password", getpass_func=getpass_func, strip=False)
+        if password:
+            _wizard_queue_secret(state, "SMTP_PASSWORD", password, input_func=input_func)
+        # The sign-in has to prove the value the next run resolves rather than the one just typed. A declined
+        # replacement and an exported variable both leave setup reporting success for a password nothing will use
+        effective_password, supplied_by_export = effective_secret_after_setup("SMTP_PASSWORD", state.env_path, state.secret_updates)
+        if supplied_by_export and password:
+            print("  SMTP_PASSWORD is exported in this environment and an export wins at startup, so the next run uses that value rather than the one just entered.")
+            print("  The check below signs in with the exported value. Unset it to use the one saved here.")
+        outcome = _wizard_smtp_sign_in_accepted({name: state.config_values[name] for name in WIZARD_SMTP_CONFIG_KEYS}, effective_password, input_func=input_func)
+        if outcome is None:
+            _wizard_disable_email(state)
+            return
+        if outcome:
+            break
+    preset = _wizard_ask_choice("Which email notifications should be enabled?", [
+        ("Status and errors, recommended", "Online, offline, game change and error notifications."),
+        ("Every supported event", "Enables all email notification types."),
+        ("Custom", "Choose each notification type separately."),
+    ], input_func=input_func)
+    if preset == 0:
+        selected = {"ACTIVE_INACTIVE_NOTIFICATION": True, "GAME_CHANGE_NOTIFICATION": True, "STATUS_NOTIFICATION": False, "NAME_CHANGE_NOTIFICATION": False, "ERROR_NOTIFICATION": True}
+    elif preset == 1:
+        selected = {name: True for name in WIZARD_EMAIL_NOTIFICATION_KEYS}
+    else:
+        print()
+        questions = (
+            ("ACTIVE_INACTIVE_NOTIFICATION", "Email when the user goes online or offline?"),
+            ("GAME_CHANGE_NOTIFICATION", "Email when the user starts, changes or stops a game?"),
+            ("STATUS_NOTIFICATION", "Email on every status change?"),
+            ("NAME_CHANGE_NOTIFICATION", "Email when the display name changes?"),
+            ("ERROR_NOTIFICATION", "Email on monitoring errors?"),
+        )
+        selected = {name: _wizard_ask_yes_no(question, default=False, input_func=input_func) for name, question in questions}
+    state.config_values.update(selected)
+
+
+# Switches the channel and every alert it owns off together, so a half-configured webhook cannot be written
+def _wizard_disable_webhook(state):
+    _wizard_clear_section(state, ("WEBHOOK_PROVIDER",), ("WEBHOOK_URL", "NTFY_ACCESS_TOKEN"))
+    state.config_values["WEBHOOK_ENABLED"] = False
+    state.config_values["NTFY_IMAGES"] = False
+    state.config_values.update({name: False for name in WIZARD_WEBHOOK_NOTIFICATION_KEYS})
+
+
+# Asks whether to send webhook alerts and collects the provider, the hidden URL and the alert choices
+def _wizard_collect_webhook_section(state, input_func=None, getpass_func=None):
+    if not _wizard_ask_yes_no("Set up webhook alerts (Discord, ntfy etc.)?", default=bool(state.config_values.get("WEBHOOK_ENABLED")), input_func=input_func):
+        _wizard_disable_webhook(state)
+        return
+    provider_choice = _wizard_ask_choice("Which webhook service should receive alerts?", [
+        ("Discord", "Sends a Discord embed to one channel webhook."),
+        ("ntfy", "Sends a native notification to one ntfy topic URL."),
+    ], input_func=input_func)
+    provider = "discord" if provider_choice == 0 else "ntfy"
+    state.config_values["WEBHOOK_PROVIDER"] = provider
+    if provider == "discord":
+        print("  In Discord: Edit Channel > Integrations > Webhooks > New Webhook > Copy Webhook URL.")
+    else:
+        print("  In ntfy: choose a hard-to-guess topic. Paste its complete topic URL, or just the topic name when it is hosted on ntfy.sh.")
+    replace_webhook = True
+    if _wizard_existing_secret("WEBHOOK_URL", state.env_path, secret_updates=state.secret_updates):
+        choice = _wizard_ask_choice("Which webhook URL should be used?", [
+            ("Keep the saved URL", "Keeps the private value without displaying or changing it."),
+            ("Paste a new URL", "Uses a hidden prompt then saves the new private value in .env."),
+        ], input_func=input_func)
+        replace_webhook = choice == 1
+    if replace_webhook:
+        while True:
+            answer = _wizard_ask_secret("Paste the Discord webhook URL" if provider == "discord" else "Paste the ntfy topic URL or ntfy.sh topic name", getpass_func=getpass_func)
+            webhook_url = normalize_ntfy_topic_url(answer) if provider == "ntfy" else answer.strip()
+            if validate_webhook_url(webhook_url):
+                state.secret_updates["WEBHOOK_URL"] = webhook_url
+                break
+            # Nothing can be delivered without a destination, so giving up has to stay reachable from the prompt.
+            # The branch is chosen by what was typed rather than by the normalized value, since a rejected ntfy
+            # topic normalizes to an empty string and would otherwise be reported as nothing entered
+            if not answer.strip():
+                if not _wizard_offer_retry("webhook URL", "Webhook alerts stay off until one is set", input_func=input_func):
+                    _wizard_disable_webhook(state)
+                    return
+                continue
+            if provider == "ntfy":
+                print("  Enter a complete HTTPS ntfy topic URL or a topic name containing up to 64 letters, numbers, dashes or underscores.")
+            else:
+                print("  That does not look like a complete HTTPS webhook URL. Copy it from the webhook service and try again.")
+            if not _wizard_offer_retry("webhook URL", input_func=input_func):
+                _wizard_disable_webhook(state)
+                return
+    if provider == "ntfy":
+        _wizard_collect_ntfy_access_token(state, input_func=input_func, getpass_func=getpass_func)
+    state.config_values["NTFY_IMAGES"] = _wizard_collect_ntfy_images(input_func=input_func) if provider == "ntfy" else False
+    state.config_values["WEBHOOK_ENABLED"] = True
+    preset = _wizard_ask_choice("Which webhook alerts should be sent?", [
+        ("Status and errors, recommended", "Alerts when the user goes online, goes offline, changes game or monitoring has a problem."),
+        ("Every supported alert", "Also sends every-status-change and display-name alerts."),
+        ("Custom", "Choose each webhook alert separately."),
+    ], input_func=input_func)
+    if preset == 0:
+        selected = {"WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION": True, "WEBHOOK_GAME_CHANGE_NOTIFICATION": True, "WEBHOOK_STATUS_NOTIFICATION": False, "WEBHOOK_NAME_CHANGE_NOTIFICATION": False, "WEBHOOK_ERROR_NOTIFICATION": True}
+    elif preset == 1:
+        selected = {name: True for name in WIZARD_WEBHOOK_NOTIFICATION_KEYS}
+    else:
+        print()
+        questions = (
+            ("WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION", "Send a webhook alert when the user goes online or offline?"),
+            ("WEBHOOK_GAME_CHANGE_NOTIFICATION", "Send a webhook alert when the user starts, changes or stops a game?"),
+            ("WEBHOOK_STATUS_NOTIFICATION", "Send a webhook alert on every status change?"),
+            ("WEBHOOK_NAME_CHANGE_NOTIFICATION", "Send a webhook alert when the display name changes?"),
+            ("WEBHOOK_ERROR_NOTIFICATION", "Send a webhook alert when monitoring has a problem?"),
+        )
+        selected = {name: _wizard_ask_yes_no(question, default=False, input_func=input_func) for name, question in questions}
+    state.config_values.update(selected)
+
+
+# Collects an optional ntfy access token without displaying it or contacting the service
+def _wizard_collect_ntfy_access_token(state, input_func=None, getpass_func=None):
+    existing_token = _wizard_existing_secret("NTFY_ACCESS_TOKEN", state.env_path, secret_updates=state.secret_updates)
+    if existing_token:
+        choice = _wizard_ask_choice("Which ntfy authentication should be used?", [
+            ("Keep the saved access token", "Keeps the private value without displaying or changing it."),
+            ("Paste a new access token", "Uses a hidden prompt then saves the replacement in .env."),
+            ("Do not use an access token", "Disables the saved token. Authentication in the topic URL still works."),
+        ], input_func=input_func)
+        if choice == 0:
+            return
+        if choice == 2:
+            state.secret_updates["NTFY_ACCESS_TOKEN"] = ""
+            print("  The saved ntfy access token will be disabled without being displayed.")
+            return
+    elif not _wizard_ask_yes_no("Authenticate this ntfy topic with a separate access token?", default=False, input_func=input_func):
+        print("  No separate access token selected. Authentication already present in the topic URL still works.")
+        return
+    while True:
+        token = _wizard_ask_secret("Paste the ntfy access token only", getpass_func=getpass_func)
+        if not token or ("\r" not in token and "\n" not in token and not token.casefold().startswith(("bearer ", "basic "))):
+            if token:
+                state.secret_updates["NTFY_ACCESS_TOKEN"] = token
+            return
+        print("  Paste only the access token without a Bearer or Basic prefix.")
+        if not _wizard_offer_retry("ntfy access token", input_func=input_func):
+            return
+
+
+# Offers artwork attachments for ntfy alerts, which need the optional Pillow package
+def _wizard_collect_ntfy_images(input_func=None):
+    if not NTFY_IMAGES_AVAILABLE:
+        print("  Artwork attachments need the optional Pillow package, which is not installed.")
+    if not _wizard_ask_yes_no("Attach game and avatar artwork to ntfy alerts?", default=NTFY_IMAGES_AVAILABLE, input_func=input_func):
+        return False
+    if NTFY_IMAGES_AVAILABLE:
+        return True
+    print(f"  Keeping ntfy alerts text-only. Install Pillow with '{ntfy_images_install_command()}' then set NTFY_IMAGES to True.")
+    return False
+
+
+# Reads saved secrets with the same interpolation rules as normal startup
+def _wizard_private_values(env_path):
+    if not env_path or not Path(env_path).exists():
+        return {}
+    return resolve_dotenv_values(Path(env_path).read_text(encoding="utf-8"), override=False)
+
+
+# Returns genuine environment credentials without treating previously loaded file values as exports
+def _wizard_exported_secrets():
+    state = globals().get("DOTENV_RELOAD_STATE", {})
+    owned = set(globals().get("DOTENV_MANAGED_KEYS", ())) | set(globals().get("DOTENV_BASE_VALUES", ())) | set(state.get("base", ()))
+    exported = set(globals().get("EXPORTED_ENVIRONMENT_KEYS", ())) | set(globals().get("EXPORTED_SECRET_KEYS", ())) | set(state.get("exported", ()))
+    sources = globals().get("SECRET_SOURCES", {})
+    return {key: os.environ[key] for key in SECRET_KEYS if os.environ.get(key) and key not in command_line_secret_keys() and (key in exported or (key not in owned and sources.get(key) not in ("dotenv file", "dotenv file reload")))}
+
+
+# Returns the secret stored in the dotenv file or None when the file has no assignment for it
+def _wizard_saved_secret_value(key, env_path):
+    value = _wizard_private_values(env_path).get(key)
+    return value if isinstance(value, str) else None
+
+
+# Returns the effective credential and whether a startup export supplies it
+def effective_secret_after_setup(key, env_path, secret_updates):
+    if key in command_line_secret_keys():
+        return str(globals().get(key) or ""), False
+    exported = _wizard_exported_secrets().get(key)
+    if exported:
+        return exported, True
+    if key in secret_updates:
+        return str(secret_updates[key] or ""), False
+    saved = _wizard_saved_secret_value(key, env_path)
+    if saved is not None:
+        return saved, False
+    # Nothing private holds it, so the configuration file is what a restart would read
+    return str(globals().get(key) or ""), False
+
+
+# Reports whether setup will retain a usable credential from the selected file or pending answers
+def _wizard_existing_secret(key, env_path, secret_updates=None):
+    value = _wizard_exported_secrets().get(key)
+    if value is None:
+        value = (secret_updates or {}).get(key)
+    if value is None:
+        value = read_private_settings(env_path).get(key)
+    return doctor_value_is_set(value)
+
+
+# Reads the selected private file before setup changes paths or pending answers
+def read_private_settings(env_path):
+    path = Path(env_path)
+    if not path.exists():
+        return {}
+    content = path.read_text(encoding="utf-8")
+    bindings = list(_dotenv_bindings(content))
+    invalid = next((binding for binding in bindings if binding.error), None)
+    if invalid is not None:
+        raise ValueError(f"Dotenv file '{path}' has invalid syntax near line {invalid.original.line}. Correct that assignment before retrying.")
+    owned = globals().get("DOTENV_RELOAD_STATE", {}).get("loaded", ())
+    environment = {key: value for key, value in os.environ.items() if value and key not in owned}
+    return resolve_dotenv_values(content, override=False, environment=environment)
+
+
+# Rechecks retained answers against the new destination before collecting replacement choices
+def _wizard_move_private_settings(state, selected_env):
+    retained = read_private_settings(state.env_path)
+    retained.update(state.secret_updates)
+    selected = read_private_settings(selected_env)
+    carried = {key: value for key, value in retained.items() if key in SECRET_KEYS and isinstance(value, str) and selected.get(key) is None}
+    state.retained_secrets = dict(carried)
+    state.secret_updates = dict(carried)
+    state.env_path = selected_env
+    for key in SECRET_KEYS:
+        value = selected.get(key, carried.get(key))
+        if isinstance(value, str):
+            state.config_values[key] = value
+
+
+# Changes where setup writes, re-asking the sections that hold secrets when the dotenv destination moves
+def _wizard_collect_destination_section(state, input_func=None, getpass_func=None):
+    new_config_path = state.config_path
+    while True:
+        config_text = _wizard_ask_text("Configuration file destination", default=str(state.config_path), required=True, input_func=input_func)
+        try:
+            selected_config = _wizard_validate_destination(config_text, "Configuration destination")
+            break
+        except ValueError as exc:
+            print(f"  {exc}.")
+    # Both sides are compared resolved, so an unchanged answer written a different way is not read as a move
+    if selected_config != Path(new_config_path).expanduser().resolve():
+        chosen_config = _wizard_choose_config_destination(selected_config, input_func=input_func)
+        # Giving up on every offered path keeps the current destination rather than cancelling the whole setup
+        if chosen_config is not None:
+            new_config_path = chosen_config
+    while True:
+        env_text = _wizard_ask_text("Dotenv file destination", default=str(state.env_path), required=True, input_func=input_func)
+        if env_text.casefold() == "none":
+            print("  Setup needs a writable dotenv file and cannot use 'none'.")
+            continue
+        try:
+            selected_env = _wizard_validate_destination(env_text, "Dotenv destination")
+        except ValueError as exc:
+            print(f"  {exc}.")
+            continue
+        # One file cannot hold both, since saving the configuration would overwrite the secrets beside it
+        if selected_env == Path(new_config_path).expanduser().resolve():
+            print("  The dotenv file has to be a different file from the configuration.")
+            continue
+        break
+    if selected_env == Path(state.env_path).expanduser().resolve():
+        state.config_path = new_config_path
+        state.config_values["DOTENV_FILE"] = str(selected_env)
+        return
+    _wizard_move_private_settings(state, selected_env)
+    state.config_path = new_config_path
+    state.config_values["DOTENV_FILE"] = str(selected_env)
+    print("  The dotenv destination changed. Review authentication and notification settings. Values in the selected file are kept unless you replace them.")
+    _wizard_collect_auth_section(state, input_func=input_func, getpass_func=getpass_func)
+    _wizard_resolve_pending_target(state, input_func=input_func)
+    print()
+    _wizard_collect_email_section(state, input_func=input_func, getpass_func=getpass_func)
+    print()
+    _wizard_collect_webhook_section(state, input_func=input_func, getpass_func=getpass_func)
+    for key, value in state.retained_secrets.items():
+        state.secret_updates.setdefault(key, value)
+
+
+# Runs one editable section again after resetting only the keys it owns
+def _wizard_edit_setup_section(state, input_func=None, getpass_func=None):
+    options = [(label, description) for _name, label, description, _config_keys, _secret_keys in WIZARD_SECTIONS]
+    options.append(("Return to summary", "Keep every current answer."))
+    choice = _wizard_ask_choice("Which setup section should be changed?", options, input_func=input_func)
+    if choice == len(WIZARD_SECTIONS):
+        return
+    name, _label, _description, config_keys, secret_keys = WIZARD_SECTIONS[choice]
+    _wizard_reset_section(state, config_keys, secret_keys)
+    if name == "Target":
+        state.target = ""
+    print()
+    collectors = {
+        "Target": lambda: _wizard_collect_target_section(state, input_func=input_func),
+        "Polling": lambda: _wizard_collect_polling_section(state, input_func=input_func),
+        "Authentication": lambda: _wizard_collect_auth_section(state, input_func=input_func, getpass_func=getpass_func),
+        "Email": lambda: _wizard_collect_email_section(state, input_func=input_func, getpass_func=getpass_func),
+        "Webhook": lambda: _wizard_collect_webhook_section(state, input_func=input_func, getpass_func=getpass_func),
+        "Output": lambda: _wizard_collect_output_section(state, input_func=input_func),
+        "Destinations": lambda: _wizard_collect_destination_section(state, input_func=input_func, getpass_func=getpass_func),
+    }
+    collectors[name]()
+    if name in ("Target", "Authentication"):
+        _wizard_resolve_pending_target(state, input_func=input_func)
+
+
+# The theme part each setup summary row draws its value in, for rows whose value has a known kind
+WIZARD_SUMMARY_VALUE_STYLES = {"Target": "username", "Polling interval while offline": "duration", "Polling interval while online": "duration"}
+
+
+# Colours one setup summary value from its row label
+def _wizard_summary_value(label, value):
+    text = str(value)
+    part = WIZARD_SUMMARY_VALUE_STYLES.get(label)
+    if part:
+        return colorize(part, text)
+    if text.startswith("enabled") or text == "complete":
+        return colorize("boolean_true", text)
+    if text in ("disabled", "incomplete"):
+        return colorize("boolean_false", text)
+    return text
+
+
+# Prints one aligned label and value block, so every summary row lines up
+def _wizard_print_summary_rows(rows):
+    width = max(len(label) for label, _ in rows) + 1
+    for label, value in rows:
+        print(f"  {(label + ':'):<{width}} {_wizard_summary_value(label, value)}")
+
+
+# Adds the .csv extension when the answer carries none, so a bare name still names a CSV file
+def _wizard_normalize_csv_path(answer):
+    text = str(answer).strip()
+    if not text or Path(text).suffix:
+        return text
+    return text + ".csv"
+
+
+# Adds the .json extension when the answer carries none, so a bare name still names the JSON status file
+def _wizard_normalize_status_path(answer):
+    text = str(answer).strip()
+    if not text or Path(text).suffix:
+        return text
+    return text + ".json"
+
+
+# Collects the log and CSV output destinations monitoring would write
+def _wizard_collect_output_section(state, input_func=None):
+    state.config_values["DISABLE_LOGGING"] = not _wizard_ask_yes_no("Write the normal per-target log file?", default=not bool(state.config_values.get("DISABLE_LOGGING")), input_func=input_func)
+    saved_csv = str(state.config_values.get("CSV_FILE") or "")
+    # Asked as its own question, since Enter on the path prompt takes the shown default and so could never clear a saved one
+    if _wizard_ask_yes_no("Write a CSV file of the changes?", default=bool(saved_csv), input_func=input_func):
+        state.config_values["CSV_FILE"] = _wizard_normalize_csv_path(_wizard_ask_text("CSV output path", default=saved_csv, required=True, input_func=input_func))
+    else:
+        state.config_values["CSV_FILE"] = ""
+    state.config_values["STEAM_STATUS_FILE"] = _wizard_normalize_status_path(_wizard_ask_text("Optional status file path (blank uses the default name in the working directory)", default=str(state.config_values.get("STEAM_STATUS_FILE") or ""), input_func=input_func))
+
+
+# Shows everything that is about to be written, by name and never by secret value
+def _wizard_print_setup_summary(state):
+    email_labels = {"ACTIVE_INACTIVE_NOTIFICATION": "online/offline", "GAME_CHANGE_NOTIFICATION": "game", "STATUS_NOTIFICATION": "every status change", "NAME_CHANGE_NOTIFICATION": "name change", "ERROR_NOTIFICATION": "errors"}
+    webhook_labels = {"WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION": "online/offline", "WEBHOOK_GAME_CHANGE_NOTIFICATION": "game", "WEBHOOK_STATUS_NOTIFICATION": "every status change", "WEBHOOK_NAME_CHANGE_NOTIFICATION": "name change", "WEBHOOK_ERROR_NOTIFICATION": "errors"}
+    enabled_email = [email_labels[name] for name in WIZARD_EMAIL_NOTIFICATION_KEYS if state.config_values.get(name)]
+    enabled_webhooks = [webhook_labels[name] for name in WIZARD_WEBHOOK_NOTIFICATION_KEYS if state.config_values.get(name)] if state.config_values.get("WEBHOOK_ENABLED") else []
+    api_key_set = "STEAM_API_KEY" in state.secret_updates or doctor_value_is_set(state.config_values.get("STEAM_API_KEY"))
+    webhook_state = f"enabled ({webhook_provider_display_name(state.config_values.get('WEBHOOK_PROVIDER'))})" if state.config_values.get("WEBHOOK_ENABLED") else "disabled"
+    rows = [
+        ("Target", state.target or "not set"),
+        ("Persist target", "yes" if state.persist_target else "no"),
+        ("Polling interval while offline", _wizard_format_duration(int(state.config_values.get("STEAM_CHECK_INTERVAL") or 0))),
+        ("Polling interval while online", _wizard_format_duration(int(state.config_values.get("STEAM_ACTIVE_CHECK_INTERVAL") or 0))),
+        ("Authentication status", "complete" if api_key_set else "incomplete"),
+        ("Email", "enabled" if enabled_email else "disabled"),
+        ("Email notifications", ", ".join(enabled_email) if enabled_email else "none"),
+        ("Webhook", webhook_state),
+        ("Webhook alerts", ", ".join(enabled_webhooks) if enabled_webhooks else "none"),
+        ("Output log", "disabled" if state.config_values.get("DISABLE_LOGGING") else "enabled"),
+        ("CSV output", state.config_values.get("CSV_FILE") or "disabled"),
+        ("Status file", state.config_values.get("STEAM_STATUS_FILE") or (default_status_file(state.target) if state.target else "steam_<steam64_id>_last_status.json")),
+        ("Config destination", state.config_path),
+        ("Dotenv destination", state.env_path),
+        ("Install method", install_method_display_name()),
+    ]
+    print(colorize("header", "\nSetup summary\n"))
+    _wizard_print_summary_rows(rows)
+
+
+# Loops on the summary until the user saves or explicitly discards, so nothing is written by accident
+def _wizard_review_setup(state, input_func=None, getpass_func=None):
+    while True:
+        state.secret_updates = {**state.retained_secrets, **state.secret_updates}
+        _wizard_print_setup_summary(state)
+        action = _wizard_ask_choice("What would you like to do?", [
+            ("Save settings", "Write the displayed settings to the selected files."),
+            ("Review or change settings", "Edit one section without losing the other answers."),
+            ("Discard answers and exit", "Leave the destination files unchanged."),
+        ], input_func=input_func)
+        if action == 0:
+            return True
+        if action == 1:
+            _wizard_edit_setup_section(state, input_func=input_func, getpass_func=getpass_func)
+            continue
+        print()
+        if _wizard_ask_yes_no("Discard all entered answers and exit?", default=False, input_func=input_func):
+            return False
+        print("  Setup answers retained.")
+
+
+# Writes the configuration atomically, backing up whatever was there first
+def write_config_file(destination, content, redact_secrets=False):
+    destination_path = Path(destination).expanduser()
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    backup_path = create_timestamped_backup(destination_path, redact_secrets=redact_secrets)
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n", prefix=f".{destination_path.name}.", suffix=".tmp", dir=str(destination_path.parent), delete=False) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            temporary_file.write(content)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        os.replace(str(temporary_path), str(destination_path))
+        temporary_path = None
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
+    return {"path": str(destination_path), "backup_path": backup_path}
+
+
+# Raised when an existing config is not replaced because nobody could confirm it, as opposed to a path in the way of writing one
+class ConfigExistsError(FileExistsError):
+    pass
+
+
+# Asks before replacing a config file that already exists, so a generated template cannot land silently
+def confirm_generated_config_replacement(destination, force=False, interactive=None, input_func=input):
+    destination_path = Path(destination).expanduser()
+    if not destination_path.exists() or force:
+        return True
+    terminal_is_interactive = bool(sys.stdin.isatty()) if interactive is None else bool(interactive)
+    if not terminal_is_interactive:
+        raise ConfigExistsError(f"Config file '{destination_path}' already exists and there is no terminal to confirm replacing it")
+    try:
+        answer = str(read_interactively(input_func, f"Config file '{destination_path}' exists. Replace it and keep a timestamped backup? [y/N]: ")).strip().casefold()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        answer = ""
+    return answer in ("y", "yes")
+
+
+# Writes one generated config atomically, backing up whatever was there first
+def write_generated_config(output_file, content, force=False, interactive=None, input_func=input):
+    destination = Path(output_file).expanduser()
+    if not confirm_generated_config_replacement(destination, force, interactive, input_func):
+        return None, False
+    return write_config_file(destination, content)["backup_path"], True
+
+
+# Prints where setup will write and which install method the printed commands are written for
+def _wizard_print_setup_destinations(method, config_path, env_path):
+    print(f"Detected install method: {colorize('username', method)}")
+    print(f"Configuration:          {config_path}")
+    print(f"Dotenv:                 {env_path}\n")
+
+
+# Runs the guided setup, holding every answer until the user saves
+def run_setup_wizard(initial_target=None, config_file=None, env_file=None, input_func=None, getpass_func=None, interactive=None):
+    terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
+    if not terminal_is_interactive:
+        print("The setup wizard needs an interactive terminal (TTY).")
+        print("Run --setup from an interactive shell or use --generate-config and edit the files manually.")
+        print(colorize_links(f"Guide: {QUICK_START_GUIDE_URL}"))
+        return 1
+
+    try:
+        config_path, env_path = _wizard_destinations(config_file, env_file)
+    except ValueError as exc:
+        print_recovery_error(exc, context="file.unwritable", detail=str(exc))
+        return 1
+
+    print(colorize("header", "Setup Wizard\n"))
+    print("This asks a few questions and writes a ready-to-run configuration.")
+    _wizard_print_default_guidance()
+    print("Secrets go to the dotenv file. Non-secret settings go to the config file.")
+    print()
+    _wizard_print_setup_destinations(install_method(), config_path, env_path)
+
+    baseline_values = {name: value for name, value in globals().items() if name in _config_allowed_names()}
+    state = WizardSetupState(config_path, env_path, baseline_values)
+    state.config_values["DOTENV_FILE"] = str(env_path)
+
+    try:
+        # Asked before anything else, so a config that has to be replaced is agreed to rather than discovered at Save
+        config_existed = Path(config_path).exists()
+        chosen_config = _wizard_choose_config_destination(config_path, input_func=input_func)
+        if chosen_config is None:
+            print("\n" + colorize("warning", "Setup cancelled. Destination files were not changed."))
+            return 1
+        state.config_path = chosen_config
+        _wizard_seed_destination(state, env_file)
+        # A destination nothing was asked about printed nothing, so the separator would leave a blank gap
+        if config_existed:
+            print()
+        _wizard_collect_target_section(state, initial_target, input_func=input_func)
+        print()
+        _wizard_collect_polling_section(state, input_func=input_func)
+        print()
+        _wizard_collect_auth_section(state, input_func=input_func, getpass_func=getpass_func)
+        _wizard_resolve_pending_target(state, input_func=input_func)
+        print()
+        _wizard_collect_email_section(state, input_func=input_func, getpass_func=getpass_func)
+        print()
+        _wizard_collect_webhook_section(state, input_func=input_func, getpass_func=getpass_func)
+        print()
+        _wizard_collect_output_section(state, input_func=input_func)
+        if not _wizard_review_setup(state, input_func=input_func, getpass_func=getpass_func):
+            print("\n" + colorize("warning", "Setup cancelled. Destination files were not changed."))
+            return 1
+    except (OSError, UnicodeError, ValueError) as exc:
+        print_recovery_error(exc, context="config")
+        print("Correct the selected file or pass --env-file with a writable destination.")
+        return 1
+    except (EOFError, KeyboardInterrupt):
+        print(colorize("warning", "Setup cancelled. Destination files were not changed."))
+        return 1
+
+    # Everything above only filled the state, so this is the first and only point anything reaches disk
+    try:
+        preserved_dotenv = preserve_inline_config_secrets(state.config_path, state.env_path)
+        config_result = write_config_file(state.config_path, generate_config_with_current_values(state.config_values), redact_secrets=True)
+    except Exception as exc:
+        print_recovery_error(exc, context="file", detail=f"Could not write the configuration to '{state.config_path}'")
+        return 1
+    dotenv_result = preserved_dotenv
+    if state.secret_updates:
+        try:
+            dotenv_result = update_dotenv_file(state.env_path, state.secret_updates)
+        except Exception as exc:
+            print_recovery_error(exc, context="file", detail=f"Could not write secrets to '{state.env_path}'")
+            print(f"Configuration was saved to '{state.config_path}'. Setup is incomplete and monitoring was not started.")
+            print("Correct the dotenv destination then run --setup again with the same --config-file and --env-file. Review the saved settings before starting monitoring.")
+            return 1
+
+    print(colorize("header", "\nSaved files\n"))
+    print(f"  Configuration: {config_result['path']}")
+    if config_result["backup_path"]:
+        print(f"  Backup:        {config_result['backup_path']}")
+    if dotenv_result:
+        # The row prints the dotenv file path, not what the file holds
+        # codeql[py/clear-text-logging-sensitive-data]
+        print(f"  {'Secrets:':<15}{dotenv_result['path']}")
+
+    doctor_offered = bool(state.target)
+    doctor_exit = None
+    if doctor_offered:
+        print()
+    try:
+        if doctor_offered and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True, input_func=input_func):
+            print()
+            _wizard_apply_saved_values(state, env_path=state.env_path if state.env_path.is_file() else None)
+            doctor_exit = run_doctor(target_value=int(state.target), config_path=str(state.config_path), env_path=str(state.env_path) if state.env_path.is_file() else None)
+    except (EOFError, KeyboardInterrupt):
+        # The files are already written, so an interrupt here only skips the optional check
+        print(colorize("warning", "Setup is saved. Use the commands below when ready."))
+
+    env_argument = str(state.env_path) if state.env_path.is_file() else ""
+    # A persisted target is already in the config file, so the printed commands stay short
+    target_arguments = [] if state.persist_target or not state.target else [state.target]
+    print(colorize("header", "\nNext steps\n"))
+    _wizard_print_command("Check setup again:", render_command(["--doctor"] + target_arguments, config_path=str(state.config_path), env_path=env_argument))
+    start_label = "After Doctor passes, start monitoring:" if doctor_exit not in (None, 0) else "Start monitoring:"
+    _wizard_print_command(start_label, render_command(target_arguments, config_path=str(state.config_path), env_path=env_argument))
+    print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}\n")
+
+    try:
+        # Only a doctor run that passed proves the saved setup can monitor, so the launch offer waits for it
+        start_monitoring = bool(state.target and doctor_exit == 0 and _wizard_ask_yes_no("Start monitoring now? Monitoring will continue until Ctrl+C.", default=True, input_func=input_func))
+    except (EOFError, KeyboardInterrupt):
+        # The files are already written, so an interrupt here only skips the optional launch
+        print(colorize("warning", "Setup is saved. Start monitoring with the command above when ready."))
+        return 0
+    if start_monitoring:
+        launch_arguments = _wizard_local_command_args(target=None if state.persist_target else state.target, config_path=state.config_path, env_path=state.env_path if state.env_path.is_file() else None)
+        sys.stdout.flush()
+        return _wizard_launch_monitor(launch_arguments)
+    return 0
+
+
+# Puts the values setup just saved into effect, so doctor checks the written files instead of the pre-setup state
+def _wizard_apply_saved_values(state, env_path=None):
+    exported = _wizard_exported_secrets()
+    selected_path = state.env_path if env_path is None else env_path
+    try:
+        saved = _wizard_private_values(selected_path)
+    except (OSError, UnicodeError, ValueError) as exc:
+        print_recovery_error(exc, context="file", detail=f"Could not read saved secrets from '{selected_path}'")
+        raise SystemExit(1) from None
+    saved_config = _config_template_defaults()
+    if not load_config_file(state.config_path, namespace=saved_config):
+        raise SystemExit(1)
+    globals().update(saved_config)
+    for key in SECRET_KEYS:
+        if key in exported:
+            value, source = exported[key], "environment"
+        elif saved.get(key) is not None:
+            value, source = saved[key], "dotenv file"
+        else:
+            value, source = saved_config.get(key), "configuration file"
+        globals()[key] = value
+        if source == "dotenv file":
+            os.environ[key] = str(value)
+        elif key not in exported:
+            os.environ.pop(key, None)
+    DOTENV_RELOAD_STATE.clear()
+    DOTENV_RELOAD_STATE.update(base={key: saved_config.get(key, "") for key in SECRET_KEYS}, exported=set(exported), managed={key for key, value in saved.items() if key in SECRET_KEYS and value is not None and key not in exported}, loaded=set(saved))
+
+
+# Builds the exact local command that starts this monitor, used when setup offers to launch it
+def _wizard_local_command_args(target=None, config_path=None, env_path=None):
+    executable = sys.executable or ("python" if system() == "Windows" else "python3")
+    arguments = [executable, "-m", "steam_monitor"] if install_method() == INSTALL_METHOD_PYPI else [executable, str(Path(__file__).resolve())]
+    if target:
+        arguments.append(str(target))
+    if config_path:
+        arguments.extend(["--config-file", str(config_path)])
+    if env_path:
+        arguments.extend(["--env-file", str(env_path)])
+    return arguments
+
+
+# Hands the terminal to the monitor, replacing this process where the platform allows it
+def _wizard_launch_monitor(arguments):
+    command = [str(argument) for argument in arguments]
+    if system() == "Windows":
+        try:
+            return subprocess.run(command, check=False).returncode
+        except KeyboardInterrupt:
+            return 0
+    os.execv(command[0], command)
+    return 0
+
+
+# Prints one labelled command on its own indented line, the shared shape across these tools
+def _wizard_print_command(label, command, suffix=""):
+    print(label)
+    print(f"    {colorize('section', command)}{colorize('info', suffix) if suffix else ''}\n")
+
+
+# Prints the command that starts monitoring with the files this run checked, so a report read on its own
+# ends with the next action rather than leaving the reader to assemble the command
+def print_doctor_next_steps(target_value=None, saved_target=None, doctor_exit=0):
+    print(colorize("header", "\nNext steps\n"))
+    label = "After Doctor passes, start monitoring:" if doctor_exit else "Start monitoring:"
+    monitor_target = command_targets(target_value, saved_target)[1]
+    _wizard_print_command(label, render_command([monitor_target] if monitor_target else []))
+    # No trailing blank line: the command printer already left one and the report must not end on two
+    print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}")
+
+
+# Prints the commands a newcomer needs next, instead of an argparse usage error
+def print_welcome_screen(input_func=None, interactive=None):
+    terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
+    print(f"For <steam_target>, use a {STEAM_TARGET_FORMS}.\n")
+    _wizard_print_command("Quickest start (already configured):", render_command(["<steam_target>"], include_paths=False))
+    setup_suffix = "   (or just answer Y below)" if terminal_is_interactive else ""
+    _wizard_print_command("Easiest start (guided setup wizard):", render_command(["--setup"], include_paths=False), setup_suffix)
+    _wizard_print_command("Check setup before monitoring:", render_command(["--doctor", "<steam_target>"], include_paths=False))
+    _wizard_print_command("Show profile details and exit:", render_command(["-i", "<steam_target>"], include_paths=False))
+    print(f"Full options: {colorize('section', render_command(['--help'], include_paths=False))}")
+    print(f"\nGuide:        {colorize('link', QUICK_START_GUIDE_URL)}\n")
+    if terminal_is_interactive:
+        try:
+            start_setup = _wizard_ask_yes_no("Run the guided setup wizard now?", default=True, input_func=input_func)
+        except (EOFError, KeyboardInterrupt):
+            # This prompt sits outside the wizard, which handles its own interrupts
+            print(colorize("warning", "Setup cancelled."))
+            return 1
+        if start_setup:
+            print()
+            return run_setup_wizard()
+    # Without a terminal there was nothing to answer, so a bare invocation stays the usage error it was
+    return 0 if terminal_is_interactive else 1
+
+
+# One startup summary setting, routed to the concise view, the verbose view or both. The log keeps the verbose view
+StartupSummaryRow = namedtuple("StartupSummaryRow", ["label", "value", "concise", "full"])
+StartupSummaryRow.__new__.__defaults__ = (False, True)
+
+
+# Rows that detail the channel named right above them, indented so the block reads as one setting with its details
+STARTUP_SUMMARY_NESTED_LABELS = ("Email transport", "Email recipient", "Email images", "Webhook provider", "ntfy images")
+
+
+# Formats one summary row with an aligned value column, wrapping only the rollup that grows long
+def format_startup_summary_row(row):
+    indent = "  " if row.label in STARTUP_SUMMARY_NESTED_LABELS else ""
+    prefix = f"* {indent}{(row.label + ':'):<{30 - len(indent)}}"
+    if row.label in ("Notifications (email)", "Notifications (webhook)"):
+        return textwrap.fill(str(row.value), width=100, initial_indent=prefix, subsequent_indent=" " * len(prefix), break_long_words=False, break_on_hyphens=False) + "\n"
+    return f"{prefix}{row.value}\n"
+
+
+# Prints the summary, showing the concise rows unless the full view was asked for. The log file always keeps
+# the complete set, so a bug report made from a log carries every effective setting whatever the terminal showed
+def emit_startup_summary(rows, show_full=False, stream=None):
+    destination = sys.stdout if stream is None else stream
+    # A stream that does not split its output has no log file to hold the full view, so those writes go nowhere
+    write_log = getattr(destination, "log_only", lambda line: None)
+    write_terminal = getattr(destination, "terminal_only", None)
+    if write_terminal is None:
+        write_terminal = destination.write
+    for row in rows:
+        line = format_startup_summary_row(row)
+        if row.full:
+            write_log(line)
+        if row.full if show_full else row.concise:
+            write_terminal(line)
+    write_log("\n")
+    write_terminal("\n")
+    destination.flush()
+
+
+# Hides the middle of an address's local part, so a log can be shared while the reader can still spot a typo
+def mask_email_address(address):
+    text = str(address or "").strip()
+    local, at_sign, domain = text.partition("@")
+    if not at_sign or not local or not domain:
+        return text
+    masked = f"{local[0]}{'*' * (len(local) - 2)}{local[-1]}" if len(local) > 2 else f"{local[0]}{'*' * (len(local) - 1)}"
+    return f"{masked}@{domain}"
+
+
+# Names the mail server this run would use, leaving out the account that signs in to it
+def startup_email_transport():
+    if not SMTP_HOST or not SMTP_PORT:
+        return "Not configured"
+    return f"{SMTP_HOST}:{SMTP_PORT} ({'STARTTLS' if SMTP_SSL else 'TLS off'})"
+
+
+# Names the configured webhook service and whether the channel is switched on, which are two separate settings
+def startup_webhook_provider():
+    if not normalized_webhook_provider() or not str(WEBHOOK_URL or "").strip():
+        return "Not configured"
+    return f"{webhook_provider_display_name()} ({'enabled' if WEBHOOK_ENABLED else 'disabled'})"
+
+
+# Builds every startup summary row, deciding per row whether it belongs in the concise view, the full view and the log
+def build_startup_summary(target=None, config_path=None, env_path=None, log_path=None):
+    dotenv_secrets, environment_secrets, config_secrets, command_line_secrets = doctor_secret_sources(env_path)
+    from_dotenv, from_environment, from_config, from_command_line = sorted(dotenv_secrets), sorted(environment_secrets), sorted(config_secrets), sorted(command_line_secrets)
+    logging_enabled = bool(log_path) and not DISABLE_LOGGING
+    output_state = str(log_path) if logging_enabled else "Terminal only (logging disabled)"
+    rows = [
+        StartupSummaryRow("Target", str(target) if target else "None", concise=True),
+        StartupSummaryRow("Polling intervals", f"[offline: {display_time(STEAM_CHECK_INTERVAL)}] [online: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]", concise=True),
+        StartupSummaryRow("Offline grace period", display_time(OFFLINE_INTERRUPT) if OFFLINE_INTERRUPT else "Disabled"),
+        StartupSummaryRow("Notifications (email)", _startup_notification_state(_startup_email_notification_categories()), concise=True),
+        StartupSummaryRow("Email transport", startup_email_transport()),
+        StartupSummaryRow("Email recipient", mask_email_address(RECEIVER_EMAIL) if RECEIVER_EMAIL else "Not configured"),
+        StartupSummaryRow("Notifications (webhook)", _startup_notification_state(_startup_webhook_notification_categories()), concise=True),
+        StartupSummaryRow("Webhook provider", startup_webhook_provider()),
+    ]
+    # The ntfy attachment setting says nothing about a run that posts to Discord, which ignores it
+    if normalized_webhook_provider() == "ntfy":
+        rows.append(StartupSummaryRow("ntfy images", str(NTFY_IMAGES)))
+    rows.extend([
+        StartupSummaryRow("Delivery confirmations", str(DELIVERY_CONFIRMATIONS)),
+        StartupSummaryRow("Output", output_state, concise=True, full=False),
+        StartupSummaryRow("Output logging", str(log_path) if logging_enabled else "Disabled"),
+        StartupSummaryRow("Config", str(config_path) if config_path else ("Discovery disabled" if CONFIG_DISCOVERY_DISABLED else "None"), concise=True),
+        StartupSummaryRow("Dotenv", str(env_path) if env_path else "None", concise=True),
+        # Each tracked feature earns a concise row only when it is actually switched on
+        StartupSummaryRow("Level/XP tracking", str(STEAM_LEVEL_XP_CHECK), concise=bool(STEAM_LEVEL_XP_CHECK)),
+        StartupSummaryRow("Friends tracking", str(FRIENDS_CHECK), concise=bool(FRIENDS_CHECK)),
+        StartupSummaryRow("Games tracking", str(GAMES_LIBRARY_CHECK), concise=bool(GAMES_LIBRARY_CHECK)),
+        StartupSummaryRow("Liveness output", display_time(LIVENESS_CHECK_INTERVAL) if LIVENESS_CHECK_INTERVAL else "Disabled", concise=bool(LIVENESS_CHECK_INTERVAL)),
+        StartupSummaryRow("CSV output", CSV_FILE or "Disabled", concise=bool(CSV_FILE)),
+        StartupSummaryRow("Profile CSV output", PROFILE_CSV_FILE or "Disabled", concise=bool(PROFILE_CSV_FILE)),
+        StartupSummaryRow("Status file", resolve_status_file(target) if target else "None"),
+        StartupSummaryRow("Terminal truncation", f"{TRUNCATE_CHARS} chars" if TRUNCATE_CHARS else "Disabled", concise=bool(TRUNCATE_CHARS)),
+        StartupSummaryRow("Process id", str(os.getpid())),
+        StartupSummaryRow("Python version", platform.python_version()),
+        StartupSummaryRow("Operating system", f"{platform.platform(terse=True)} ({platform.machine()})"),
+        StartupSummaryRow("Install method", install_method_display_name()),
+        StartupSummaryRow("Secrets from dotenv", ", ".join(from_dotenv) if from_dotenv else "None"),
+        StartupSummaryRow("Secrets from environment", ", ".join(from_environment) if from_environment else "None"),
+        StartupSummaryRow("Secrets from config file", ", ".join(from_config) if from_config else "None"),
+        StartupSummaryRow("Secrets from command line", ", ".join(from_command_line) if from_command_line else "None"),
+        StartupSummaryRow("TLS verification", "On" if VERIFY_SSL else "Off, server certificates are not checked", concise=not VERIFY_SSL),
+        StartupSummaryRow("ASCII log separators", f"{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})"),
+        # The resolved state, not the setting: colour also switches itself off when the output is not a terminal
+        StartupSummaryRow("Coloured output", f"{COLOR_ENABLED} (setting: {COLORED_OUTPUT})"),
+        StartupSummaryRow("Verbose mode", str(VERBOSE_MODE), concise=bool(VERBOSE_MODE)),
+        StartupSummaryRow("Debug mode", str(DEBUG_MODE), concise=bool(DEBUG_MODE)),
+        # Points at the two modes for a reader who does not know they exist, so the full view drops it
+        StartupSummaryRow("More details", "use --verbose or --debug", concise=True, full=False),
+    ])
+    return rows
+
+
+# Renders the --help examples: one heading per task, then a comment and the command it describes
+def render_help_examples(groups, guide_url):
+    blocks = []
+    for title, entries in groups:
+        block = [f"{title}:"]
+        for comment, command in entries:
+            if len(block) > 1:
+                block.append("")
+            block.extend(f"  # {line}" for line in comment.split("\n"))
+            if command:
+                block.append(f"  {command}")
+        blocks.append("\n".join(block))
+    return "Examples:\n\n" + "\n\n".join(blocks) + f"\n\nGuide: {guide_url}\n"
+
+
+# Returns the --help epilog, listing the commands worth knowing rather than every command there is
+def help_examples():
+    prefix = render_command(include_paths=False)
+    groups = (
+        ("Getting started", (
+            ("Guided setup, recommended for the first run", f"{prefix} --setup"),
+            ("Or save the Steam Web API key through a hidden prompt", f"{prefix} --set-steam-api-key"),
+            ("Check the setup before relying on it", f"{prefix} --doctor <steam_target>"),
+            ("Start monitoring", f"{prefix} <steam_target>"),
+        )),
+        ("Notifications", (
+            ("Email when the user goes online or offline, and on game changes", f"{prefix} <steam_target> -a -g"),
+            ("Send one test email", f"{prefix} --send-test-email"),
+            ("Send one test webhook", f"{prefix} --send-test-webhook"),
+        )),
+        ("Information and diagnostics", (
+            ("Show detailed profile information and exit", f"{prefix} -i <steam_target>"),
+            ("Trace what the tool is doing", f"{prefix} <steam_target> --debug"),
+        )),
+    )
+    return render_help_examples(groups, QUICK_START_GUIDE_URL)
 
 
 # Initializes the CSV file
@@ -1830,6 +5870,8 @@ def get_cur_ts(ts_str=""):
 
 # Prints the current date/time in human readable format with separator; eg. Sun 21 Apr 2024, 15:08:45
 def print_cur_ts(ts_str=""):
+    global REPORTS_PRINTED
+    REPORTS_PRINTED += 1
     print(get_cur_ts(str(ts_str)))
     print("─" * HORIZONTAL_LINE)
 
@@ -2012,6 +6054,79 @@ def decrease_active_check_signal_handler(sig, frame):
     print_cur_ts("Timestamp:\t\t\t")
 
 
+DOTENV_RELOAD_STATE = {}
+
+
+# Resolves dotenv references while keeping explicitly marked private values literal
+def resolve_dotenv_values(content, override=False, interpolate=True, environment=None):
+    from io import StringIO
+    try:
+        from dotenv.main import with_warn_for_invalid_lines
+        from dotenv.parser import parse_stream
+        from dotenv.variables import parse_variables
+    # A python-dotenv without these internals still reads the file, only without the literal marker. Writing a
+    # value that needs the marker then fails its own read-back check rather than saving something unreadable
+    except ImportError:
+        if environment is not None:
+            raise ValueError("The installed python-dotenv cannot resolve this file safely. Update python-dotenv") from None
+        from dotenv.main import DotEnv
+        debug_print("Dotenv literal markers are unavailable in the installed python-dotenv", outcome="skipped")
+        return DotEnv(dotenv_path=None, stream=StringIO(content), override=override, interpolate=interpolate).dict()
+    base_environment = dict(os.environ) if environment is None else environment
+    values = {}
+    for binding in with_warn_for_invalid_lines(parse_stream(StringIO(content))):
+        if binding.key is None:
+            continue
+        value = binding.value
+        literal = binding.key in SECRET_KEYS and binding.original.string.rstrip().endswith("# monitor:literal")
+        if value is not None and interpolate and not literal:
+            resolved_environment = dict(base_environment)
+            if override:
+                resolved_environment.update(values)
+            else:
+                resolved_environment = dict(values, **resolved_environment)
+            value = "".join(atom.resolve(resolved_environment) for atom in parse_variables(value))
+        values[binding.key] = value
+    return values
+
+
+# Returns the secrets explicitly supplied on the command line
+def command_line_secret_keys():
+    return frozenset(globals().get("COMMAND_LINE_SECRET_KEYS", ())) | frozenset(key for key, source in globals().get("SECRET_SOURCES", {}).items() if source == "command line")
+
+
+# Reloads file-owned credentials while preserving startup exports and command-line choices
+def load_managed_dotenv(path, override=False, interpolate=True, protected_keys=()):
+    from io import StringIO
+    from dotenv.parser import parse_stream
+    if not override and not Path(path).is_file():
+        return False
+    content = Path(path).read_text(encoding="utf-8")
+    if override:
+        malformed = next((binding for binding in parse_stream(StringIO(content)) if binding.error), None)
+        if malformed is not None:
+            raise ValueError(f"Dotenv syntax error near line {malformed.original.line}. Correct the assignment and reload again")
+    state: dict = DOTENV_RELOAD_STATE if override and DOTENV_RELOAD_STATE else dict(base={key: os.environ.get(key) or globals().get(key, "") for key in SECRET_KEYS}, exported={key for key, value in os.environ.items() if value}, managed=set())
+    command_keys = command_line_secret_keys()
+    protected = set(protected_keys) | state["exported"] | command_keys
+    environment = {key: value for key, value in os.environ.items() if value and key not in state.get("loaded", state["managed"])}
+    environment.update({key: str(globals().get(key) or "") for key in command_keys})
+    values = resolve_dotenv_values(content, override=False, interpolate=interpolate, environment=environment)
+    applied = {key for key, value in values.items() if value is not None and (not override or key in SECRET_KEYS) and key not in protected and (override or not os.environ.get(key))}
+    removed = state["managed"] - applied - protected
+    for key in removed:
+        value = state["base"].get(key)
+        os.environ[key] = "" if value is None else str(value)
+    for key in applied:
+        os.environ[key] = str(values[key])
+    state["managed"] = applied.intersection(SECRET_KEYS)
+    state["loaded"] = set(state.get("loaded", ())) | applied
+    if state is not DOTENV_RELOAD_STATE:
+        DOTENV_RELOAD_STATE.clear()
+        DOTENV_RELOAD_STATE.update(state)
+    return bool(values)
+
+
 # Signal handler for SIGHUP allowing to reload secrets from .env
 def reload_secrets_signal_handler(sig, frame):
     global WEBHOOK_PROVIDER
@@ -2024,36 +6139,81 @@ def reload_secrets_signal_handler(sig, frame):
     else:
         # reload .env if python-dotenv is installed
         try:
-            from dotenv import load_dotenv, find_dotenv
+            from dotenv import find_dotenv
             if DOTENV_FILE:
                 env_path = DOTENV_FILE
             else:
                 env_path = find_dotenv()
             if env_path:
-                load_dotenv(env_path, override=True)
+                reload_dotenv_secrets(env_path)
             else:
-                print("* No .env file found, skipping env-var reload")
+                print("* No .env file found, reloading exported environment variables only")
         except ImportError:
             env_path = None
-            print("* python-dotenv not installed, skipping env-var reload")
+            print_recovery_advice(missing_dependency_advice("python-dotenv", "Only exported environment variables were reloaded", "pip3 install python-dotenv"), label="Warning")
+
+        except (OSError, UnicodeError, ValueError) as exc:
+            print_recovery_advice(make_recovery_advice("config.invalid", "The dotenv reload failed. Existing secrets were kept", recovery_fix_with_guide("Check the dotenv file path, UTF-8 encoding and assignment syntax, then reload again", SECRETS_GUIDE_URL), False, str(exc)))
+            return
 
     webhook_url_changed = False
-    if env_path:
-        for secret in SECRET_KEYS:
-            old_val = globals().get(secret)
-            val = os.getenv(secret)
-            if val is not None and val != old_val:
-                globals()[secret] = val
-                if secret == "WEBHOOK_URL":
-                    webhook_url_changed = True
-                print(f"* Reloaded {secret} from {env_path}")
+    sources = secret_sources(env_path)
+    for secret, changed in load_secrets_from_environment():
+        if not changed:
+            continue
+        if secret == "WEBHOOK_URL":
+            webhook_url_changed = True
+        # The line names the setting and where it came from, never its value
+        # codeql[py/clear-text-logging-sensitive-data]
+        print(f"* Reloaded {secret} from {sources.get(secret, 'environment')}")
     if webhook_url_changed:
         detected_provider = detect_webhook_provider(WEBHOOK_URL)
         if detected_provider and detected_provider != normalized_webhook_provider():
             WEBHOOK_PROVIDER = detected_provider
-            print(f"* Updated webhook provider to {detected_provider}")
+            print(f"* Updated webhook provider to {webhook_provider_display_name(detected_provider)}")
 
     print_cur_ts("Timestamp:\t\t\t")
+
+
+# Returns the --config-file value straight from argv, needed before argparse has run
+def early_config_file_argument(arguments=None):
+    values = list(sys.argv[1:] if arguments is None else arguments)
+    for index, argument in enumerate(values):
+        if argument == "--config-file" and index + 1 < len(values):
+            return values[index + 1]
+        if argument.startswith("--config-file="):
+            return argument.split("=", 1)[1]
+    return None
+
+
+# Applies the terminal settings needed before argument parsing, leaving any failure to normal config loading
+def apply_early_output_config():
+    global CLEAR_SCREEN, COLORED_OUTPUT, COLOR_THEME
+    try:
+        cli_path = early_config_file_argument()
+        if cli_path is not None and cli_path.casefold() == "none":
+            return
+        expanded_path = os.path.expanduser(cli_path) if cli_path else None
+        config_path = find_config_file(expanded_path)
+        if not config_path:
+            return
+        values = parse_config_content(Path(config_path).read_text(encoding="utf-8"), str(config_path))
+    except (MemoryError, OSError, RecursionError, SyntaxError, UnicodeError, ValueError):
+        return
+    if isinstance(values.get("CLEAR_SCREEN"), bool):
+        CLEAR_SCREEN = values["CLEAR_SCREEN"]
+    if isinstance(values.get("COLORED_OUTPUT"), bool):
+        COLORED_OUTPUT = values["COLORED_OUTPUT"]
+    # --help is printed and exited from inside argparse, long before the config load, so the help_* overrides
+    # have to be here or they could never colour the one screen they name. Unusable styles are dropped downstream
+    if isinstance(values.get("COLOR_THEME"), dict):
+        COLOR_THEME = values["COLOR_THEME"]
+
+
+# Keeps argparse from colouring its own help, so the help screen is coloured by this tool alone and --no-color is
+# not left with a second palette to silence. From Python 3.14 argparse colours the help by default on a terminal
+def argparse_color_kwargs() -> Dict[str, Any]:
+    return {"color": False} if sys.version_info >= (3, 14) else {}
 
 
 # Finds an optional config file
@@ -2082,16 +6242,147 @@ def find_config_file(cli_path=None):
     return None
 
 
-# Resolves an executable path by checking if it's a valid file or searching in $PATH
-def resolve_executable(path):
-    if os.path.isfile(path) and os.access(path, os.X_OK):
-        return path
+# Settings an older version wrote that this version no longer defines, ignored instead of rejected
+RETIRED_CONFIG_SETTINGS = frozenset(())
 
-    found = shutil.which(path)
-    if found:
-        return found
+# Settings an older version wrote that now fold into one replacement, so an upgrade keeps the alerts it had
+MERGED_CONFIG_SETTINGS = {
+    "WEBHOOK_ACTIVE_NOTIFICATION": "WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION",
+    "WEBHOOK_INACTIVE_NOTIFICATION": "WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION",
+}
 
-    raise FileNotFoundError(f"Could not find executable '{path}'")
+# Settings the template ships commented out so the built-in default applies, still accepted from a config file
+COMMENTED_CONFIG_SETTINGS = frozenset({"COLOR_THEME"})
+
+
+# Collects the setting names the built-in configuration template defines
+def _config_allowed_names():
+    template_tree = ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec")
+    return frozenset(statement.targets[0].id for statement in template_tree.body if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name)) | COMMENTED_CONFIG_SETTINGS
+
+
+# Returns the literal values the built-in config template ships with, used to clear a section the user declined
+def _config_template_defaults():
+    template_tree = ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec")
+    defaults = {}
+    for statement in template_tree.body:
+        if not isinstance(statement, ast.Assign) or len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
+            continue
+        try:
+            defaults[statement.targets[0].id] = ast.literal_eval(statement.value)
+        except ValueError:
+            continue
+    return defaults
+
+
+# Returns the parsed value with a legacy numeric on/off setting read as the boolean it stands for
+def _normalized_config_value(name, value, defaults):
+    # 0 and 1 were accepted for these settings before the values were checked, so they still mean off and on
+    if isinstance(value, int) and not isinstance(value, bool) and value in (0, 1) and isinstance(defaults.get(name), bool):
+        return bool(value)
+    return value
+
+
+# Parses allowlisted literal config assignments without executing any file content
+def parse_config_content(content, filename="<config>", retired_out=None, reference_values=None, merged_out=None):
+    tree = ast.parse(content, filename, "exec")
+    allowed_names = _config_allowed_names()
+    template_defaults = _config_template_defaults()
+    parsed_values = {}
+    merged_values = {}
+    for statement in tree.body:
+        if not isinstance(statement, ast.Assign) or len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
+            raise ValueError(f"Line {getattr(statement, 'lineno', '?')}: only NAME = value assignments are allowed")
+        name = statement.targets[0].id
+        replacement = MERGED_CONFIG_SETTINGS.get(name)
+        if replacement is not None and name not in allowed_names:
+            try:
+                folded = bool(ast.literal_eval(statement.value))
+            except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError) as exc:
+                raise ValueError(f"Line {statement.lineno}: {name} must be True or False") from exc
+            merged_values[replacement] = merged_values.get(replacement, False) or folded
+            if merged_out is not None and name not in merged_out:
+                merged_out.append(name)
+            continue
+        if name in RETIRED_CONFIG_SETTINGS and name not in allowed_names:
+            if retired_out is not None and name not in retired_out:
+                retired_out.append(name)
+            continue
+        if name not in allowed_names:
+            raise ValueError(f"Line {statement.lineno}: unsupported configuration setting {name!r}")
+        # One setting may reuse another, which the built-in template does and existing configs copy
+        if isinstance(statement.value, ast.Name):
+            referenced = statement.value.id
+            if referenced not in allowed_names:
+                raise ValueError(f"Line {statement.lineno}: {name} may only reference another configuration setting")
+            source = parsed_values if referenced in parsed_values else (reference_values if reference_values is not None else globals())
+            if referenced not in source:
+                raise ValueError(f"Line {statement.lineno}: {name} references {referenced!r} before it has a value")
+            parsed_values[name] = source[referenced]
+            continue
+        try:
+            parsed_values[name] = _normalized_config_value(name, ast.literal_eval(statement.value), template_defaults)
+        except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError) as exc:
+            raise ValueError(f"Line {statement.lineno}: {name} must be a plain value such as a number, string, True, False, None, list, tuple or dict") from exc
+    # An explicit replacement setting wins, so a file that already uses the new name is not overridden by an old one
+    for name, value in merged_values.items():
+        parsed_values.setdefault(name, value)
+    return parsed_values
+
+
+# Validates config content through the same restricted parser used at startup
+def validate_config_content(content, filename="<generated-config>"):
+    parse_config_content(content, filename)
+
+
+# Reports settings an older version wrote that this version no longer defines
+def describe_retired_settings(names, quoted_path):
+    listed = ", ".join(sorted(names))
+    return f"Config file {quoted_path} contains settings this version no longer uses, which were ignored: {listed}"
+
+
+# Reports settings an older version wrote that were applied through the setting that replaced them
+def describe_merged_settings(names, quoted_path):
+    listed = ", ".join(f"{name} -> {MERGED_CONFIG_SETTINGS[name]}" for name in sorted(names))
+    return f"Config file {quoted_path} contains settings that were replaced, and were applied as: {listed}"
+
+
+# Loads a config file as data and applies only recognized literal settings
+def load_config_file(config_path, namespace=None, report_errors=True):
+    selected_namespace = globals() if namespace is None else namespace
+    retired_settings = []
+    merged_settings = []
+    try:
+        content = Path(config_path).read_text(encoding="utf-8")
+        # Parsed as data rather than executed, so a config file picked up from the working directory cannot run code
+        parsed_values = parse_config_content(content, str(config_path), retired_settings, merged_out=merged_settings)
+        selected_namespace.update(parsed_values)
+        # Only a load that reaches the module settings records a choice, not a copy read for the wizard or a report
+        if selected_namespace is globals():
+            CONFIGURED_SETTING_NAMES.update(parsed_values)
+        if report_errors:
+            debug_print("Configuration applied", path=config_path, settings=len(parsed_values))
+        if retired_settings and report_errors:
+            print(f"* Note: {describe_retired_settings(retired_settings, chr(39) + str(config_path) + chr(39))}")
+        if merged_settings and report_errors:
+            print(f"* Note: {describe_merged_settings(merged_settings, chr(39) + str(config_path) + chr(39))}")
+        return True
+    except SyntaxError as exc:
+        detail = f"Config file '{config_path}' has invalid Python syntax"
+        if exc.lineno is not None:
+            detail += f" at line {exc.lineno}"
+        detail += f" | Parser: {exc.msg}"
+    # Checked before ValueError because UnicodeDecodeError derives from it
+    except UnicodeDecodeError:
+        detail = f"Config file '{config_path}' is not valid UTF-8"
+    except ValueError as exc:
+        detail = f"Config file '{config_path}' contains unsupported content: {exc}"
+    except Exception as exc:
+        detail = f"Config file '{config_path}' failed with {type(exc).__name__}: {exc}"
+    if report_errors:
+        print("* Config files are read as data. Only documented SETTING = value lines with plain literal values are accepted.")
+        print_recovery_error(context="config", detail=detail)
+    return False
 
 
 # Prints country/region using raw Steam fields
@@ -2121,30 +6412,27 @@ def fetch_recent_achievements(steamid, s_api, s_played, max_games=15, max_achiev
 
     # Fallback: if recently played games are hidden or empty, or if force_use_owned_games is True, try owned games
     if not games or force_use_owned_games:
-        try:
-            # Call GetOwnedGames with all parameters that the steam.webapi wrapper
-            # considers required, to avoid local validation errors before the HTTP call.
-            owned = s_api.call(
-                "IPlayerService.GetOwnedGames",
-                steamid=steamid,
-                include_appinfo=1,
-                include_played_free_games=1,
-                appids_filter=[],          # empty list → no filtering, all games
-                include_free_sub=0,        # 0 = do not include free subscriptions
-                include_extended_appinfo=0,  # keep response small, we only need playtime/name
-                language="en",
+        # Call GetOwnedGames with all parameters that the steam.webapi wrapper
+        # considers required, to avoid local validation errors before the HTTP call.
+        owned = s_api.call(
+            "IPlayerService.GetOwnedGames",
+            steamid=steamid,
+            include_appinfo=1,
+            include_played_free_games=1,
+            appids_filter=[],          # empty list → no filtering, all games
+            include_free_sub=0,        # 0 = do not include free subscriptions
+            include_extended_appinfo=0,  # keep response small, we only need playtime/name
+            language="en",
+        )
+        owned_games = owned.get("response", {}).get("games", []) if isinstance(owned, dict) else []
+        if owned_games:
+            # Sort by total playtime (most played first) as a heuristic for relevance
+            games = sorted(
+                owned_games,
+                key=lambda g: g.get("playtime_forever", 0),
+                reverse=True,
             )
-            owned_games = owned.get("response", {}).get("games", []) if isinstance(owned, dict) else []
-            if owned_games:
-                # Sort by total playtime (most played first) as a heuristic for relevance
-                games = sorted(
-                    owned_games,
-                    key=lambda g: g.get("playtime_forever", 0),
-                    reverse=True,
-                )
-                games_from_owned = True
-        except Exception:
-            games = []
+            games_from_owned = True
 
     if not games:
         return achievements
@@ -2166,9 +6454,10 @@ def fetch_recent_achievements(steamid, s_api, s_played, max_games=15, max_achiev
                 steamid=steamid,
                 appid=appid,
             )
-        except Exception:
-            # Game may not have achievements or the API might not support it
-            continue
+        except req.HTTPError as exc:
+            if game_has_no_stats(exc):
+                continue
+            raise
 
         playerstats = stats.get("playerstats", {}) if isinstance(stats, dict) else {}
         ach_list = playerstats.get("achievements", []) if isinstance(playerstats, dict) else []
@@ -2202,7 +6491,16 @@ def fetch_recent_achievements(steamid, s_api, s_played, max_games=15, max_achiev
 # Fetches and displays recent achievements for a Steam user
 def display_recent_achievements(steamid, s_api, s_played, max_games=15, max_achievements=10, force_use_owned_games=False):
     print(f"\n* Fetching recent achievements...")
-    achievements = fetch_recent_achievements(steamid, s_api, s_played, max_games=max_games, max_achievements=max_achievements, force_use_owned_games=force_use_owned_games)
+    try:
+        achievements = fetch_recent_achievements(steamid, s_api, s_played, max_games=max_games, max_achievements=max_achievements, force_use_owned_games=force_use_owned_games)
+    except Exception as exc:
+        retry_note = ""
+        if isinstance(exc, req.HTTPError) and exc.response is not None and exc.response.status_code == 429:
+            retry_note = f"try again in {display_time(steam_retry_after_seconds(exc.response, 60))}"
+        advice = classify_recovery_error(exc, context="runtime", detail="Recent achievements are unavailable. The lookup was stopped")
+        fix = "Wait for the reported delay then run the command again" if retry_note else "Correct the reported problem then run the command again"
+        print_recovery_advice(make_recovery_advice(advice.code, advice.summary, recovery_fix_with_guide(fix, CONFIG_GUIDE_URL), advice.retryable, advice.detail), retry_note=retry_note)
+        return False
 
     if not achievements:
         print("* No recent achievements found or access is restricted by the user's privacy settings.")
@@ -2213,9 +6511,9 @@ def display_recent_achievements(steamid, s_api, s_played, max_games=15, max_achi
     print("─" * HORIZONTAL_LINE)
 
     for i, ach in enumerate(achievements, 1):
-        game_name = ach.get("game", "Unknown Game")
-        ach_name = ach.get("name", "Unknown Achievement")
-        description = ach.get("description", "")
+        game_name = sanitize_untrusted_text(ach.get("game", "Unknown Game"))
+        ach_name = sanitize_untrusted_text(ach.get("name", "Unknown Achievement"))
+        description = sanitize_untrusted_text(ach.get("description", ""))
         unlock_ts = ach.get("unlocktime", 0)
 
         print(f"\n{i}. {colorize('game', game_name)}")
@@ -2234,10 +6532,11 @@ def fetch_persona_name_history(steamid, timeout=15):
     url = f"https://steamcommunity.com/profiles/{steamid}/ajaxaliases"
     headers = {"User-Agent": "Mozilla/5.0 (compatible; steam_monitor)"}
     try:
-        resp = req.get(url, headers=headers, timeout=timeout)
+        resp = req.get(url, headers=headers, timeout=timeout, verify=VERIFY_SSL)
         resp.raise_for_status()
         data = resp.json()
-    except Exception:
+    except Exception as exc:
+        debug_swallowed_exception("Fetching the persona name history", exc)
         return []
 
     if not isinstance(data, list):
@@ -2265,8 +6564,8 @@ def display_persona_name_history(steamid):
 
     print(f"\nPersona name history ({len(history)}):")
     for i, entry in enumerate(history, 1):
-        name = entry.get("name", "")
-        when = entry.get("timechanged", "")
+        name = sanitize_untrusted_text(entry.get("name", ""))
+        when = sanitize_untrusted_text(entry.get("timechanged", ""))
         if when:
             print(f"{i} {colorize('username', name)} (changed: {when})")
         else:
@@ -2275,53 +6574,56 @@ def display_persona_name_history(steamid):
 
 # Gets detailed user information and displays it (for -i/--info mode)
 def display_user_info(steamid, list_friends=False, show_name_history=False, show_achievements=False, achievements_count=None, achievements_use_owned_games=False):
-    steamid_coloured = colorize("steam_id", str(steamid))
+    steamid_coloured = colorize("id", str(steamid))
     print(f"* Fetching details for Steam user with ID '{steamid_coloured}'...\n")
 
     try:
-        s_api = steam.webapi.WebAPI(key=STEAM_API_KEY)
+        debug_print("Opening the Steam Web API", steamid=steamid, key=secret_fields(STEAM_API_KEY)["value"])
+        s_api = steam_web_api_client()
         s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
         s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
+        debug_print("Opening the Steam Web API", steamid=steamid, received="profile and recent games", outcome="OK")
     except Exception as e:
-        print(f"* Error: {sanitize_error_text(e)}")
+        print_recovery_error(e, context="runtime")
         sys.exit(1)
 
     try:
-        username = s_user["response"]["players"][0].get("personaname")
-    except Exception:
-        print(f"* Error: User with Steam64 ID {steamid} does not exist!")
+        raw_username = s_user["response"]["players"][0].get("personaname")
+        username = sanitize_untrusted_text(raw_username)
+    except Exception as exc:
+        print_recovery_error(exc, context="target", detail=f"Steam returned no profile for Steam64 ID {steamid}")
         sys.exit(1)
 
     status = int(s_user["response"]["players"][0].get("personastate"))
     visibilitystate = int(s_user["response"]["players"][0].get("communityvisibilitystate"))
-    realname = s_user["response"]["players"][0].get("realname", "")
+    realname = sanitize_untrusted_text(s_user["response"]["players"][0].get("realname", ""))
     profile_url = s_user["response"]["players"][0].get("profileurl")
     timecreated = s_user["response"]["players"][0].get("timecreated")
     lastlogoff = s_user["response"]["players"][0].get("lastlogoff")
     gameid = s_user["response"]["players"][0].get("gameid")
-    gamename = s_user["response"]["players"][0].get("gameextrainfo", "")
+    gamename = sanitize_untrusted_text(s_user["response"]["players"][0].get("gameextrainfo", ""))
 
     status_ts_old = int(time.time())
     status_ts_old_bck = status_ts_old
     last_status_ts = 0
-    last_status = -1
 
     if status == 0:
-        steam_last_status_file = f"steam_{username}_last_status.json"
+        migrate_legacy_state_files(steamid, raw_username)
+        steam_last_status_file = resolve_status_file(steamid)
 
         if os.path.isfile(steam_last_status_file):
             try:
-                with open(steam_last_status_file, 'r', encoding="utf-8") as f:
-                    last_status_read = json.load(f)
+                last_status_read = reconcile_status_record(read_status_record(steam_last_status_file), steam_last_status_file)
                 if last_status_read:
                     last_status_ts = last_status_read[0]
-                    last_status = last_status_read[1]
+                    # Read for its length check only: a truncated file must fall through to the defaults below
+                    _last_status = last_status_read[1]
                     if lastlogoff and lastlogoff > last_status_ts:
                         status_ts_old = lastlogoff
                     else:
                         status_ts_old = last_status_ts
-            except Exception:
-                pass
+            except Exception as exc:
+                debug_swallowed_exception(f"Reading the last status file '{steam_last_status_file}'", exc)
 
         if status_ts_old == status_ts_old_bck and lastlogoff:
             status_ts_old = lastlogoff
@@ -2333,8 +6635,8 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
     try:
         player_obj = s_user["response"]["players"][0]
         print_country_region(player_obj)
-    except Exception:
-        pass
+    except Exception as exc:
+        debug_swallowed_exception("Displaying the country and region", exc)
 
     print(f"\nStatus:\t\t\t\t{str(steam_personastates[status]).upper()}")
     print(f"Profile visibility:\t\t{steam_visibilitystates[visibilitystate]}")
@@ -2350,8 +6652,8 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
         s_level = s_api.call('IPlayerService.GetSteamLevel', steamid=steamid)
         print(f"\nSteam level:\t\t\t{s_level['response'].get('player_level', 'n/a')}")
         s_level_displayed = True
-    except Exception:
-        pass
+    except Exception as exc:
+        debug_swallowed_exception("Fetching the Steam level (IPlayerService.GetSteamLevel)", exc)
 
     try:
         badges = s_api.call('IPlayerService.GetBadges', steamid=steamid)
@@ -2366,8 +6668,8 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
         print(f"Total XP:\t\t\t{player_xp}")
         print(f"XP to next level:\t\t{xp_to_level}")
         print(f"XP in current level:\t\t{xp_current_level}")
-    except Exception:
-        pass
+    except Exception as exc:
+        debug_swallowed_exception("Fetching badges and XP (IPlayerService.GetBadges)", exc)
 
     try:
         bans = s_api.call('ISteamUser.GetPlayerBans', steamids=str(steamid))
@@ -2379,8 +6681,8 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
             econ_ban = b.get('EconomyBan', 'none')
             print(f"Economy ban:\t\t\t{econ_ban_map.get(econ_ban, econ_ban)}")
             print(f"Days since last ban:\t\t{b.get('DaysSinceLastBan')}")
-    except Exception:
-        pass
+    except Exception as exc:
+        debug_swallowed_exception("Fetching ban status (ISteamUser.GetPlayerBans)", exc)
 
     if show_name_history:
         display_persona_name_history(steamid)
@@ -2407,13 +6709,13 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
                         steamids=",".join(chunk),
                     )
                 except Exception as e:
-                    print(f"* Warning: Cannot fetch friend details: {e}")
+                    print_recovery_error(e, detail=f"Cannot fetch the friend details: {e}")
                     break
 
                 players = summaries.get("response", {}).get("players", [])
                 for p in players:
-                    persona = p.get("personaname", "")
-                    real_name = p.get("realname") or ""
+                    persona = sanitize_untrusted_text(p.get("personaname", ""))
+                    real_name = sanitize_untrusted_text(p.get("realname") or "")
                     sid = p.get("steamid", "")
                     since_ts = friend_since_map.get(sid)
                     since_str = f" - friend since {get_date_from_ts(int(since_ts))}" if since_ts else ""
@@ -2421,8 +6723,8 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
                         print(f"- {persona} ({real_name}) [{sid}]{since_str}")
                     else:
                         print(f"- {persona} [{sid}]{since_str}")
-    except Exception:
-        pass
+    except Exception as exc:
+        debug_swallowed_exception("Fetching the friends list (ISteamUser.GetFriendList)", exc)
 
     if status == 0 and status_ts_old != status_ts_old_bck:
         last_status_dt_str = datetime.fromtimestamp(status_ts_old).strftime("%d %b %Y, %H:%M:%S")
@@ -2438,9 +6740,9 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
             print("\nTop games by lifetime hours:")
             for i, g in enumerate(top, 1):
                 hours = int(g.get('playtime_forever', 0) / 60)
-                print(f"{i} {g.get('name')} - {hours}h")
-    except Exception:
-        pass
+                print(f"{i} {sanitize_untrusted_text(g.get('name'))} - {hours}h")
+    except Exception as exc:
+        debug_swallowed_exception("Fetching owned games (IPlayerService.GetOwnedGames)", exc)
 
     if gameid:
         print(f"\nUser is currently in-game:\t{gamename}")
@@ -2448,7 +6750,7 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
     if "games" in s_played["response"].keys() and s_played["response"]["games"]:
         print(f"\nList of recently played games:")
         for i, game in enumerate(s_played["response"]["games"]):
-            name = game.get('name')
+            name = sanitize_untrusted_text(game.get('name'))
             mins_2w = game.get('playtime_2weeks', 0) or 0
             mins_total = game.get('playtime_forever', 0) or 0
             hrs_2w = mins_2w // 60
@@ -2460,13 +6762,15 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
 
     if show_achievements:
         max_ach = achievements_count if isinstance(achievements_count, int) and achievements_count > 0 else 10
-        display_recent_achievements(steamid, s_api, s_played, max_games=15, max_achievements=max_ach, force_use_owned_games=achievements_use_owned_games)
+        return display_recent_achievements(steamid, s_api, s_played, max_games=15, max_achievements=max_ach, force_use_owned_games=achievements_use_owned_games)
 
 
 # Main function that monitors gaming activity of the specified Steam user
 def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
-    alive_counter = 0
+    mark_monitoring_started()
+
+    alive_since = int(time.time())
     status_ts = 0
     status_ts_old = 0
     status_online_start_ts = 0
@@ -2488,37 +6792,40 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         if csv_file_name:
             init_csv_file(csv_file_name)
     except Exception as e:
-        print(f"* Error: {e}")
+        print_recovery_error(e, context="file.unwritable")
 
     try:
         if profile_csv_file_name:
             init_profile_csv_file(profile_csv_file_name)
     except Exception as e:
-        print(f"* Error: {e}")
+        print_recovery_error(e, context="file.unwritable")
 
     try:
-        s_api = steam.webapi.WebAPI(key=STEAM_API_KEY)
+        debug_print("Opening the Steam Web API", steamid=steamid, key=secret_fields(STEAM_API_KEY)["value"])
+        s_api = steam_web_api_client()
         s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
         s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
+        debug_print("Opening the Steam Web API", steamid=steamid, received="profile and recent games", outcome="OK")
     except Exception as e:
-        print(f"* Error: {sanitize_error_text(e)}")
+        print_recovery_error(e, context="runtime")
         sys.exit(1)
 
     try:
-        username = s_user["response"]["players"][0].get("personaname")
-    except Exception:
-        print(f"* Error: User with Steam64 ID {steamid} does not exist!")
+        raw_username = s_user["response"]["players"][0].get("personaname")
+        username = sanitize_untrusted_text(raw_username)
+    except Exception as exc:
+        print_recovery_error(exc, context="target", detail=f"Steam returned no profile for Steam64 ID {steamid}")
         sys.exit(1)
 
     status = int(s_user["response"]["players"][0].get("personastate"))
     visibilitystate = int(s_user["response"]["players"][0].get("communityvisibilitystate"))
 
-    realname = s_user["response"]["players"][0].get("realname", "")
+    realname = sanitize_untrusted_text(s_user["response"]["players"][0].get("realname", ""))
     profile_url = s_user["response"]["players"][0].get("profileurl")
     timecreated = s_user["response"]["players"][0].get("timecreated")
     lastlogoff = s_user["response"]["players"][0].get("lastlogoff")
     gameid = s_user["response"]["players"][0].get("gameid")
-    gamename = s_user["response"]["players"][0].get("gameextrainfo", "")
+    gamename = sanitize_untrusted_text(s_user["response"]["players"][0].get("gameextrainfo", ""))
     avatar_url = s_user["response"]["players"][0].get("avatarfull", "")
 
     status_ts_old = int(time.time())
@@ -2528,18 +6835,20 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         status_online_start_ts = status_ts_old
         status_online_start_ts_old = status_online_start_ts
 
-    steam_last_status_file = f"steam_{username}_last_status.json"
-    steam_games_file = f"steam_{username}_games.json"
+    migrate_legacy_state_files(steamid, raw_username)
+    steam_last_status_file = resolve_status_file(steamid)
+    steam_games_file = default_games_file(steamid)
     last_status_read = []
     last_status_ts = 0
     last_status = -1
 
     if os.path.isfile(steam_last_status_file):
         try:
-            with open(steam_last_status_file, 'r', encoding="utf-8") as f:
-                last_status_read = json.load(f)
+            debug_print("Reading the last status file", path=steam_last_status_file)
+            last_status_read = reconcile_status_record(read_status_record(steam_last_status_file), steam_last_status_file)
         except Exception as e:
-            print(f"* Cannot load last status from '{steam_last_status_file}' file: {e}")
+            print_recovery_error(e, context="file", detail=f"Cannot load the last status from '{steam_last_status_file}': {e}. Correct the record or move the file aside to start fresh")
+            raise SystemExit(1)
         if last_status_read:
             last_status_ts = last_status_read[0]
             last_status = last_status_read[1]
@@ -2569,15 +6878,15 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
     if GAMES_LIBRARY_CHECK and os.path.isfile(steam_games_file):
         try:
+            debug_print("Reading the games library file", path=steam_games_file)
             with open(steam_games_file, 'r', encoding="utf-8") as f:
                 games_data = json.load(f)
-            if isinstance(games_data, dict):
-                last_games_count = games_data.get("game_count")
-                appids_list = games_data.get("appids")
-                if appids_list is not None:
-                    last_games_appids = set(appids_list)
+            last_games_count, last_games_appids = games_library_snapshot(games_data, saved=True)
+            debug_print("Reading the games library file", path=steam_games_file, games=last_games_count, outcome="OK")
         except Exception as e:
-            print(f"* Cannot load games library from '{steam_games_file}': {e}")
+            # The next successful lookup replaces this file, so an unusable one costs the baseline rather than the run
+            print_recovery_error(e, context="file", detail=f"Cannot load the games library from '{steam_games_file}': {e}. The first lookup starts a fresh baseline and reports no library change for it", label="Warning")
+            last_games_count, last_games_appids = None, None
 
     if last_status_ts > 0 and status != last_status:
         last_status_to_save = []
@@ -2592,16 +6901,17 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         else:
             last_status_to_save.append(None)
         try:
-            with open(steam_last_status_file, 'w', encoding="utf-8") as f:
-                json.dump(last_status_to_save, f, indent=2)
+            write_json_atomic(steam_last_status_file, last_status_to_save)
+            debug_print("Saved the last status", path=steam_last_status_file, outcome="OK")
         except Exception as e:
-            print(f"* Cannot save last status to '{steam_last_status_file}' file: {e}")
+            print_recovery_error(e, context="file.unwritable", detail=f"Cannot save the last status to '{steam_last_status_file}' file: {e}")
+            debug_swallowed_exception(f"Saving the last status to '{steam_last_status_file}'", e)
 
     try:
         if csv_file_name and (status != last_status):
             write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), steam_personastates[status], gamename, gameid)
     except Exception as e:
-        print(f"* Error: {e}")
+        print_recovery_error(e, context="file.unwritable")
 
     print(f"\nSteam64 ID:\t\t\t{steamid}")
     print(f"Display name:\t\t\t{username}")
@@ -2610,8 +6920,8 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     try:
         player_obj = s_user["response"]["players"][0]
         print_country_region(player_obj)
-    except Exception:
-        pass
+    except Exception as exc:
+        debug_swallowed_exception("Displaying the country and region", exc)
 
     print(f"\nStatus:\t\t\t\t{str(steam_personastates[status]).upper()}")
     print(f"Profile visibility:\t\t{steam_visibilitystates[visibilitystate]}")
@@ -2629,8 +6939,9 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             s_level = s_api.call('IPlayerService.GetSteamLevel', steamid=steamid)
             print(f"\nSteam level:\t\t\t{s_level.get('response', {}).get('player_level', 'n/a')}")
             s_level_displayed = True
-        except Exception:
+        except Exception as exc:
             s_level_displayed = False
+            debug_swallowed_exception("Fetching the Steam level (IPlayerService.GetSteamLevel)", exc)
 
         try:
             badges = s_api.call('IPlayerService.GetBadges', steamid=steamid)
@@ -2646,8 +6957,8 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             print(f"Total XP:\t\t\t{player_xp}")
             print(f"XP to next level:\t\t{xp_to_level}")
             print(f"XP in current level:\t\t{xp_current_level}")
-        except Exception:
-            pass
+        except Exception as exc:
+            debug_swallowed_exception("Fetching badges and XP (IPlayerService.GetBadges)", exc)
 
     # Optional friends snapshot at monitoring start
     if FRIENDS_CHECK:
@@ -2656,9 +6967,10 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             friend_entries = friends.get('friendslist', {}).get('friends', []) if isinstance(friends, dict) else []
             n_friends = len(friend_entries)
             print(f"\nFriends:\t\t\t{n_friends}")
-        except Exception:
+        except Exception as exc:
             # Gracefully indicate that friends data is not accessible (privacy or API limitations)
             print(f"\nFriends:\t\t\tN/A")
+            debug_swallowed_exception("Fetching the friends list (ISteamUser.GetFriendList)", exc)
 
     # Optional games library snapshot at monitoring start
     if GAMES_LIBRARY_CHECK:
@@ -2673,19 +6985,19 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 include_extended_appinfo=0,
                 language="en",
             )
-            games_list = owned.get("response", {}).get("games", []) if isinstance(owned, dict) else []
-            current_count = len(games_list)
-            current_appids = sorted(set(g.get("appid") for g in games_list if g.get("appid")))
+            current_count, owned_appids = games_library_snapshot(owned)
+            current_appids = sorted(owned_appids)
             print(f"\nGames in library:\t\t{current_count}")
             last_games_count = current_count
             last_games_appids = set(current_appids)
             try:
-                with open(steam_games_file, 'w', encoding="utf-8") as f:
-                    json.dump({"game_count": current_count, "appids": current_appids}, f, indent=2)
+                write_json_atomic(steam_games_file, {"game_count": current_count, "appids": current_appids})
+                debug_print("Saved the games library", path=steam_games_file, outcome="OK")
             except Exception as e:
-                print(f"* Cannot save games library to '{steam_games_file}': {e}")
+                print_recovery_error(e, context="file", detail=f"Cannot save games library to '{steam_games_file}'")
         except Exception as e:
-            print(f"\nGames in library:\tN/A ({e})")
+            print("\nGames in library:\tN/A")
+            print_recovery_error(e, context="runtime", detail="The games library is unavailable. The saved snapshot was kept")
 
     if last_status_ts == 0:
         if lastlogoff and status == 0:
@@ -2702,10 +7014,11 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         else:
             last_status_to_save.append(None)
         try:
-            with open(steam_last_status_file, 'w', encoding="utf-8") as f:
-                json.dump(last_status_to_save, f, indent=2)
+            write_json_atomic(steam_last_status_file, last_status_to_save)
+            debug_print("Saved the last status", path=steam_last_status_file, outcome="OK")
         except Exception as e:
-            print(f"* Cannot save last status to '{steam_last_status_file}' file: {e}")
+            print_recovery_error(e, context="file.unwritable", detail=f"Cannot save the last status to '{steam_last_status_file}' file: {e}")
+            debug_swallowed_exception(f"Saving the last status to '{steam_last_status_file}'", e)
 
     if status_ts_old != status_ts_old_bck:
         if status == 0:
@@ -2723,7 +7036,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     if "games" in s_played["response"].keys() and s_played["response"]["games"]:
         print(f"\nList of recently played games:")
         for i, game in enumerate(s_played["response"]["games"]):
-            name = game.get('name')
+            name = sanitize_untrusted_text(game.get('name'))
             mins_2w = game.get('playtime_2weeks', 0) or 0
             mins_total = game.get('playtime_forever', 0) or 0
             hrs_2w = mins_2w // 60
@@ -2736,8 +7049,9 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
     print_cur_ts("\nTimestamp:\t\t\t")
 
-    alive_counter = 0
-    email_sent = False
+    alive_since = int(time.time())
+    check_count = 0
+    error_alert = ErrorAlertState()
 
     m_subject = m_body = ""
 
@@ -2746,10 +7060,18 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     else:
         sleep_interval = STEAM_CHECK_INTERVAL
 
+    feature_outages = FeatureOutageTracker()
+    # A blip is confirmed by the short retry before it is printed, since one lost request is not an outage
+    outage = OutageReporter(confirm_checks=1 if VERBOSE_MODE else 2)
+    transient_retry_used = False
+
+    debug_print("First check", due_in=display_time(sleep_interval))
     time.sleep(sleep_interval)
 
     # Main loop
     while True:
+        check_count += 1
+        reports_before_check = REPORTS_PRINTED
         current_steam_level = None
         current_player_xp = None
         current_friend_ids = None
@@ -2757,31 +7079,33 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         current_games_appids = None
         current_username = None
         current_avatar_url = avatar_url
-        email_sent = False
-        webhook_sent = False
         try:
-            s_api = steam.webapi.WebAPI(key=STEAM_API_KEY)
+            debug_print("Polling Steam", steamid=steamid, endpoints="ISteamUser.GetPlayerSummaries+IPlayerService.GetRecentlyPlayedGames")
+            s_api = steam_web_api_client()
             s_user = s_api.call('ISteamUser.GetPlayerSummaries', steamids=str(steamid))
             s_played = s_api.call('IPlayerService.GetRecentlyPlayedGames', steamid=steamid, count=5)
             status = int(s_user["response"]["players"][0]["personastate"])
             gameid = s_user["response"]["players"][0].get("gameid")
-            gamename = s_user["response"]["players"][0].get("gameextrainfo", "")
-            current_username = s_user["response"]["players"][0].get("personaname")
+            gamename = sanitize_untrusted_text(s_user["response"]["players"][0].get("gameextrainfo", ""))
+            current_username = sanitize_untrusted_text(s_user["response"]["players"][0].get("personaname"))
             current_avatar_url = s_user["response"]["players"][0].get("avatarfull", "") or avatar_url
+            debug_print("Polling Steam", steamid=steamid, personastate=status, game=gamename or None, outcome="OK")
 
             # Fetch Steam level and total XP if tracking is enabled
             if STEAM_LEVEL_XP_CHECK:
                 try:
                     s_level = s_api.call('IPlayerService.GetSteamLevel', steamid=steamid)
                     current_steam_level = s_level.get('response', {}).get('player_level')
-                except Exception:
+                except Exception as exc:
                     current_steam_level = None
+                    debug_swallowed_exception("Fetching Steam level (IPlayerService.GetSteamLevel)", exc)
 
                 try:
                     badges = s_api.call('IPlayerService.GetBadges', steamid=steamid)
                     current_player_xp = badges.get('response', {}).get('player_xp')
-                except Exception:
+                except Exception as exc:
                     current_player_xp = None
+                    debug_swallowed_exception("Fetching total XP (IPlayerService.GetBadges)", exc)
 
             # Fetch friends list when tracking is enabled
             if FRIENDS_CHECK:
@@ -2789,8 +7113,9 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     friends = s_api.call('ISteamUser.GetFriendList', steamid=steamid, relationship='friend')
                     friend_entries = friends.get('friendslist', {}).get('friends', [])
                     current_friend_ids = {f.get('steamid') for f in friend_entries if f.get('steamid')}
-                except Exception:
+                except Exception as exc:
                     current_friend_ids = None
+                    debug_swallowed_exception("Fetching the friends list (ISteamUser.GetFriendList)", exc)
 
             # Fetch games library (minimal: count + appids only) when tracking is enabled
             if GAMES_LIBRARY_CHECK:
@@ -2805,43 +7130,88 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                         include_extended_appinfo=0,
                         language="en",
                     )
-                    games_list = owned.get("response", {}).get("games", []) if isinstance(owned, dict) else []
-                    current_games_count = len(games_list)
-                    current_games_appids = set(g.get("appid") for g in games_list if g.get("appid"))
-                except Exception:
+                    current_games_count, current_games_appids = games_library_snapshot(owned)
+                except Exception as exc:
                     current_games_count = None
                     current_games_appids = None
+                    debug_swallowed_exception("Fetching the games library (IPlayerService.GetOwnedGames)", exc)
         except Exception as e:
+            exit_if_out_of_file_descriptors(e)
 
             if status > 0:
                 sleep_interval = STEAM_ACTIVE_CHECK_INTERVAL
             else:
                 sleep_interval = STEAM_CHECK_INTERVAL
 
+            advice = classify_recovery_error(e, context="runtime")
             response = e.response if isinstance(e, req.exceptions.HTTPError) else None
-            if response is not None and response.status_code == 429:
-                retry_after = int(response.headers.get('Retry-After') or sleep_interval)
-                time.sleep(retry_after)
+            debug_print("Completed check", check=f"#{check_count}", user=steamid, outcome="failed", code=advice.code, error=f"{type(e).__name__}: {e}")
+            # A failure that has not changed is left to the liveness cadence rather than repeated every check
+            outage_outcome = outage.failed(advice)
+            delivery_reported = False
+            rate_limited = advice.code == "steam.rate_limited"
+            if rate_limited and response is not None:
+                sleep_interval = steam_retry_after_seconds(response, sleep_interval)
+            # One short retry absorbs a blip without waiting a whole polling interval
+            transient_retry = not rate_limited and advice.retryable and not transient_retry_used
+            retry_note = f"retrying in {display_time(TRANSIENT_RETRY_SECONDS if transient_retry else sleep_interval)}"
+            if outage_outcome == "full":
+                print_recovery_error(e, "runtime", retry_note=retry_note)
+            elif outage_outcome == "changed":
+                print_outage_change(steamid, advice)
+            elif outage_outcome == "reminder":
+                print_outage_liveness(steamid, advice, outage.since, outage.failures)
+            if transient_retry:
+                transient_retry_used = True
+                if outage_outcome in ("full", "changed"):
+                    print_cur_ts("Timestamp:\t\t\t")
+                debug_print("Retry wait", check=f"#{check_count}", due_in=display_time(TRANSIENT_RETRY_SECONDS), reason="one short retry before the full interval")
+                time.sleep(TRANSIENT_RETRY_SECONDS)
                 continue
+            if advice.code == "auth.api_key_invalid":
+                m_subject = f"Steam API key error! (user: {username})"
+                m_body = f"{advice.summary}{nl_ch}{nl_ch}To fix: {advice.fix}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
             else:
-                print(f"* Error, retrying in {display_time(sleep_interval)}{': ' + sanitize_error_text(e) if e else ''}")
-                if 'Forbidden' in str(e):
-                    print("* API key might not be valid anymore!")
-                    m_subject = f"steam_monitor: API key error! (user: {username})"
-                    m_body = f"Steam rejected the configured API key. Validate and replace it with --set-steam-api-key.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                else:
-                    m_subject = f"steam_monitor: monitoring error (user: {username})"
-                    m_body = f"Steam Monitor could not refresh the user data and will retry in {display_time(sleep_interval)}.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                if (ERROR_NOTIFICATION and not email_sent) or (webhook_event_enabled("error") and not webhook_sent):
-                    email_attempted, webhook_attempted = send_notification_channels("error", m_subject, m_body, email_enabled=ERROR_NOTIFICATION and not email_sent, webhook_enabled=webhook_event_enabled("error") and not webhook_sent, image_url=current_avatar_url, ntfy_priority=5, ntfy_tags="warning")
-                    email_sent = email_sent or email_attempted
-                    webhook_sent = webhook_sent or webhook_attempted
+                m_subject = f"Steam monitoring error (user: {username})"
+                m_body = f"{advice.summary}{nl_ch}{nl_ch}To fix: {advice.fix}{nl_ch}{nl_ch}Steam Monitor will retry in {display_time(sleep_interval)}.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+            # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
+            alert_due = not advice.retryable or int(time.time()) - outage.since >= ERROR_ALERT_AFTER_SECONDS
+            now = int(time.time())
+            error_email_pending = alert_due and error_alert.pending("email", ERROR_NOTIFICATION, now)
+            error_webhook_pending = alert_due and error_alert.pending("webhook", webhook_event_enabled("error"), now)
+            if error_email_pending or error_webhook_pending:
+                email_delivered, webhook_delivered = send_notification_channels("error", m_subject, m_body, email_enabled=error_email_pending, webhook_enabled=error_webhook_pending, image_url=current_avatar_url, ntfy_priority=5, ntfy_tags="warning")
+                error_alert.record("email", error_email_pending, email_delivered, now)
+                error_alert.record("webhook", error_webhook_pending, webhook_delivered, now)
+                # A retry can reach the screen on a check the outage reporter keeps quiet, and a delivery line
+                # with nothing under it reads as a run that stopped there
+                delivery_reported = True
 
-            print_cur_ts("Timestamp:\t\t\t")
+            if outage_outcome in ("full", "changed") or delivery_reported:
+                print_cur_ts("Timestamp:\t\t\t")
 
+            debug_print("Retry wait", check=f"#{check_count}", due_in=display_time(sleep_interval), reason="steam rate limited the request" if rate_limited else "waiting the polling interval after a failed check")
             time.sleep(sleep_interval)
 
             continue
+
+        outage_lasted = outage.recovered()
+        if outage_lasted is not None:
+            print_outage_recovery(steamid, outage_lasted)
+        transient_retry_used = False
+        error_alert.reset()
+
+        # A tracked feature that returned nothing cannot raise its alert, which is invisible without these lines
+        unavailable_features = {}
+        if STEAM_LEVEL_XP_CHECK and (current_steam_level is None or current_player_xp is None):
+            unavailable_features["level_xp"] = ("Steam level or total XP is unavailable, so level and XP alerts cannot fire", "Steam level and total XP are available again, so level and XP alerts can fire")
+        if FRIENDS_CHECK and current_friend_ids is None:
+            unavailable_features["friends"] = ("The friends list is unavailable, so friends alerts cannot fire", "The friends list is available again, so friends alerts can fire")
+        if GAMES_LIBRARY_CHECK and current_games_count is None:
+            unavailable_features["games_library"] = ("The games library is unavailable, so games library alerts cannot fire", "The games library is available again, so games library alerts can fire")
+        debug_print("Tracked features", unavailable=",".join(unavailable_features) or "none")
+        # An outage that lasts is news once, so only the features that changed since the last cycle are reported
+        verbose_notice(*feature_outages.transitions(unavailable_features))
 
         change = False
         act_inact_flag = False
@@ -2861,10 +7231,9 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             else:
                 last_status_to_save.append(None)
             try:
-                with open(steam_last_status_file, 'w', encoding="utf-8") as f:
-                    json.dump(last_status_to_save, f, indent=2)
+                write_json_atomic(steam_last_status_file, last_status_to_save)
             except Exception as e:
-                print(f"* Cannot save last status to '{steam_last_status_file}' file: {e}")
+                print_recovery_error(e, context="file.unwritable", detail=f"Cannot save the last status to '{steam_last_status_file}' file: {e}")
 
             print(f"Steam user {username} changed status from {steam_personastates[status_old]} to {steam_personastates[status]}")
             print(f"User was {steam_personastates[status_old]} for {calculate_timespan(int(status_ts), int(status_ts_old))} ({get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)})")
@@ -3028,7 +7397,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     try:
                         write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="steam_level_change", old_value=last_level_int, new_value=level_int, delta=delta,)
                     except Exception as e:
-                        print(f"* Error writing profile CSV: {e}")
+                        print_recovery_error(e, context="file.unwritable")
 
                 if STEAM_LEVEL_XP_NOTIFICATION or webhook_event_enabled("level_xp"):
                     m_subject = f"Steam user {username} level changed to {level_int}"
@@ -3064,7 +7433,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     try:
                         write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="total_xp_change", old_value=last_xp_int, new_value=xp_int, delta=delta,)
                     except Exception as e:
-                        print(f"* Error writing profile CSV: {e}")
+                        print_recovery_error(e, context="file.unwritable")
 
                 if STEAM_LEVEL_XP_NOTIFICATION or webhook_event_enabled("level_xp"):
                     m_subject = f"Steam user {username} total XP changed to {xp_int}"
@@ -3098,11 +7467,12 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                         try:
                             write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="friends_count_change", old_value=old_count, new_value=new_count, delta=delta,)
                         except Exception as e:
-                            print(f"* Error writing profile CSV: {e}")
+                            print_recovery_error(e, context="file.unwritable")
 
                     added_details = []
                     removed_details = []
 
+                    # Defined and called inside this iteration, so the enclosing s_api cannot change under it
                     def _fetch_friend_summaries(id_set):
                         if not id_set:
                             return []
@@ -3112,10 +7482,11 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                         for i in range(0, len(ids_list), chunk_size):
                             chunk = ids_list[i:i + chunk_size]
                             try:
-                                resp = s_api.call('ISteamUser.GetPlayerSummaries', steamids=",".join(chunk))
+                                resp = s_api.call('ISteamUser.GetPlayerSummaries', steamids=",".join(chunk))  # noqa: B023
                                 players = resp.get('response', {}).get('players', [])
                                 summaries.extend(players)
-                            except Exception:
+                            except Exception as exc:
+                                debug_swallowed_exception("Fetching friend details (ISteamUser.GetPlayerSummaries)", exc)
                                 continue
                         return summaries
 
@@ -3127,38 +7498,38 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                         added_map = {p.get('steamid'): p for p in added_players}
                         for sid in added_ids:
                             p = added_map.get(sid, {})
-                            persona = p.get('personaname') or ""
-                            real = p.get('realname') or ""
+                            persona = sanitize_untrusted_text(p.get('personaname') or "")
+                            real = sanitize_untrusted_text(p.get('realname') or "")
                             if profile_csv_file_name:
                                 try:
                                     write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="friend_added", friend_steamid=sid, friend_persona=persona, friend_realname=real,)
                                 except Exception as e:
-                                    print(f"* Error writing profile CSV: {e}")
+                                    print_recovery_error(e, context="file.unwritable")
                             if real:
                                 added_details.append(f"- {persona} ({real}) [{sid}]")
                             else:
                                 added_details.append(f"- {persona or sid} [{sid}]")
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        debug_swallowed_exception("Building the added friends detail list", exc)
 
                     try:
                         removed_players = _fetch_friend_summaries(removed_ids)
                         removed_map = {p.get('steamid'): p for p in removed_players}
                         for sid in removed_ids:
                             p = removed_map.get(sid, {})
-                            persona = p.get('personaname') or ""
-                            real = p.get('realname') or ""
+                            persona = sanitize_untrusted_text(p.get('personaname') or "")
+                            real = sanitize_untrusted_text(p.get('realname') or "")
                             if profile_csv_file_name:
                                 try:
                                     write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="friend_removed", friend_steamid=sid, friend_persona=persona, friend_realname=real,)
                                 except Exception as e:
-                                    print(f"* Error writing profile CSV: {e}")
+                                    print_recovery_error(e, context="file.unwritable")
                             if real:
                                 removed_details.append(f"- {persona} ({real}) [{sid}]")
                             else:
                                 removed_details.append(f"- {persona or sid} [{sid}]")
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        debug_swallowed_exception("Building the removed friends detail list", exc)
 
                     if added_details:
                         print("New friends added:")
@@ -3185,7 +7556,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
                     print_cur_ts("Timestamp:\t\t\t")
 
-                    alive_counter = 0
+                    alive_since = int(time.time())
                     last_friend_ids = current_friend_ids
 
         # Games library changed
@@ -3215,16 +7586,15 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                         print(f"Removed: {', '.join(str(a) for a in removed_appids)}")
 
                     try:
-                        with open(steam_games_file, 'w', encoding="utf-8") as f:
-                            json.dump({"game_count": new_count, "appids": sorted(current_games_appids)}, f, indent=2)
+                        write_json_atomic(steam_games_file, {"game_count": new_count, "appids": sorted(current_games_appids)})
                     except Exception as e:
-                        print(f"* Cannot save games library to '{steam_games_file}': {e}")
+                        print_recovery_error(e, context="file.unwritable", detail=f"Cannot save the games library to '{steam_games_file}': {e}")
 
                     if profile_csv_file_name:
                         try:
                             write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="games_library_change", old_value=old_count, new_value=new_count, delta=delta,)
                         except Exception as e:
-                            print(f"* Error writing profile CSV: {e}")
+                            print_recovery_error(e, context="file.unwritable")
 
                     if GAMES_LIBRARY_NOTIFICATION or webhook_event_enabled("games"):
                         m_subject_games = f"Steam user {username} games library changed (now {new_count})"
@@ -3242,7 +7612,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                         send_notification_channels("games", m_subject_games, m_body_games, email_enabled=GAMES_LIBRARY_NOTIFICATION, image_url=current_avatar_url)
 
                     print_cur_ts("Timestamp:\t\t\t")
-                    alive_counter = 0
+                    alive_since = int(time.time())
                     last_games_count = current_games_count
                     last_games_appids = set(current_games_appids)
 
@@ -3256,7 +7626,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 try:
                     write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="name_change", old_value=old_name, new_value=new_name)
                 except Exception as e:
-                    print(f"* Error writing profile CSV: {e}")
+                    print_recovery_error(e, context="file.unwritable")
 
             if NAME_CHANGE_NOTIFICATION or webhook_event_enabled("name"):
                 m_subject_name = f"Steam user {old_name} changed display name to {new_name}"
@@ -3264,39 +7634,45 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 send_notification_channels("name", m_subject_name, m_body_name, email_enabled=NAME_CHANGE_NOTIFICATION, image_url=current_avatar_url)
 
             print_cur_ts("Timestamp:\t\t\t")
-            alive_counter = 0
+            alive_since = int(time.time())
 
             # Adopt the new display name for subsequent notifications and output
             username = current_username
             avatar_url = current_avatar_url
 
         if change:
-            alive_counter = 0
+            alive_since = int(time.time())
 
             try:
                 if csv_file_name:
                     write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), steam_personastates[status], gamename, gameid)
             except Exception as e:
-                print(f"* Error: {e}")
+                print_recovery_error(e, context="file.unwritable")
 
         status_old = status
         gameid_old = gameid
         gamename_old = gamename
-        alive_counter += 1
 
-        if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER and status == 0:
-            print_cur_ts("Liveness check, timestamp:\t")
-            alive_counter = 0
+        debug_print("Completed check", check=f"#{check_count}", user=steamid, outcome="OK", status=steam_personastates[status], game=gamename or None)
+
+        # The banner speaks for a quiet check, so anything this one reported restarts the clock instead of being contradicted by it
+        if REPORTS_PRINTED != reports_before_check:
+            alive_since = int(time.time())
+        elif LIVENESS_REMINDER_SECONDS and int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS:
+            print_liveness_banner(f"Monitoring healthy for {steamid}. The user is {steam_personastates[status]} with no status or game change since the last check")
+            alive_since = int(time.time())
 
         if status > 0:
+            debug_print("Next check", due_in=display_time(STEAM_ACTIVE_CHECK_INTERVAL), reason="user is active")
             time.sleep(STEAM_ACTIVE_CHECK_INTERVAL)
         else:
+            debug_print("Next check", due_in=display_time(STEAM_CHECK_INTERVAL), reason="user is offline")
             time.sleep(STEAM_CHECK_INTERVAL)
 
 
 # Applies validated one-run webhook command-line overrides to runtime settings
 def apply_webhook_cli_overrides(args, parser):
-    global WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_PROVIDER, WEBHOOK_ACTIVE_NOTIFICATION, WEBHOOK_INACTIVE_NOTIFICATION, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_GAME_CHANGE_NOTIFICATION, WEBHOOK_LEVEL_XP_NOTIFICATION, WEBHOOK_FRIENDS_NOTIFICATION, WEBHOOK_GAMES_NOTIFICATION, WEBHOOK_NAME_CHANGE_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION
+    global WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_PROVIDER, WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION, WEBHOOK_STATUS_NOTIFICATION, WEBHOOK_GAME_CHANGE_NOTIFICATION, WEBHOOK_LEVEL_XP_NOTIFICATION, WEBHOOK_FRIENDS_NOTIFICATION, WEBHOOK_GAMES_NOTIFICATION, WEBHOOK_NAME_CHANGE_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION
     if args.webhook_provider is not None:
         WEBHOOK_PROVIDER = str(args.webhook_provider)
     if args.webhook_url is not None:
@@ -3307,8 +7683,7 @@ def apply_webhook_cli_overrides(args, parser):
     if args.webhook_enabled is not None:
         WEBHOOK_ENABLED = args.webhook_enabled
     event_overrides = (
-        ("webhook_active", "WEBHOOK_ACTIVE_NOTIFICATION"),
-        ("webhook_inactive", "WEBHOOK_INACTIVE_NOTIFICATION"),
+        ("webhook_active_inactive", "WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION"),
         ("webhook_status", "WEBHOOK_STATUS_NOTIFICATION"),
         ("webhook_game_changes", "WEBHOOK_GAME_CHANGE_NOTIFICATION"),
         ("webhook_level_xp", "WEBHOOK_LEVEL_XP_NOTIFICATION"),
@@ -3329,26 +7704,44 @@ def apply_webhook_cli_overrides(args, parser):
         configured_provider = normalized_webhook_provider()
         if detected_provider and detected_provider != configured_provider:
             WEBHOOK_PROVIDER = detected_provider
-            print(f"* Warning: Configured webhook provider did not match the URL. Using {detected_provider}.")
+            # The built-in default is not a choice anyone made, so detection there is the documented behaviour
+            # rather than a mismatch. Only a provider the configuration actually sets is worth warning about
+            if "WEBHOOK_PROVIDER" in CONFIGURED_SETTING_NAMES:
+                print(f"* Warning: Configured webhook provider did not match the URL. Using {webhook_provider_display_name(detected_provider)}.")
+            else:
+                verbose_print(f"Webhook provider detected from the URL: {webhook_provider_display_name(detected_provider)}")
+
+
+# Names one argument the way the user would have typed it, so a refused combination points at a real option
+def argument_display_name(parser, dest, argv=None):
+    typed = set(sys.argv[1:] if argv is None else argv)
+    # argparse exposes no public listing of its arguments, so the actions it holds are read directly
+    for action in getattr(parser, "_actions", ()):
+        if action.dest != dest:
+            continue
+        if not action.option_strings:
+            return str(action.metavar or dest.upper())
+        return next((option for option in action.option_strings if option in typed), action.option_strings[0])
+    return f"--{dest.replace('_', '-')}"
 
 
 # Rejects unrelated options when a hidden secret-entry action is selected
-def validate_secret_action_args(args, parser, action_dest, action_flag):
-    permitted = {action_dest, "env_file", "no_color"}
+def validate_secret_action_args(args, parser, action_dest, action_flag, permitted_extra=()):
+    permitted = {action_dest, "env_file", "no_color", *permitted_extra}
     conflicts = []
     for name, value in vars(args).items():
         if name in permitted or value is None or value is False:
             continue
-        conflicts.append("--" + name.replace("_", "-"))
+        conflicts.append(argument_display_name(parser, name))
     if conflicts:
         parser.error(f"{action_flag} cannot be combined with " + ", ".join(conflicts))
 
 
 # Parses configuration and starts the selected Steam Monitor action
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LIVENESS_CHECK_COUNTER, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, NAME_CHANGE_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME, NTFY_IMAGES
+    global CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LIVENESS_REMINDER_SECONDS, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, STEAM_STATUS_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, NAME_CHANGE_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME, NTFY_IMAGES, EXPORTED_SECRET_KEYS, TRUNCATE_CHARS, WEBHOOK_ENABLED, DEBUG_MODE, COMMAND_LINE_SECRET_KEYS
 
-    if "--generate-config" in sys.argv and "--set-steam-api-key" not in sys.argv and "--set-webhook-url" not in sys.argv:
+    if "--generate-config" in sys.argv and not any(flag in sys.argv for flag in SECRET_ACTION_FLAGS):
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
         # Check if a filename was provided after --generate-config
         try:
@@ -3356,22 +7749,36 @@ def main():
             if idx + 1 < len(sys.argv) and not sys.argv[idx + 1].startswith("-"):
                 # Write directly to file (bypasses PowerShell UTF-16 encoding issue on Windows)
                 output_file = sys.argv[idx + 1]
-                with open(output_file, "w", encoding="utf-8") as f:
-                    f.write(config_content)
+                backup_path, written = write_generated_config(output_file, config_content, force="--force" in sys.argv)
+                if not written:
+                    print("Config was not replaced. The existing file is unchanged")
+                    sys.exit(1)
                 print(f"Config written to: {output_file}")
+                if backup_path:
+                    print(f"Previous config backed up to: {backup_path}")
                 sys.exit(0)
         except (ValueError, IndexError):
             pass
+        except ConfigExistsError as exc:
+            print_recovery_error(exc, context="file.exists", detail=str(exc))
+            sys.exit(1)
+        except OSError as exc:
+            print_recovery_error(exc, context="file.unwritable", detail=f"The config file could not be written: {exc}")
+            sys.exit(1)
         # No filename provided - write to stdout using buffer to ensure UTF-8
         sys.stdout.buffer.write(config_content.encode("utf-8"))
         sys.stdout.buffer.flush()
         sys.exit(0)
 
-    if "--version" in sys.argv and "--set-steam-api-key" not in sys.argv and "--set-webhook-url" not in sys.argv:
+    if "--version" in sys.argv and not any(flag in sys.argv for flag in SECRET_ACTION_FLAGS):
         print(f"{os.path.basename(sys.argv[0])} v{VERSION}")
         sys.exit(0)
 
     stdout_bck = sys.stdout
+
+    # The screen clearing and the banner run before argparse, so their settings are resolved from the
+    # config file first rather than from the built-in defaults alone
+    apply_early_output_config()
 
     # Initialise colour handling based on CLI args (early check) and terminal capabilities
     if "--no-color" in sys.argv:
@@ -3379,25 +7786,37 @@ def main():
 
     init_color_output(stdout_bck)
 
+    # Installed before argparse runs, so the warnings printed while the configuration is resolved reach the
+    # terminal with the same colours as the monitoring output
+    if not isinstance(sys.stdout, ColorStream):
+        sys.stdout = ColorStream(stdout_bck, truncate=False)
+
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    clear_screen(CLEAR_SCREEN)
+    # Read straight from sys.argv because argparse has not run yet, and the screen is cleared before it does
+    if "--debug" in sys.argv:
+        DEBUG_MODE = True
+    if CLEAR_SCREEN and DEBUG_MODE:
+        debug_print("Terminal screen clear skipped because debug mode is active")
+    clear_screen(CLEAR_SCREEN and not keep_terminal_history() and not DEBUG_MODE)
 
-    print(colorize("header", f"Steam Monitoring Tool v{VERSION}\n"))
+    print_startup_banner()
 
-    parser = argparse.ArgumentParser(
+    parser = ColoredHelpParser(
         prog="steam_monitor",
-        description=("Monitor a Steam user's playing status and send customizable email or webhook alerts [ https://github.com/misiektoja/steam_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter
+        description=(f"Monitor a Steam user's playing status and send customizable email or webhook alerts [ {PROJECT_URL}/ ]"),
+        epilog=help_examples(),
+        formatter_class=argparse.RawTextHelpFormatter, **argparse_color_kwargs()
     )
 
     # Positional
     parser.add_argument(
         "steam64_id",
         nargs="?",
-        metavar="STEAM64_ID",
-        help="User's Steam64 ID",
-        type=int
+        metavar="STEAM_TARGET",
+        help="Steam64 ID, Steam3 identifier, vanity name or profile URL",
+        type=str
     )
 
     # Version, just to list in help, it is handled earlier
@@ -3416,16 +7835,29 @@ def main():
         help="Privately validate and save STEAM_API_KEY through a hidden prompt",
     )
     conf.add_argument(
+        "--set-smtp-password",
+        dest="set_smtp_password",
+        action="store_true",
+        help="Enter the SMTP password privately, check it against the mail server and save it to the dotenv file",
+    )
+    conf.add_argument(
         "--set-webhook-url",
         dest="set_webhook_url",
         action="store_true",
         help="Save a Discord or ntfy webhook URL through a hidden prompt",
     )
     conf.add_argument(
+        "--setup",
+        dest="setup",
+        action="store_true",
+        default=None,
+        help="Run the guided setup and write a ready-to-run configuration",
+    )
+    conf.add_argument(
         "--config-file",
         dest="config_file",
         metavar="PATH",
-        help="Location of the optional config file",
+        help="Location of the optional config file (auto-search if not set, disable with 'none')",
     )
     conf.add_argument(
         "--generate-config",
@@ -3436,10 +7868,23 @@ def main():
         help="Print default config template and exit (on Windows PowerShell, specify a filename to avoid redirect encoding issues)",
     )
     conf.add_argument(
+        "--force",
+        dest="force",
+        action="store_true",
+        help="Let --generate-config replace an existing file, after a timestamped backup",
+    )
+    conf.add_argument(
         "--env-file",
         dest="env_file",
         metavar="PATH",
         help="Path to optional dotenv file (auto-search if not set, disable with 'none')",
+    )
+    conf.add_argument(
+        "--doctor",
+        dest="doctor",
+        action="store_true",
+        default=None,
+        help="Run read-only preflight checks and report what is ready and what is not",
     )
 
     # API settings
@@ -3460,7 +7905,7 @@ def main():
     )
 
     # Notifications
-    notify = parser.add_argument_group("Notifications")
+    notify = parser.add_argument_group("Email notifications")
     notify.add_argument(
         "-a", "--notify-active-inactive",
         dest="notify_active_inactive",
@@ -3554,18 +7999,11 @@ def main():
         help="Webhook request format for this run (default: configured provider)"
     )
     webhook_notify.add_argument(
-        "--webhook-active",
-        dest="webhook_active",
+        "--webhook-active-inactive",
+        dest="webhook_active_inactive",
         action="store_true",
         default=None,
-        help="Send a webhook alert when the user becomes active"
-    )
-    webhook_notify.add_argument(
-        "--webhook-inactive",
-        dest="webhook_inactive",
-        action="store_true",
-        default=None,
-        help="Send a webhook alert when the user goes offline"
+        help="Send a webhook alert when user goes online/offline"
     )
     webhook_notify.add_argument(
         "--webhook-status",
@@ -3632,7 +8070,26 @@ def main():
     )
 
     # User information
-    info = parser.add_argument_group("User information")
+    # Intervals & timers
+    times = parser.add_argument_group("Intervals & timers")
+    times.add_argument(
+        "-c", "--check-interval",
+        dest="check_interval",
+        metavar="SECONDS",
+        type=int,
+        help="Polling interval when user is offline"
+    )
+    times.add_argument(
+        "-k", "--active-interval",
+        dest="active_interval",
+        metavar="SECONDS",
+        type=int,
+        help="Polling interval when user is online"
+    )
+
+    # Features & Output
+    # User information & listing
+    info = parser.add_argument_group("User information & listing")
     info.add_argument(
         "-i", "--info",
         dest="info",
@@ -3671,24 +8128,6 @@ def main():
         help="When used with --achievements, check all owned games instead of only recently played games. "
              "Useful for users who haven't played recently, as their recently played list may be limited."
     )
-    # Intervals & timers
-    times = parser.add_argument_group("Intervals & timers")
-    times.add_argument(
-        "-c", "--check-interval",
-        dest="check_interval",
-        metavar="SECONDS",
-        type=int,
-        help="Polling interval when user is offline"
-    )
-    times.add_argument(
-        "-k", "--active-interval",
-        dest="active_interval",
-        metavar="SECONDS",
-        type=int,
-        help="Polling interval when user is online"
-    )
-
-    # Features & Output
     opts = parser.add_argument_group("Features & output")
     opts.add_argument(
         "--check-level-xp",
@@ -3726,6 +8165,13 @@ def main():
         help="Write profile changes (Steam level/XP and friends) to a separate CSV"
     )
     opts.add_argument(
+        "--status-file",
+        dest="status_file",
+        metavar="PATH",
+        type=str,
+        help="File to save the last seen status to (default: steam_<steam64_id>_last_status.json)"
+    )
+    opts.add_argument(
         "-y", "--file-suffix",
         dest="file_suffix",
         metavar="SUFFIX",
@@ -3746,70 +8192,95 @@ def main():
         default=None,
         help="Disable coloured output in the terminal"
     )
+    opts.add_argument(
+        "--truncate",
+        dest="truncate",
+        metavar="N",
+        type=int,
+        help="Max characters per screen line (not log), use 999 to auto-detect terminal width, ignored if -d is set"
+    )
+    opts.add_argument(
+        "--verbose",
+        dest="verbose",
+        action="store_true",
+        default=None,
+        help="Print extra startup and runtime detail (overrides VERBOSE_MODE)"
+    )
+    opts.add_argument(
+        "--debug",
+        dest="debug",
+        action="store_true",
+        default=None,
+        help="Print timestamped diagnostic detail including outbound calls and failure causes (overrides DEBUG_MODE)"
+    )
 
     args = parser.parse_args()
+    CONFIG_DISCOVERY_DISABLED = args.config_file is not None and str(args.config_file).casefold() == "none"
+    CLI_CONFIG_PATH = os.path.expanduser(args.config_file) if args.config_file and not CONFIG_DISCOVERY_DISABLED else None
+    DOTENV_STARTUP_ERRORS.clear()
+    env_path = None
 
-    if args.set_steam_api_key and args.set_webhook_url:
-        parser.error("--set-steam-api-key cannot be combined with --set-webhook-url")
+    # Applied here so config-load failures and startup checks can already print diagnostics
+    apply_diagnostic_cli_flags(args)
+
+    selected_secret_actions = [flag for flag, selected in zip(SECRET_ACTION_FLAGS, (args.set_steam_api_key, args.set_smtp_password, args.set_webhook_url)) if selected]
+    if len(selected_secret_actions) > 1:
+        parser.error(f"{selected_secret_actions[0]} cannot be combined with {selected_secret_actions[1]}")
 
     if args.set_steam_api_key:
-        validate_secret_action_args(args, parser, "set_steam_api_key", "--set-steam-api-key")
+        validate_secret_action_args(args, parser, "set_steam_api_key", "--set-steam-api-key", permitted_extra=("config_file",))
+        _prepare_early_command_config()
         try:
             run_set_steam_api_key(env_file=args.env_file)
-        except SecretConfigurationError as exc:
-            print(f"* Error: {exc}")
+        except (SecretConfigurationError, RecoveryError) as exc:
+            print_recovery_error(exc, context="set_steam_api_key")
             sys.exit(1)
         sys.exit(0)
 
     if args.set_webhook_url:
-        validate_secret_action_args(args, parser, "set_webhook_url", "--set-webhook-url")
+        validate_secret_action_args(args, parser, "set_webhook_url", "--set-webhook-url", permitted_extra=("config_file",))
+        _prepare_early_command_config()
         try:
             run_set_webhook_url(env_file=args.env_file)
-        except SecretConfigurationError as exc:
-            print(f"* Error: {exc}")
+        except (SecretConfigurationError, RecoveryError) as exc:
+            print_recovery_error(exc, context="set_webhook_url")
             sys.exit(1)
         sys.exit(0)
 
     if args.send_test_email and args.send_test_webhook:
         parser.error("--send-test-email cannot be combined with --send-test-webhook")
 
-    if len(sys.argv) == 1:
-        parser.print_help(sys.stderr)
-        sys.exit(1)
-
-    # Allow empty targets if utility flags are used
-    if not args.steam64_id and not args.resolve_community_url:
-        utility_flags = {
-            "--no-color", "-h", "--help",
-            "--version", "--generate-config",
-            "--send-test-email", "--send-test-webhook",
-            "--webhook", "--no-webhook", "--webhook-errors", "--no-webhook-error-notify"
-        }
-        utility_action = args.send_test_email or args.send_test_webhook
-        complex_args = [] if utility_action else [a for a in sys.argv[1:] if a not in utility_flags]
-
-        if complex_args or not utility_action:
-            print("\n* Error: STEAM64_ID needs to be defined !\n", flush=True)
-
-            parser.print_help(sys.stderr)
-            sys.exit(1)
-
-    if args.config_file:
+    # "none" is the documented sentinel that switches discovery off, so it is a selection rather than a missing file
+    CONFIG_DISCOVERY_DISABLED = args.config_file is not None and str(args.config_file).casefold() == "none"
+    if CONFIG_DISCOVERY_DISABLED:
+        CLI_CONFIG_PATH = None
+    elif args.config_file:
         CLI_CONFIG_PATH = os.path.expanduser(args.config_file)
 
-    cfg_path = find_config_file(CLI_CONFIG_PATH)
+    cfg_path = None if CONFIG_DISCOVERY_DISABLED else find_config_file(CLI_CONFIG_PATH)
 
-    if not cfg_path and CLI_CONFIG_PATH:
-        print(f"* Error: Config file '{CLI_CONFIG_PATH}' does not exist")
+    if not cfg_path and CLI_CONFIG_PATH and not args.setup:
+        # Setup is allowed to name a file that does not exist yet, since creating it is the point
+        print_recovery_error(context="config", detail=f"Config file '{CLI_CONFIG_PATH}' does not exist")
         sys.exit(1)
 
     if cfg_path:
-        try:
-            with open(cfg_path, "r") as cf:
-                exec(cf.read(), globals())
-        except Exception as e:
-            print(f"* Error loading config file '{cfg_path}': {e}")
+        debug_print("Loading configuration file", path=cfg_path)
+        if not load_config_file(cfg_path):
             sys.exit(1)
+    else:
+        debug_print("No configuration file found, using built-in defaults")
+
+    # Reapplied because the config file may carry VERBOSE_MODE or DEBUG_MODE values that must not beat an explicit flag
+    apply_diagnostic_cli_flags(args)
+
+    apply_tls_verification_setting()
+
+    # Runs after the config file is read so a persisted TARGET_STEAM_ID counts as a target
+    if len(sys.argv) == 1 and not TARGET_STEAM_ID:
+        sys.exit(print_welcome_screen())
+
+    prepare_configured_paths(args)
 
     if args.env_file:
         DOTENV_FILE = os.path.expanduser(args.env_file)
@@ -3817,116 +8288,174 @@ def main():
         if DOTENV_FILE:
             DOTENV_FILE = os.path.expanduser(DOTENV_FILE)
 
+    # An empty export is a shell-profile leftover rather than a value, so it is dropped before the dotenv load,
+    # which would otherwise keep it and leave the file's value unused
+    for secret in SECRET_KEYS:
+        if os.environ.get(secret) == "":
+            os.environ.pop(secret)
+    EXPORTED_SECRET_KEYS = frozenset(secret for secret in SECRET_KEYS if os.getenv(secret))
     if DOTENV_FILE and DOTENV_FILE.lower() == 'none':
         env_path = None
     else:
         try:
-            from dotenv import load_dotenv, find_dotenv
+            from dotenv import find_dotenv
 
             if DOTENV_FILE:
                 env_path = DOTENV_FILE
                 if not os.path.isfile(env_path):
-                    print(f"* Warning: dotenv file '{env_path}' does not exist\n")
+                    # A command that is about to write this file is not warned that it is missing
+                    if not command_writes_dotenv(sys.argv[1:]):
+                        print(f"* Warning: dotenv file '{env_path}' does not exist\n")
                 else:
-                    load_dotenv(env_path, override=True)
+                    load_managed_dotenv(env_path, override=False)
             else:
                 env_path = find_dotenv() or None
                 if env_path:
-                    load_dotenv(env_path, override=True)
+                    load_managed_dotenv(env_path, override=False)
         except ImportError:
             env_path = DOTENV_FILE if DOTENV_FILE else None
             if env_path:
-                print(f"* Warning: Cannot load dotenv file '{env_path}' because 'python-dotenv' is not installed\n\nTo install it, run:\n    pip3 install python-dotenv\n\nOnce installed, re-run this tool\n")
+                print_recovery_advice(missing_dependency_advice("python-dotenv", f"The dotenv file '{env_path}' was not loaded", "pip3 install python-dotenv", "Or export the secrets as environment variables"), label="Warning")
+        except (OSError, UnicodeError, ValueError) as exc:
+            detail, fix = dotenv_load_problem(env_path, exc)
+            DOTENV_STARTUP_ERRORS[str(env_path)] = (detail, fix)
+            if not args.doctor:
+                print_recovery_advice(make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide(fix, CONFIG_GUIDE_URL), False))
+                if not command_reports_configuration(args):
+                    sys.exit(1)
 
-    if env_path:
-        for secret in SECRET_KEYS:
-            val = os.getenv(secret)
-            if val is not None:
-                globals()[secret] = val
+    # Exported secrets apply on their own, so a dotenv file is an alternative to the environment rather than a precondition
+    load_secrets_from_environment()
+
+    if args.steam_api_key:
+        STEAM_API_KEY = args.steam_api_key
 
     apply_webhook_cli_overrides(args, parser)
+
+    # Assigned once from the arguments rather than accumulated, so a second run in one process starts clean
+    COMMAND_LINE_SECRET_KEYS = frozenset(name for name, supplied in (("STEAM_API_KEY", args.steam_api_key), ("WEBHOOK_URL", args.webhook_url)) if supplied)
+
+    # Traced here rather than at each layer, so the line reports the value that survived every later override
+    resolved_secrets = secret_source_labels(env_path)
+    for secret, source in resolved_secrets.items():
+        debug_print("Secret resolution", name=secret, source=source, **secret_fields(globals().get(secret), secret))
+    if not resolved_secrets:
+        debug_print("No private settings were resolved from config, dotenv, environment or the command line")
+
+    # Setup and doctor exit before the monitoring path re-initializes colour, so the configured
+    # COLORED_OUTPUT, COLOR_THEME and --no-color are applied here rather than leaving both screens plain
+    if args.no_color is True:
+        COLORED_OUTPUT = False
+    init_color_output(stdout_bck)
+
+    # A target is optional only for the utility actions below or when the config file names one. Checked after the
+    # dotenv file is resolved, so the command this prints carries the same paths the run was given
+    if not args.steam64_id and not args.resolve_community_url and not TARGET_STEAM_ID:
+        if not (args.send_test_email or args.send_test_webhook or args.doctor or args.setup or args.set_smtp_password):
+            print_recovery_error(context="target.missing", detail="A Steam profile target needs to be defined")
+            sys.exit(1)
+
+    if args.set_smtp_password:
+        # Runs after the config file so the mail server it signs in to is the one monitoring would use
+        validate_secret_action_args(args, parser, "set_smtp_password", "--set-smtp-password", permitted_extra=("config_file",))
+        try:
+            run_set_smtp_password(env_file=args.env_file or env_path)
+        except (SecretConfigurationError, RecoveryError) as exc:
+            print_recovery_error(exc, context="set_smtp_password")
+            sys.exit(1)
+        sys.exit(0)
+
+    if args.setup:
+        # Runs here rather than earlier so the values already in effect become the defaults it offers
+        setup_target = args.resolve_community_url or args.steam64_id or TARGET_STEAM_ID
+        sys.exit(run_setup_wizard(initial_target=setup_target, config_file=args.config_file or cfg_path, env_file=args.env_file))
+
+    apply_runtime_cli_overrides(args)
+    if args.doctor:
+        doctor_target = args.resolve_community_url or args.steam64_id or TARGET_STEAM_ID
+        doctor_exit = run_doctor(target_value=doctor_target, config_path=cfg_path, env_path=env_path)
+        # A target the config file already carries is left out, so the command stays as short as the wizard's
+        print_doctor_next_steps(doctor_target, TARGET_STEAM_ID, doctor_exit)
+        sys.exit(doctor_exit)
+
+    configuration_errors = runtime_configuration_errors() + runtime_boolean_errors()
+    if configuration_errors:
+        print_recovery_advice(make_recovery_advice("config.invalid", "Invalid settings: " + ". ".join(configuration_errors), recovery_fix_with_guide("Correct the reported settings in the configuration file or command line", CONFIG_GUIDE_URL), False))
+        sys.exit(1)
 
     if not check_internet():
         sys.exit(1)
 
     if args.send_test_email:
+        # Checked before the attempt is announced, so a mail server that was never usable is not reported as a failed send
+        settings_problem = smtp_settings_problem()
+        if settings_problem is not None:
+            print_recovery_error(context="email", detail=settings_problem)
+            sys.exit(1)
         print("* Sending test email notification ...\n")
-        if send_email("steam_monitor: test email", "This is test email - your SMTP settings seems to be correct !", "", SMTP_SSL, smtp_timeout=5) == 0:
+        debug_print("Test email", sender=SENDER_EMAIL, recipient=RECEIVER_EMAIL)
+        if send_email("Steam Monitor test email", "This test email was sent by --send-test-email. Your SMTP settings work.", "", SMTP_SSL, smtp_timeout=5, report_delivery=False) == 0:
             print("* Email sent successfully !")
         else:
             sys.exit(1)
         sys.exit(0)
 
     if args.send_test_webhook:
+        if not validate_webhook_url():
+            print_recovery_error(context="webhook", detail="WEBHOOK_URL must contain a complete HTTPS link")
+            sys.exit(1)
         print("* Sending test webhook notification ...\n")
-        if send_webhook("Steam Monitor test", "Your webhook alerts are set up correctly.", "status", force=True) == 0:
+        debug_print("Test webhook", channel=normalized_webhook_provider() or "an unset provider", host=webhook_destination_host())
+        if send_webhook("Steam Monitor test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.", "status", force=True, report_delivery=False) == 0:
             print("* Webhook sent successfully !")
         else:
             sys.exit(1)
         sys.exit(0)
 
-    if args.steam_api_key:
-        STEAM_API_KEY = args.steam_api_key
-
     if not STEAM_API_KEY or STEAM_API_KEY == "your_steam_web_api_key":
-        print("* Error: STEAM_API_KEY (-u / --steam_api_key) value is empty or incorrect")
+        print_recovery_error(context="secret.missing", detail="No Steam Web API key is configured")
         sys.exit(1)
 
-    if args.check_interval:
-        STEAM_CHECK_INTERVAL = args.check_interval
-        LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / STEAM_CHECK_INTERVAL
-
-    if args.active_interval:
-        STEAM_ACTIVE_CHECK_INTERVAL = args.active_interval
+    # The interval can come from a config file, so the reminder is settled once every layer has been applied
+    numeric_errors = [] if isinstance(LIVENESS_CHECK_INTERVAL, (int, float)) else [f"LIVENESS_CHECK_INTERVAL must be a number, not {LIVENESS_CHECK_INTERVAL!r}"]
+    if numeric_errors and not getattr(args, "doctor", False):
+        print_recovery_error(context="config", detail="Invalid numeric settings: " + ", ".join(numeric_errors))
+        raise SystemExit(1)
+    LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if not numeric_errors and LIVENESS_CHECK_INTERVAL > 0 else 0
 
     s_id = 0
-    if args.steam64_id:
-        s_id = int(args.steam64_id)
-
-    if args.resolve_community_url:
-        print(f"* Resolving Steam community URL to Steam64 ID: {args.resolve_community_url}\n")
-        try:
+    try:
+        if args.resolve_community_url:
+            print(f"* Resolving Steam community URL to Steam64 ID: {args.resolve_community_url}\n")
             s_id = resolve_steam_community_url(args.resolve_community_url, STEAM_API_KEY)
-        except ValueError as e:
-            print(f"* Error: {e}")
-            sys.exit(1)
+        elif args.steam64_id or TARGET_STEAM_ID:
+            s_id = resolve_steam_target(args.steam64_id or TARGET_STEAM_ID, STEAM_API_KEY)
+    except ValueError as e:
+        print_recovery_error(e, context="target")
+        sys.exit(1)
 
     if not s_id:
         # Check should have been handled earlier by the utility_flags logic
-        print("* Error: STEAM64_ID needs to be defined !")
+        print_recovery_error(context="target", detail="No Steam profile target was given")
         sys.exit(1)
-
-    if args.csv_file:
-        CSV_FILE = os.path.expanduser(args.csv_file)
-    else:
-        if CSV_FILE:
-            CSV_FILE = os.path.expanduser(CSV_FILE)
 
     if CSV_FILE:
         try:
             with open(CSV_FILE, 'a', newline='', buffering=1, encoding="utf-8") as _:
                 pass
         except Exception as e:
-            print(f"* Error: CSV file cannot be opened for writing: {e}")
+            print_recovery_error(e, context="file.unwritable", detail=f"CSV file '{CSV_FILE}' cannot be opened for writing")
             sys.exit(1)
-
-    if args.profile_csv_file:
-        PROFILE_CSV_FILE = os.path.expanduser(args.profile_csv_file)
-    else:
-        if PROFILE_CSV_FILE:
-            PROFILE_CSV_FILE = os.path.expanduser(PROFILE_CSV_FILE)
 
     if PROFILE_CSV_FILE:
         try:
             with open(PROFILE_CSV_FILE, 'a', newline='', buffering=1, encoding="utf-8") as _:
                 pass
         except Exception as e:
-            print(f"* Error: Profile CSV file cannot be opened for writing: {e}")
+            print_recovery_error(e, context="file.unwritable", detail=f"Profile CSV file '{PROFILE_CSV_FILE}' cannot be opened for writing")
             sys.exit(1)
 
-    if args.file_suffix:
-        FILE_SUFFIX = args.file_suffix
-    else:
+    if not FILE_SUFFIX:
         FILE_SUFFIX = str(s_id)
 
     if args.no_color is True:
@@ -3935,23 +8464,17 @@ def main():
     try:
         ascii_log_separators_enabled()
     except ValueError as e:
-        print(f"* Error: {e}")
+        print_recovery_error(e, context="config")
         sys.exit(1)
 
-    if args.disable_logging is True:
-        DISABLE_LOGGING = True
+    TRUNCATE_CHARS = resolve_truncate_chars(args.truncate, TRUNCATE_CHARS, DISABLE_LOGGING)
 
     # Re-initialize colour output to pick up any theme changes from config/dotenv
     init_color_output(stdout_bck)
 
     if not DISABLE_LOGGING:
-        log_path = Path(os.path.expanduser(ST_LOGFILE))
-        if log_path.parent != Path('.'):
-            if log_path.suffix == "":
-                log_path = log_path.parent / f"{log_path.name}_{FILE_SUFFIX}.log"
-        else:
-            if log_path.suffix == "":
-                log_path = Path(f"{log_path.name}_{FILE_SUFFIX}.log")
+        # Shared with doctor, so the path it reports is the one monitoring opens
+        log_path = build_log_path(ST_LOGFILE, FILE_SUFFIX)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         FINAL_LOG_PATH = str(log_path)
         sys.stdout = Logger(FINAL_LOG_PATH, strip_ansi=True)
@@ -3962,38 +8485,12 @@ def main():
 
     # Handle info mode - display user information once and exit
     if args.info:
-        display_user_info(s_id, list_friends=getattr(args, "list_friends", False), show_name_history=getattr(args, "show_name_history", False), show_achievements=getattr(args, "show_achievements", False), achievements_count=getattr(args, "achievements_count", None), achievements_use_owned_games=getattr(args, "achievements_use_owned_games", False))
+        info_result = display_user_info(s_id, list_friends=getattr(args, "list_friends", False), show_name_history=getattr(args, "show_name_history", False), show_achievements=getattr(args, "show_achievements", False), achievements_count=getattr(args, "achievements_count", None), achievements_use_owned_games=getattr(args, "achievements_use_owned_games", False))
         sys.stdout = stdout_bck
-        sys.exit(0)
-
-    if args.notify_active_inactive is True:
-        ACTIVE_INACTIVE_NOTIFICATION = True
-
-    if args.notify_game_change is True:
-        GAME_CHANGE_NOTIFICATION = True
-
-    if args.notify_status is True:
-        STATUS_NOTIFICATION = True
-
-    if args.notify_name_change is True:
-        NAME_CHANGE_NOTIFICATION = True
-
-    if args.notify_errors is False:
-        ERROR_NOTIFICATION = False
-    if args.check_level_xp is True:
-        STEAM_LEVEL_XP_CHECK = True
-    if args.notify_level_xp is True:
-        STEAM_LEVEL_XP_NOTIFICATION = True
-    if args.check_friends is True:
-        FRIENDS_CHECK = True
-    if args.notify_friends is True:
-        FRIENDS_NOTIFICATION = True
-    if getattr(args, "check_games", None) is True:
-        GAMES_LIBRARY_CHECK = True
-    if getattr(args, "notify_games", None) is True:
-        GAMES_LIBRARY_NOTIFICATION = True
+        sys.exit(1 if info_result is False else 0)
 
     if SMTP_HOST.startswith("your_smtp_server_"):
+        verbose_print("Email notifications are off because SMTP_HOST is still the shipped placeholder")
         ACTIVE_INACTIVE_NOTIFICATION = False
         GAME_CHANGE_NOTIFICATION = False
         STATUS_NOTIFICATION = False
@@ -4002,23 +8499,21 @@ def main():
         STEAM_LEVEL_XP_NOTIFICATION = False
         FRIENDS_NOTIFICATION = False
         GAMES_LIBRARY_NOTIFICATION = False
+    if WEBHOOK_ENABLED and not validate_webhook_url():
+        verbose_print("Webhook notifications are off because WEBHOOK_URL is not a complete HTTPS link")
+        WEBHOOK_ENABLED = False
 
-    print(f"* Steam polling intervals:\t[offline: {display_time(STEAM_CHECK_INTERVAL)}] [online: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]")
-    for notification_summary_line in _startup_notification_summary_lines():
-        print(notification_summary_line)
-    print(f"* Liveness check:\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
-    print(f"* Level/XP tracking enabled:\t{STEAM_LEVEL_XP_CHECK}")
-    print(f"* Friends tracking enabled:\t{FRIENDS_CHECK}")
-    print(f"* Games tracking enabled:\t{GAMES_LIBRARY_CHECK}")
-    print(f"* CSV logging enabled:\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
-    print(f"* Profile CSV logging enabled:\t{bool(PROFILE_CSV_FILE)}" + (f" ({PROFILE_CSV_FILE})" if PROFILE_CSV_FILE else ""))
-    print(f"* Output logging enabled:\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
-    print(f"* ASCII log separators:\t\t{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})")
-    print(f"* Configuration file:\t\t{cfg_path}")
-    print(f"* Dotenv file:\t\t\t{env_path or 'None'}")
+    emit_startup_summary(build_startup_summary(s_id, cfg_path, env_path, FINAL_LOG_PATH), show_full=full_startup_summary_enabled())
 
-    out = f"\nMonitoring user with Steam64 ID {colorize('steam_id', str(s_id))}"
-    print(colorize("header", out))
+    if NTFY_IMAGES and not NTFY_IMAGES_AVAILABLE:
+        NTFY_IMAGES = False
+        if WEBHOOK_ENABLED and normalized_webhook_provider() == "ntfy":
+            print_recovery_advice(missing_dependency_advice("Pillow", "ntfy alerts will be sent as text only", ntfy_images_install_command(), "Or set NTFY_IMAGES to False to stop this warning"), label="Warning")
+
+    # The line coloriser colours the ID, so the printed text stays plain and the separator matches its width
+    out = f"Monitoring user with Steam64 ID {s_id}"
+    # The summary block already ended with one blank line, so this heading starts at the cursor
+    print(out)
     print("─" * len(out))
 
     # We define signal handlers only for Linux, Unix & MacOS since Windows has limited number of signals supported

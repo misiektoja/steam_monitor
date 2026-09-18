@@ -1,0 +1,46 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  schedule:
+    # A weekly run catches a query that is added after a change merged.
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  analyze:
+    name: Analyze Python
+    runs-on: ubuntu-latest
+    permissions:
+      # Uploading the analysis result as code scanning alerts
+      security-events: write
+      contents: read
+      # Reading the workflow run metadata the analysis reports alongside the result
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The analysis never pushes, so the checkout token is not left behind in the runner
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          languages: python
+          # Python needs no compilation, so nothing is built before the database is created
+          build-mode: none
+          # The extended suite adds security queries that the default suite leaves out
+          queries: security-extended
+          # The suppression query turns the in-code codeql[...] comments into suppressed alerts
+          packs: codeql/python-queries:AlertSuppression.ql
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          category: "/language:python"

@@ -168,6 +168,8 @@ cython_debug/
 
 # Config files
 *.conf
+# The templates released versions shipped, replayed by the test suite
+!tests/fixtures/config_templates/*.conf
 
 # Local development and temporary files
 local/

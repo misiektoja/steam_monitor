@@ -10,30 +10,68 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # Signing the provenance attestation for the published archives
+      id-token: write
+      attestations: write
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Build archives from release tag
         shell: bash
+        env:
+          # Passed through the environment so a crafted tag cannot be pasted into the shell
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
-          TAG="${{ github.event.release.tag_name }}"
+          TAG="$RELEASE_TAG"
+          # A tag becomes part of a filename, so refuse anything outside the characters a tag may use
+          if [[ ! "$TAG" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "Refusing unsafe release tag: $TAG" >&2
+            exit 1
+          fi
           PREFIX="steam_monitor_${TAG}"
 
           git archive --format=zip --output "${PREFIX}.zip" "${TAG}"
           git archive --format=tar.gz --output "${PREFIX}.tar.gz" "${TAG}"
 
+          sha256sum "${PREFIX}.zip" "${PREFIX}.tar.gz" > "${PREFIX}_SHA256SUMS.txt"
+
           ls -lh "${PREFIX}.zip" "${PREFIX}.tar.gz"
+          cat "${PREFIX}_SHA256SUMS.txt"
+
+      # Lets anyone confirm the archives were built by this workflow from this tag:
+      #     gh attestation verify steam_monitor_<tag>.zip --repo misiektoja/steam_monitor
+      - name: Attest the archives' build provenance
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            steam_monitor_${{ github.event.release.tag_name }}.zip
+            steam_monitor_${{ github.event.release.tag_name }}.tar.gz
+
+      # Publishing the bundle alongside the archives lets offline verifiers check provenance
+      # without calling the attestations API, and it is the form automated scanners look for
+      - name: Stage the provenance bundle as a release asset
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          cp "$BUNDLE_PATH" "steam_monitor_${RELEASE_TAG}.intoto.jsonl"
+          ls -lh "steam_monitor_${RELEASE_TAG}.intoto.jsonl"
 
       - name: Upload archives to GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: |
             steam_monitor_${{ github.event.release.tag_name }}.zip
             steam_monitor_${{ github.event.release.tag_name }}.tar.gz
+            steam_monitor_${{ github.event.release.tag_name }}_SHA256SUMS.txt
+            steam_monitor_${{ github.event.release.tag_name }}.intoto.jsonl
           fail_on_unmatched_files: true
           overwrite_files: true

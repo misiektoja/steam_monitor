@@ -2,6 +2,35 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 2.0 (18 Sep 2026)
+
+Version **2.0** adds **guided setup**, a read-only **Doctor preflight check** and **private SMTP password entry**. **Coloured output**, startup summaries and verbose/debug modes make monitoring easier to follow. It protects saved history and credentials, improves error alerts and adds verifiable downloads. **ntfy artwork is now optional** and needs an extra dependency.
+
+**Features and improvements**:
+
+- **NEW:** **Guided setup** - `--setup` wizard collects the profile, intervals, credentials, notifications and output files. Review or edit answers before saving and confirm replacements. Reruns preserve saved settings and move retained credentials to the private dotenv file. A first run without a saved target offers setup
+- **NEW:** **Saved target and status file** - Set `TARGET_STEAM_ID` to start monitoring without arguments. Use `--status-file` or `STEAM_STATUS_FILE` to choose where the last seen status is stored
+- **NEW:** **Doctor preflight check** - `--doctor` checks configuration, Steam access, notifications and output destinations with suggested fixes. It writes no files and sends test notifications only after confirmation
+- **NEW:** **Private SMTP password setup** - `--set-smtp-password` takes a hidden password and checks it with the mail server before saving. Guided setup also checks email credentials without sending a message
+- **NEW:** **Clearer output and diagnostics** - Coloured output and a short startup summary show the active settings. `--verbose` adds operational updates and `--debug` adds technical traces. Secrets are redacted and logs retain the full summary
+- **NEW:** **Configurable TLS verification** - `VERIFY_SSL` covers outbound certificate checks, including email. Verification is on by default and disabling it produces a warning
+- **IMPROVE:** **Clearer errors and recovery** - Failures include repair guidance, periodic outage reminders and recovery notices. Persistent rate limits trigger enabled error alerts after five minutes. Failed monitoring-error alerts retry per channel without repeating successful deliveries. Other alerts are not queued for later retry
+- **IMPROVE:** **One webhook setting for presence** - `WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION` and `--webhook-active-inactive` replace the separate active and inactive switches, matching the email side. Configurations that set `WEBHOOK_ACTIVE_NOTIFICATION` or `WEBHOOK_INACTIVE_NOTIFICATION` still apply and a startup note names the replacement. The startup summary and Doctor now use the same alert names for email and webhooks
+- **IMPROVE:** **Optional ntfy artwork** - Pillow is no longer installed by default and artwork is disabled. To keep artwork after upgrading, install `steam_monitor[ntfy-images]` and set `NTFY_IMAGES = True`
+- **IMPROVE:** **Terminal and saved-log colours** - `--truncate N` limits screen width while logs retain full lines. It works without `wcwidth`, which improves Unicode width measurements. Copy the updated `grc/conf.monitor_logs` to `~/.grc/` to use the live terminal colours in saved logs
+- **IMPROVE:** **Notification output** - Subjects omit program-name prefixes. Set `DELIVERY_CONFIRMATIONS = False` to hide delivery confirmations while keeping verbose diagnostics
+- **IMPROVE:** **Documentation and verifiable downloads** - A [searchable guide](https://misiektoja.github.io/steam_monitor/) covers setup, usage and troubleshooting. Releases include checksums and signed build attestations
+
+**Bug fixes**:
+
+- **BUGFIX:** **Protected monitoring history** - Status and games-library files use Steam64 IDs, with automatic migration. Failed or incomplete library reads retain saved history and damaged status files stop monitoring before replacement. Status timestamps ahead of the clock are retained with corrected timing
+- **BUGFIX:** **Safer configuration loading** - Configuration files are read as settings instead of executed as Python. Plain values and references to other settings still work. Replace imports, function calls and calculations with plain settings
+- **BUGFIX:** **Safer configuration and secret updates** - `--generate-config FILE` confirms replacement and creates a backup. Non-interactive replacement requires `--force`. Shell redirection with `>` bypasses these protections. Exported secrets work without a dotenv file. Command-line credentials and nonempty startup exports retain priority after `SIGHUP`. Change those values and restart to replace them. Reloads apply changed or removed file-owned secrets
+- **BUGFIX:** **Safer alerts and output** - Webhook retries keep their original destination and credentials. Discord templates cannot enable mentions and invalid templates are rejected before delivery. Error messages redact credentials, including SMTP rejection replies. Webhooks refuse redirects and upstream text cannot clear or retitle the terminal. Emails accepted by the mail server no longer become false failures if closing the connection fails, avoiding duplicate retries
+- **BUGFIX:** **Reliable startup and status reminders** - Configured timing, connectivity and screen settings now take effect consistently. Redirected output avoids terminal-clearing errors. Liveness reminders cover online and offline targets and now default to 24 hours
+
+Smaller fixes and development changes are listed in the [full change history](https://github.com/misiektoja/steam_monitor/compare/v1.9.2...v2.0).
+
 # Changes in 1.9.2 (04 Aug 2026)
 
 **Bug fixes**:

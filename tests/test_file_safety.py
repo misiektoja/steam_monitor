@@ -1,0 +1,380 @@
+"""Tests that files are replaced atomically, backed up first, and that untrusted text cannot reach a terminal."""
+
+import re
+import json
+import os
+import stat
+from pathlib import Path
+
+import pytest
+
+import steam_monitor as monitor
+
+
+# Verifies a state file is replaced through a temporary file, so a crash cannot leave it half written
+def test_state_writes_are_atomic(tmp_path, monkeypatch):
+    destination = tmp_path / "state.json"
+    destination.write_text('{"previous": true}', encoding="utf-8")
+    observed = {}
+    real_replace = os.replace
+
+    def record_replace(source, target):
+        observed["source"] = str(source)
+        observed["target"] = str(target)
+        # The destination still holds the previous content right up to the rename
+        observed["target_before_replace"] = Path(target).read_text(encoding="utf-8")
+        return real_replace(source, target)
+
+    monkeypatch.setattr(monitor.os, "replace", record_replace)
+
+    monitor.write_json_atomic(destination, {"game_count": 3, "appids": [10, 20]})
+
+    assert observed["target"] == str(destination)
+    assert observed["source"] != str(destination)
+    assert observed["target_before_replace"] == '{"previous": true}'
+    assert json.loads(destination.read_text(encoding="utf-8")) == {"game_count": 3, "appids": [10, 20]}
+
+
+# Verifies a failed write leaves the previous state file intact rather than truncating it
+def test_a_failed_state_write_leaves_the_previous_file(tmp_path, monkeypatch):
+    destination = tmp_path / "state.json"
+    destination.write_text('{"previous": true}', encoding="utf-8")
+
+    def refuse_replace(_source, _target):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(monitor.os, "replace", refuse_replace)
+
+    with pytest.raises(OSError):
+        monitor.write_json_atomic(destination, {"new": True})
+
+    assert destination.read_text(encoding="utf-8") == '{"previous": true}'
+    # The temporary file is cleaned up rather than left beside the real one
+    assert [entry.name for entry in tmp_path.iterdir()] == ["state.json"]
+
+
+# Verifies the parent directory is created rather than the write failing on a fresh install
+def test_a_state_write_creates_its_directory(tmp_path):
+    destination = tmp_path / "nested" / "deeper" / "state.json"
+
+    monitor.write_json_atomic(destination, {"ok": True})
+
+    assert json.loads(destination.read_text(encoding="utf-8")) == {"ok": True}
+
+
+# Verifies a replaced file is copied to a timestamped private backup first
+def test_a_backup_is_created_before_a_replace(tmp_path):
+    destination = tmp_path / "steam_monitor.conf"
+    destination.write_text("CLEAR_SCREEN = False\n", encoding="utf-8")
+
+    backup_path = monitor.create_timestamped_backup(destination)
+    assert backup_path is not None
+
+    assert backup_path is not None
+    backup = Path(backup_path)
+    assert backup.name.startswith("steam_monitor.conf.")
+    assert backup.name.endswith(".bak")
+    assert backup.read_text(encoding="utf-8") == "CLEAR_SCREEN = False\n"
+    if os.name == "posix":
+        assert stat.S_IMODE(backup.stat().st_mode) == 0o600
+
+
+# Verifies a second backup in the same second gets its own name instead of overwriting the first
+def test_backups_never_overwrite_each_other(tmp_path, monkeypatch):
+    destination = tmp_path / "tool.conf"
+    destination.write_text("first\n", encoding="utf-8")
+    first = monitor.create_timestamped_backup(destination)
+    assert first is not None
+
+    destination.write_text("second\n", encoding="utf-8")
+    second = monitor.create_timestamped_backup(destination)
+    assert second is not None
+
+    assert first is not None and second is not None
+    assert first != second
+    assert Path(first).read_text(encoding="utf-8") == "first\n"
+    assert Path(second).read_text(encoding="utf-8") == "second\n"
+
+
+# Verifies nothing is backed up when there is no previous file to lose
+def test_no_backup_is_made_for_a_new_file(tmp_path):
+    assert monitor.create_timestamped_backup(tmp_path / "absent.conf") is None
+
+
+# Verifies a backup that cannot get a unique name fails loudly instead of silently skipping
+def test_an_exhausted_backup_name_space_raises(tmp_path):
+    destination = tmp_path / "tool.conf"
+    destination.write_text("content\n", encoding="utf-8")
+
+    with pytest.raises(OSError, match="unique backup"):
+        monitor.create_timestamped_backup(destination, attempts=0)
+
+
+# Verifies replacing a secret leaves no copy of the old one, since a stale credential on disk outlives its usefulness
+def test_saving_a_secret_leaves_no_copy_of_the_previous_dotenv(tmp_path):
+    destination = tmp_path / ".env"
+    destination.write_text('WEBHOOK_URL="https://ntfy.sh/old-topic"\n', encoding="utf-8")
+
+    result = monitor.update_dotenv_file(destination, {"WEBHOOK_URL": "https://ntfy.sh/new-topic"})
+
+    assert "backup_path" not in result
+    assert [entry.name for entry in tmp_path.iterdir()] == [".env"]
+    assert destination.read_text(encoding="utf-8") == 'WEBHOOK_URL="https://ntfy.sh/new-topic"\n'
+
+
+# Verifies terminal control sequences in a remote display name are stripped before output
+def test_terminal_control_sequences_are_stripped():
+    hostile = "Player\x1b[31m\x1b[2JRED\x07"
+
+    cleaned = monitor.sanitize_untrusted_text(hostile)
+
+    assert "\x1b" not in cleaned
+    assert "\x07" not in cleaned
+    assert cleaned == "PlayerRED"
+
+
+# Verifies newlines and carriage returns cannot forge extra output lines
+def test_line_breaks_cannot_forge_output():
+    hostile = "Player\r\n* Error: something fake\nmore"
+
+    cleaned = monitor.sanitize_untrusted_text(hostile)
+
+    assert "\n" not in cleaned
+    assert "\r" not in cleaned
+
+
+# Verifies ordinary text including non-ASCII display names survives untouched
+def test_ordinary_display_names_survive():
+    assert monitor.sanitize_untrusted_text("Jan Kowalski") == "Jan Kowalski"
+    assert monitor.sanitize_untrusted_text("  spaced  ") == "spaced"
+    assert monitor.sanitize_untrusted_text(" Player_1 [EU]") == "Player_1 [EU]"
+    # Display names are frequently non-ASCII, so the control-character filter must not strip real letters
+    assert monitor.sanitize_untrusted_text("Zażółć gęślą jaźń") == "Zażółć gęślą jaźń"
+    assert monitor.sanitize_untrusted_text("玩家一号") == "玩家一号"
+
+
+# Verifies an absent value renders as an empty string rather than the word None
+def test_an_absent_value_renders_empty():
+    assert monitor.sanitize_untrusted_text(None) == ""
+
+
+# Verifies an unbounded remote string cannot flood the terminal or the log
+def test_an_overlong_value_is_truncated():
+    cleaned = monitor.sanitize_untrusted_text("A" * 5000)
+
+    assert len(cleaned) == 259
+    assert cleaned.endswith("...")
+
+
+# Verifies persona history sanitizes third-party names at the real terminal sink
+def test_persona_history_cannot_forge_an_output_line(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "fetch_persona_name_history", lambda _steamid: [{"name": "Player\n* Error: forged", "timechanged": "date\n* Error: time"}])
+
+    monitor.display_persona_name_history(76561201960265740)
+
+    output = capsys.readouterr().out
+    assert "\n* Error: forged" not in output
+    assert "\n* Error: time" not in output
+    assert "Player* Error: forged" in output
+
+
+# Verifies achievement text sanitizes every Steam-controlled field at the real terminal sink
+def test_achievement_text_cannot_forge_output_lines(monkeypatch, capsys):
+    achievement = {"game": "Game\n* Error: game", "name": "Badge\n* Error: badge", "description": "Text\n* Error: detail", "unlocktime": 0}
+    monkeypatch.setattr(monitor, "fetch_recent_achievements", lambda *_args, **_kwargs: [achievement])
+
+    monitor.display_recent_achievements(76561201960265740, object(), {})
+
+    output = capsys.readouterr().out
+    assert "\n* Error:" not in output
+    assert "Game* Error: game" in output
+    assert "Badge* Error: badge" in output
+    assert "Text* Error: detail" in output
+
+
+# Verifies no outbound request in the module can be added without the TLS setting, which a runtime test cannot prove
+def test_every_outbound_request_passes_the_tls_setting():
+    source = (Path(__file__).resolve().parents[1] / "steam_monitor.py").read_text(encoding="utf-8")
+    offenders = []
+    for number, line in enumerate(source.splitlines(), 1):
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        makes_request = any(marker in stripped for marker in ("req.get(", "req.post(", "WEBHOOK_SESSION.get(", "WEBHOOK_SESSION.post("))
+        if makes_request and "verify=" not in stripped:
+            offenders.append(f"{number}: {stripped}")
+
+    assert not offenders, "outbound requests missing verify=VERIFY_SSL:\n" + "\n".join(offenders)
+
+
+# Verifies the minimum supported Python version is declared once and matches the packaging metadata
+def test_the_minimum_python_version_is_declared_once():
+    pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert f'requires-python = ">={monitor.MINIMUM_PYTHON_VERSION_TEXT}"' in pyproject
+    assert f"Programming Language :: Python :: {monitor.MINIMUM_PYTHON_VERSION_TEXT}" in pyproject
+    assert monitor.MINIMUM_PYTHON_VERSION_TEXT == ".".join(str(part) for part in monitor.MINIMUM_PYTHON_VERSION)
+
+
+# Verifies a generated config over an existing file is refused outside a terminal, so a script cannot replace one silently
+def test_generated_config_refuses_to_replace_without_a_terminal(tmp_path):
+    destination = tmp_path / "steam_monitor.conf"
+    destination.write_text("OLD = 1\n", encoding="utf-8")
+
+    with pytest.raises(FileExistsError):
+        monitor.write_generated_config(destination, "NEW = 2\n", interactive=False)
+
+    assert destination.read_text(encoding="utf-8") == "OLD = 1\n"
+
+
+# Verifies declining the question leaves the file alone and says nothing was written
+def test_a_declined_replacement_keeps_the_existing_config(tmp_path):
+    destination = tmp_path / "steam_monitor.conf"
+    destination.write_text("OLD = 1\n", encoding="utf-8")
+
+    backup_path, written = monitor.write_generated_config(destination, "NEW = 2\n", interactive=True, input_func=lambda prompt: "n")
+
+    assert (backup_path, written) == (None, False)
+    assert destination.read_text(encoding="utf-8") == "OLD = 1\n"
+
+
+# Verifies accepting the question replaces the file and keeps the previous one under a timestamp
+def test_an_accepted_replacement_backs_the_previous_file_up(tmp_path):
+    destination = tmp_path / "steam_monitor.conf"
+    destination.write_text("OLD = 1\n", encoding="utf-8")
+
+    backup_path, written = monitor.write_generated_config(destination, "NEW = 2\n", interactive=True, input_func=lambda prompt: "y")
+
+    assert written is True
+    assert destination.read_text(encoding="utf-8") == "NEW = 2\n"
+    assert backup_path is not None
+    assert Path(backup_path).read_text(encoding="utf-8") == "OLD = 1\n"
+
+
+# Verifies --force replaces without asking, since a script has no one to answer
+def test_force_replaces_without_asking(tmp_path):
+    destination = tmp_path / "steam_monitor.conf"
+    destination.write_text("OLD = 1\n", encoding="utf-8")
+
+    backup_path, written = monitor.write_generated_config(destination, "NEW = 2\n", force=True, interactive=False, input_func=lambda prompt: (_ for _ in ()).throw(AssertionError("asked")))
+
+    assert written is True
+    assert destination.read_text(encoding="utf-8") == "NEW = 2\n"
+    assert backup_path is not None
+    assert Path(backup_path).read_text(encoding="utf-8") == "OLD = 1\n"
+
+
+# Verifies a new path needs no question and takes no backup
+def test_a_new_path_is_written_without_a_question(tmp_path):
+    destination = tmp_path / "steam_monitor.conf"
+
+    backup_path, written = monitor.write_generated_config(destination, "NEW = 2\n", interactive=False)
+
+    assert (backup_path, written) == (None, True)
+    assert destination.read_text(encoding="utf-8") == "NEW = 2\n"
+
+
+# Verifies the generated config is written atomically and readable only by its owner
+def test_a_generated_config_is_replaced_atomically_and_kept_private(tmp_path, monkeypatch):
+    destination = tmp_path / "steam_monitor.conf"
+    destination.write_text("OLD = 1\n", encoding="utf-8")
+    replaced = []
+    real_replace = os.replace
+
+    def record_replace(source, target):
+        replaced.append((str(source), str(target)))
+        return real_replace(source, target)
+
+    monkeypatch.setattr(os, "replace", record_replace)
+    monitor.write_generated_config(destination, "NEW = 2\n", force=True)
+
+    assert replaced and replaced[-1][1] == str(destination)
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o600
+
+
+# Verifies an assignment the owner exported keeps its export, since dropping it changes what a shell sourcing the file exports
+def test_an_exported_assignment_keeps_its_export(tmp_path):
+    destination = tmp_path / ".env"
+    destination.write_text('export SMTP_PASSWORD="old"\nOTHER=keep\n', encoding="utf-8")
+
+    monitor.update_dotenv_file(destination, {"SMTP_PASSWORD": "new"})
+
+    assert destination.read_text(encoding="utf-8") == 'export SMTP_PASSWORD="new"\nOTHER=keep\n'
+
+
+# Verifies a line break inside a value is escaped rather than written through, since a raw one would split the assignment
+def test_a_line_break_in_a_value_cannot_split_the_assignment(tmp_path):
+    destination = tmp_path / ".env"
+
+    monitor.update_dotenv_file(destination, {"SMTP_PASSWORD": "one\ntwo"})
+
+    assert destination.read_text(encoding="utf-8") == 'SMTP_PASSWORD="one\\ntwo"\n'
+
+
+# Verifies the writer refuses a key this tool does not ship, so a typo cannot put an unknown name in the private file
+def test_the_writer_refuses_a_key_this_tool_does_not_ship(tmp_path):
+    with pytest.raises(ValueError):
+        monitor.update_dotenv_file(tmp_path / ".env", {"NOT_A_SECRET": "value"})
+
+
+# Verifies the writer refuses a value that is not text, so a mistyped caller fails before the file is touched
+def test_the_writer_refuses_a_value_that_is_not_text(tmp_path):
+    with pytest.raises(TypeError):
+        monitor.update_dotenv_file(tmp_path / ".env", {"SMTP_PASSWORD": 1234})
+
+
+# Verifies the backup name every tool in this family writes, so one documented shape covers them all
+def test_the_backup_carries_the_family_name_and_mode(tmp_path):
+    destination = tmp_path / "monitor.conf"
+    destination.write_text("SETTING = 1\n", encoding="utf-8")
+
+    backup_path = monitor.create_timestamped_backup(destination)
+    assert backup_path is not None
+
+    assert re.fullmatch(r"monitor\.conf\.\d{14}\.bak", Path(backup_path).name)
+    assert Path(backup_path).read_text(encoding="utf-8") == "SETTING = 1\n"
+    assert stat.S_IMODE(Path(backup_path).stat().st_mode) == 0o600
+
+
+# Verifies a second backup in the same second takes its own name rather than overwriting the first
+def test_a_second_backup_in_the_same_second_keeps_the_first(tmp_path):
+    destination = tmp_path / "monitor.conf"
+    destination.write_text("first\n", encoding="utf-8")
+    first = monitor.create_timestamped_backup(destination)
+    assert first is not None
+    destination.write_text("second\n", encoding="utf-8")
+
+    second = monitor.create_timestamped_backup(destination)
+    assert second is not None
+
+    assert first != second
+    assert Path(first).read_text(encoding="utf-8") == "first\n"
+    assert Path(second).read_text(encoding="utf-8") == "second\n"
+
+
+# Verifies a destination that is not there yet earns no backup, since there is nothing to copy
+def test_a_missing_destination_earns_no_backup(tmp_path):
+    assert monitor.create_timestamped_backup(tmp_path / "absent.conf") is None
+
+
+# A parent path that is a file is a write failure, not an existing config, so the advice must not say --force
+def test_a_file_in_the_way_of_the_parent_directory_is_not_an_existing_config(tmp_path):
+    blocker = tmp_path / "configs"
+    blocker.write_text("not a directory\n", encoding="utf-8")
+
+    with pytest.raises(OSError) as raised:
+        monitor.write_generated_config(blocker / "steam_monitor.conf", "SMTP_PORT = 587\n", interactive=False)
+
+    assert not isinstance(raised.value, monitor.ConfigExistsError)
+    assert blocker.read_text(encoding="utf-8") == "not a directory\n"
+
+
+# Refusing to replace a config without a terminal is its own error, so the generate-config path can tell it apart
+def test_refusing_to_replace_a_config_without_a_terminal_raises_its_own_error(tmp_path):
+    destination = tmp_path / "steam_monitor.conf"
+    destination.write_text("SMTP_PORT = 587\n", encoding="utf-8")
+
+    with pytest.raises(monitor.ConfigExistsError):
+        monitor.write_generated_config(destination, "SMTP_PORT = 465\n", interactive=False)
+
+    assert destination.read_text(encoding="utf-8") == "SMTP_PORT = 587\n"

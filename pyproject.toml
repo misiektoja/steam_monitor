@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "steam_monitor"
-version = "1.9.2"
+version = "2.0"
 description = "Tool implementing real-time tracking of Steam players activities"
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -12,13 +12,10 @@ license-files = ["LICEN[CS]E*"]
 authors = [{ name = "Michal Szymanski", email = "misiektoja-pypi@rm-rf.ninja" }]
 requires-python = ">=3.6"
 dependencies = [
-  "steam[client]>=1.4.3",
+  "steam>=1.4.3",
   "requests>=2.0",
   "python-dateutil>=2.8",
   "python-dotenv>=0.19",
-  "Pillow>=8.0,<9.0; python_version < '3.7'",
-  "Pillow>=9.0,<10.0; python_version == '3.7'",
-  "Pillow>=10.0; python_version >= '3.8'",
   "colorama>=0.4.6; platform_system == 'Windows'",
 ]
 classifiers = [
@@ -39,6 +36,27 @@ classifiers = [
 ]
 keywords = ["steam", "monitoring", "tracking", "real-time", "osint"]
 
+[project.optional-dependencies]
+test = [
+  "pytest>=7.0",
+  "pyyaml>=6.0",
+  "Pillow>=8.0,<9.0; python_version < '3.7'",
+  "Pillow>=9.0,<10.0; python_version == '3.7'",
+  "Pillow>=10.0,<11.0; python_version == '3.8'",
+  "Pillow>=11.3.0,<12; python_version == '3.9'",
+  "Pillow>=12.0.0; python_version >= '3.10'",
+]
+# Pinned so a new ruff release cannot fail CI on a rule that did not exist when the change was written
+lint = ["ruff==0.16.4"]
+# Each Pillow major dropped an older Python, so every supported version pins the newest release that still supports it
+ntfy-images = [
+  "Pillow>=8.0,<9.0; python_version < '3.7'",
+  "Pillow>=9.0,<10.0; python_version == '3.7'",
+  "Pillow>=10.0,<11.0; python_version == '3.8'",
+  "Pillow>=11.3.0,<12; python_version == '3.9'",
+  "Pillow>=12.0.0; python_version >= '3.10'",
+]
+
 [project.urls]
 Homepage = "https://github.com/misiektoja/steam_monitor"
 Source   = "https://github.com/misiektoja/steam_monitor"
@@ -50,3 +68,21 @@ steam_monitor = "steam_monitor:main"
 [tool.setuptools]
 py-modules = ["steam_monitor"]
 include-package-data = true
+
+[tool.ruff]
+# requires-python is below the oldest version ruff understands, so without this pin ruff falls back
+# to its own default and turns on rules whose fixes need newer syntax than the supported floor
+target-version = "py37"
+
+[tool.ruff.lint]
+# Defect rules only: syntax errors, pyflakes and bugbear. Formatting and import order are left
+# to the surrounding code, which keeps each function definition on one physical line.
+select = ["E9", "F", "B"]
+# Both are style preferences that would rewrite hundreds of existing lines without fixing a defect
+ignore = ["F541", "B904"]
+
+[tool.pytest.ini_options]
+# Run the in-repo source, never an installed copy, by putting the project root first on sys.path
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-ra"

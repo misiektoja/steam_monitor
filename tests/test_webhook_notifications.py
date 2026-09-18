@@ -1,4 +1,7 @@
 import argparse
+import contextlib
+import io
+import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
@@ -39,8 +42,7 @@ class WebhookNotificationTests(unittest.TestCase):
             "WEBHOOK_URL": "https://discord.com/api/webhooks/123/private-token",
             "WEBHOOK_USERNAME": "Steam Monitor",
             "WEBHOOK_AVATAR_URL": "",
-            "WEBHOOK_ACTIVE_NOTIFICATION": False,
-            "WEBHOOK_INACTIVE_NOTIFICATION": False,
+            "WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION": False,
             "WEBHOOK_STATUS_NOTIFICATION": True,
             "WEBHOOK_GAME_CHANGE_NOTIFICATION": False,
             "WEBHOOK_LEVEL_XP_NOTIFICATION": False,
@@ -57,6 +59,8 @@ class WebhookNotificationTests(unittest.TestCase):
             "WEBHOOK_TRANSFORMS": [],
             "NTFY_ACCESS_TOKEN": "",
             "NTFY_IMAGES": False,
+            "NTFY_IMAGES_AVAILABLE": steam_monitor.NTFY_IMAGES_AVAILABLE,
+            "DEBUG_MODE": False,
         }
         self.originals = {name: getattr(steam_monitor, name) for name in self.settings}
         for name, value in self.settings.items():
@@ -69,18 +73,18 @@ class WebhookNotificationTests(unittest.TestCase):
 
     # Verifies startup summaries use short labels and unstarred bounded continuation lines
     def test_startup_notification_summaries_use_compact_rollups(self):
-        for setting in ("ACTIVE_INACTIVE_NOTIFICATION", "STATUS_NOTIFICATION", "GAME_CHANGE_NOTIFICATION", "STEAM_LEVEL_XP_NOTIFICATION", "FRIENDS_NOTIFICATION", "GAMES_LIBRARY_NOTIFICATION", "NAME_CHANGE_NOTIFICATION", "ERROR_NOTIFICATION", "WEBHOOK_ENABLED", "WEBHOOK_ACTIVE_NOTIFICATION", "WEBHOOK_INACTIVE_NOTIFICATION", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_GAME_CHANGE_NOTIFICATION", "WEBHOOK_LEVEL_XP_NOTIFICATION", "WEBHOOK_FRIENDS_NOTIFICATION", "WEBHOOK_GAMES_NOTIFICATION", "WEBHOOK_NAME_CHANGE_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION"):
+        for setting in ("ACTIVE_INACTIVE_NOTIFICATION", "STATUS_NOTIFICATION", "GAME_CHANGE_NOTIFICATION", "STEAM_LEVEL_XP_NOTIFICATION", "FRIENDS_NOTIFICATION", "GAMES_LIBRARY_NOTIFICATION", "NAME_CHANGE_NOTIFICATION", "ERROR_NOTIFICATION", "WEBHOOK_ENABLED", "WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_GAME_CHANGE_NOTIFICATION", "WEBHOOK_LEVEL_XP_NOTIFICATION", "WEBHOOK_FRIENDS_NOTIFICATION", "WEBHOOK_GAMES_NOTIFICATION", "WEBHOOK_NAME_CHANGE_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION"):
             setattr(steam_monitor, setting, True)
-        expected_email = "* Notifications (email):        On (online/offline, status, game, level/XP, friends, games, name,\n                                errors)"
-        expected_webhook = "* Notifications (webhook):      On (active, inactive, status, game, level/XP, friends, games, name,\n                                errors)"
-        self.assertEqual(steam_monitor._startup_notification_summary_lines(), [expected_email, expected_webhook])
-        self.assertTrue(all(len(line) <= 100 for summary in (expected_email, expected_webhook) for line in summary.splitlines()))
-        self.assertNotIn("\n*", expected_email + expected_webhook)
+        rows = {row.label: row.value for row in steam_monitor.build_startup_summary(target="76561201960287930")}
+        expected = "On (online and offline changes, all status changes, game changes, level and XP changes, friends list changes, games library changes, name changes, errors)"
+        self.assertEqual(rows["Notifications (email)"], expected)
+        self.assertEqual(rows["Notifications (webhook)"], expected)
 
     # Verifies webhook categories remain off while the master switch is disabled
     def test_startup_webhook_summary_respects_master_switch(self):
         steam_monitor.WEBHOOK_ENABLED = False
-        self.assertEqual(steam_monitor._startup_notification_summary_lines()[1], "* Notifications (webhook):      Off")
+        rows = {row.label: row.value for row in steam_monitor.build_startup_summary(target="76561201960287930")}
+        self.assertEqual(rows["Notifications (webhook)"], "Off")
 
     # Verifies notification rows color only their state without turning error categories red
     def test_notification_summary_colors_only_on_off_state(self):
@@ -126,9 +130,32 @@ class WebhookNotificationTests(unittest.TestCase):
         steam_monitor.DOTENV_FILE = "test.env"
         steam_monitor.WEBHOOK_URL = "https://discord.com/api/webhooks/123/old-token"
         steam_monitor.WEBHOOK_PROVIDER = "discord"
-        with patch("dotenv.load_dotenv"), patch.object(steam_monitor.os, "getenv", side_effect=replacements.get):
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as dotenv_file, patch.dict(steam_monitor.os.environ), patch.object(steam_monitor, "DOTENV_RELOAD_STATE", {}), patch.object(steam_monitor, "EXPORTED_SECRET_KEYS", frozenset()):
+            dotenv_file.write("".join(key + "=" + repr(value) + "\n" for key, value in replacements.items()))
+            dotenv_file.flush()
+            steam_monitor.DOTENV_FILE = dotenv_file.name
             steam_monitor.reload_secrets_signal_handler(steam_monitor.signal.SIGHUP, None)
         self.assertEqual(steam_monitor.WEBHOOK_PROVIDER, "ntfy")
+
+    # Verifies every delivery carries the deadline and refuses a redirect, which could retarget the payload
+    def test_delivery_is_bounded_and_does_not_follow_redirects(self):
+        response = FakeResponse(204)
+        with patch.object(steam_monitor.WEBHOOK_SESSION, "post", return_value=response) as post:
+            result = steam_monitor.send_webhook("Status title", "Status body", "status")
+
+        self.assertEqual(result, 0)
+        self.assertEqual(post.call_args.args, (steam_monitor.WEBHOOK_URL,))
+        self.assertEqual(post.call_args.kwargs["timeout"], steam_monitor.WEBHOOK_TIMEOUT_SECONDS)
+        self.assertIs(post.call_args.kwargs["allow_redirects"], False)
+
+    # Verifies a destination replaced mid-delivery is refused rather than posted to blindly
+    def test_delivery_refuses_a_destination_that_stopped_validating(self):
+        steam_monitor.WEBHOOK_URL = "http://example.test/hook"
+        with patch.object(steam_monitor.WEBHOOK_SESSION, "post") as post:
+            with self.assertRaises(steam_monitor.req.exceptions.InvalidURL):
+                steam_monitor.post_webhook_request(json={"content": "body"})
+
+        post.assert_not_called()
 
     # Verifies Discord delivery uses the configured template and disables mentions
     def test_discord_payload_delivery(self):
@@ -172,6 +199,22 @@ class WebhookNotificationTests(unittest.TestCase):
         self.assertEqual(post.call_count, 2)
         self.assertEqual(post.call_args_list[0].kwargs["headers"]["Content-Type"], "image/jpeg")
         self.assertEqual(post.call_args_list[1].kwargs["data"], b"Steam body")
+
+    # Verifies an image preparation failure explains the text fallback in debug output
+    def test_ntfy_image_preparation_failure_is_debugged_and_falls_back_to_text(self):
+        steam_monitor.WEBHOOK_PROVIDER = "ntfy"
+        steam_monitor.WEBHOOK_URL = "https://ntfy.example.test/private-topic"
+        steam_monitor.NTFY_IMAGES = True
+        steam_monitor.NTFY_IMAGES_AVAILABLE = True
+        steam_monitor.DEBUG_MODE = True
+        image_url = "https://cdn.akamai.steamstatic.com/steam/apps/10/header.jpg"
+        with patch.object(steam_monitor.WEBHOOK_SESSION, "get", side_effect=steam_monitor.req.Timeout("image download timed out")), patch.object(steam_monitor.WEBHOOK_SESSION, "post", return_value=FakeResponse(200)) as post, patch("builtins.print") as output:
+            result = steam_monitor.send_webhook("Steam title", "Steam body", "game", force=True, image_url=image_url)
+
+        self.assertEqual(result, 0)
+        self.assertEqual(post.call_args.kwargs["data"], b"Steam body")
+        rendered = "\n".join(str(call.args[0]) for call in output.call_args_list if call.args)
+        self.assertIn("Preparing ntfy image: outcome=failed, error=Timeout: image download timed out", rendered)
 
     # Verifies webhook templates, transformations and dynamic headers share placeholders
     def test_custom_template_transforms_and_headers(self):
@@ -238,14 +281,33 @@ class WebhookNotificationTests(unittest.TestCase):
         self.assertEqual(steam_monitor.normalize_steam_image_url("//avatars.steamstatic.com/avatar_full.jpg"), "https://avatars.steamstatic.com/avatar_full.jpg")
         self.assertEqual(steam_monitor.normalize_steam_image_url("https://example.test/header.jpg"), "")
 
+    # Verifies artwork ships disabled and the generated config explains the optional install
+    def test_ntfy_images_ship_disabled_and_document_the_optional_dependency(self):
+        self.assertIn("NTFY_IMAGES = False", steam_monitor.CONFIG_BLOCK)
+        self.assertIn('pip3 install "steam_monitor[ntfy-images]"', steam_monitor.CONFIG_BLOCK)
+
+    # Verifies every supported Python gets the newest Pillow release that still supports it
+    def test_ntfy_images_requirement_matches_python_version(self):
+        expected = {(3, 6, 15): "Pillow>=8.0,<9.0", (3, 7, 17): "Pillow>=9.0,<10.0", (3, 8, 18): "Pillow>=10.0,<11.0", (3, 9, 23): "Pillow>=11.3.0,<12", (3, 10, 0): "Pillow>=12.0.0", (3, 14, 0): "Pillow>=12.0.0"}
+        for version, requirement in expected.items():
+            with patch.object(steam_monitor.sys, "version_info", version):
+                self.assertEqual(steam_monitor.ntfy_images_requirement(), requirement, version)
+
+    # Verifies package installs are pointed at the extra while single-file users get a plain Pillow pin
+    def test_ntfy_images_install_command_matches_install_method(self):
+        with patch.object(steam_monitor.sys, "argv", ["steam_monitor"]):
+            self.assertEqual(steam_monitor.ntfy_images_install_command(), 'pip3 install "steam_monitor[ntfy-images]"')
+        with patch.object(steam_monitor.sys, "argv", ["/opt/tools/steam_monitor.py"]):
+            self.assertIn("Pillow>=", steam_monitor.ntfy_images_install_command())
+            self.assertNotIn("steam_monitor[", steam_monitor.ntfy_images_install_command())
+
     # Verifies one-run CLI overrides enable only the selected webhook choices
     def test_runtime_overrides(self):
         args = argparse.Namespace(
             webhook_provider="ntfy",
             webhook_url="https://ntfy.example.test/private-topic",
             webhook_enabled=None,
-            webhook_active=True,
-            webhook_inactive=None,
+            webhook_active_inactive=True,
             webhook_status=None,
             webhook_game_changes=None,
             webhook_level_xp=None,
@@ -260,7 +322,7 @@ class WebhookNotificationTests(unittest.TestCase):
         self.assertEqual(steam_monitor.WEBHOOK_PROVIDER, "ntfy")
         self.assertEqual(steam_monitor.WEBHOOK_URL, "https://ntfy.example.test/private-topic")
         self.assertTrue(steam_monitor.WEBHOOK_ENABLED)
-        self.assertTrue(steam_monitor.WEBHOOK_ACTIVE_NOTIFICATION)
+        self.assertTrue(steam_monitor.WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION)
         self.assertFalse(steam_monitor.WEBHOOK_ERROR_NOTIFICATION)
         parser.error.assert_not_called()
 
@@ -270,8 +332,7 @@ class WebhookNotificationTests(unittest.TestCase):
             webhook_provider=None,
             webhook_url="https://ntfy.sh/private-topic",
             webhook_enabled=None,
-            webhook_active=None,
-            webhook_inactive=None,
+            webhook_active_inactive=None,
             webhook_status=None,
             webhook_game_changes=None,
             webhook_level_xp=None,
@@ -281,7 +342,7 @@ class WebhookNotificationTests(unittest.TestCase):
             webhook_errors=None,
         )
         parser = Mock()
-        with patch("builtins.print") as output:
+        with patch("builtins.print") as output, patch.object(steam_monitor, "CONFIGURED_SETTING_NAMES", {"WEBHOOK_PROVIDER"}):
             steam_monitor.apply_webhook_cli_overrides(args, parser)
 
         self.assertEqual(steam_monitor.WEBHOOK_PROVIDER, "ntfy")
@@ -308,7 +369,7 @@ class WebhookNotificationTests(unittest.TestCase):
             steam_monitor.main()
 
         self.assertEqual(exit_info.exception.code, 0)
-        delivery.assert_called_once_with("Steam Monitor test", "Your webhook alerts are set up correctly.", "status", force=True)
+        delivery.assert_called_once_with("Steam Monitor test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.", "status", force=True, report_delivery=False)
 
     # Verifies long ntfy messages stay below the server attachment boundary with a visible truncation marker
     def test_ntfy_message_stays_below_attachment_boundary(self):
@@ -318,6 +379,29 @@ class WebhookNotificationTests(unittest.TestCase):
         self.assertLessEqual(len(message.encode("utf-8")), steam_monitor.NTFY_MESSAGE_LIMIT_BYTES)
         self.assertLess(len(message.encode("utf-8")), 4096)
         self.assertNotIn("\ufffd", message)
+
+    # Verifies both test commands carry the subject, title and body shared with the sibling monitors
+    def test_the_test_messages_use_the_shared_wording(self):
+        email = Mock(return_value=0)
+        webhook = Mock(return_value=0)
+        for flag in ("--send-test-email", "--send-test-webhook"):
+            with patch.object(steam_monitor.sys, "argv", ["steam_monitor.py", flag, "--env-file", "none"]), patch.object(steam_monitor, "check_internet", return_value=True), patch.object(steam_monitor, "smtp_settings_problem", return_value=None), patch.object(steam_monitor, "validate_webhook_url", return_value=True), patch.object(steam_monitor, "send_email", email), patch.object(steam_monitor, "send_webhook", webhook), patch.object(steam_monitor, "clear_screen"), patch.object(steam_monitor.signal, "signal"), self.assertRaises(SystemExit) as exit_info:
+                steam_monitor.main()
+            self.assertEqual(exit_info.exception.code, 0)
+
+        self.assertEqual(email.call_args.args[:2], ("Steam Monitor test email", "This test email was sent by --send-test-email. Your SMTP settings work."))
+        self.assertEqual(webhook.call_args.args[:2], ("Steam Monitor test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work."))
+
+    # Verifies a delivery test checks the settings before it announces an attempt it cannot make
+    def test_a_delivery_test_checks_the_settings_before_it_announces(self):
+        for flag, announcement in (("--send-test-email", "Sending test email notification"), ("--send-test-webhook", "Sending test webhook notification")):
+            buffer = io.StringIO()
+            with patch.object(steam_monitor.sys, "argv", ["steam_monitor.py", flag, "--env-file", "none"]), patch.object(steam_monitor, "check_internet", return_value=True), patch.object(steam_monitor, "SMTP_HOST", "not a host"), patch.object(steam_monitor, "WEBHOOK_URL", ""), patch.object(steam_monitor, "clear_screen"), patch.object(steam_monitor.signal, "signal"), contextlib.redirect_stdout(buffer), self.assertRaises(SystemExit) as exit_info:
+                steam_monitor.main()
+            self.assertEqual(exit_info.exception.code, 1)
+            self.assertNotIn(announcement, buffer.getvalue())
+            self.assertIn("* Error: ", buffer.getvalue())
+            self.assertIn("To fix: ", buffer.getvalue())
 
 
 if __name__ == "__main__":
