@@ -2939,9 +2939,11 @@ def _selected_webhook_notification_categories():
     return [label for enabled, label in settings if enabled]
 
 
-# Returns one channel's rollup value, naming the enabled categories rather than only whether the channel is on
-def _startup_notification_state(categories):
-    return "On (" + ", ".join(categories) + ")" if categories else "Off"
+# Returns one channel's rollup value, naming the enabled categories, or reporting a channel with no destination as off
+def _startup_notification_state(categories, configured):
+    if not categories:
+        return "Off"
+    return "On (" + ", ".join(categories) + ")" if configured else "Off (not configured)"
 
 
 # Redacts configured secrets and API key query values from one error-shaped value
@@ -5713,16 +5715,31 @@ def mask_email_address(address):
     return f"{masked}@{domain}"
 
 
+# Returns whether a mail server is set rather than left empty or still holding the placeholder the sample configuration ships
+def smtp_server_configured():
+    return doctor_value_is_set(SMTP_HOST) and bool(SMTP_PORT)
+
+
+# Returns whether an email alert has both a server to send through and an address to reach
+def email_channel_configured():
+    return smtp_server_configured() and doctor_value_is_set(RECEIVER_EMAIL)
+
+
+# Returns whether a webhook alert has a destination to post to
+def webhook_channel_configured():
+    return bool(normalized_webhook_provider()) and doctor_value_is_set(WEBHOOK_URL)
+
+
 # Names the mail server this run would use, leaving out the account that signs in to it
 def startup_email_transport():
-    if not SMTP_HOST or not SMTP_PORT:
+    if not smtp_server_configured():
         return "Not configured"
     return f"{SMTP_HOST}:{SMTP_PORT} ({'STARTTLS' if SMTP_SSL else 'TLS off'})"
 
 
 # Names the configured webhook service and whether the channel is switched on, which are two separate settings
 def startup_webhook_provider():
-    if not normalized_webhook_provider() or not str(WEBHOOK_URL or "").strip():
+    if not webhook_channel_configured():
         return "Not configured"
     return f"{webhook_provider_display_name()} ({'enabled' if WEBHOOK_ENABLED else 'disabled'})"
 
@@ -5737,10 +5754,10 @@ def build_startup_summary(target=None, config_path=None, env_path=None, log_path
         StartupSummaryRow("Target", str(target) if target else "None", concise=True),
         StartupSummaryRow("Polling intervals", f"[offline: {display_time(STEAM_CHECK_INTERVAL)}] [online: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]", concise=True),
         StartupSummaryRow("Offline grace period", display_time(OFFLINE_INTERRUPT) if OFFLINE_INTERRUPT else "Disabled"),
-        StartupSummaryRow("Notifications (email)", _startup_notification_state(_startup_email_notification_categories()), concise=True),
+        StartupSummaryRow("Notifications (email)", _startup_notification_state(_startup_email_notification_categories(), email_channel_configured()), concise=True),
         StartupSummaryRow("Email transport", startup_email_transport()),
-        StartupSummaryRow("Email recipient", mask_email_address(RECEIVER_EMAIL) if RECEIVER_EMAIL else "Not configured"),
-        StartupSummaryRow("Notifications (webhook)", _startup_notification_state(_startup_webhook_notification_categories()), concise=True),
+        StartupSummaryRow("Email recipient", mask_email_address(RECEIVER_EMAIL) if doctor_value_is_set(RECEIVER_EMAIL) else "Not configured"),
+        StartupSummaryRow("Notifications (webhook)", _startup_notification_state(_startup_webhook_notification_categories(), webhook_channel_configured()), concise=True),
         StartupSummaryRow("Webhook provider", startup_webhook_provider()),
     ]
     # The ntfy attachment setting says nothing about a run that posts to Discord, which ignores it
