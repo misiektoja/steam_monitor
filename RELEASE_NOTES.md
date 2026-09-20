@@ -2,12 +2,17 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 2.0.1 (TBD)
+# Changes in 2.1 (TBD)
 
-Version **2.0.1** fixes two alerting issues: alert delivery messages now stay within the correct check report, while alert channels that still use placeholder configuration values are shown as not configured.
+Version **2.1** gives every monitoring failure unified subject and body across email and webhook, followed by a **recovery alert** when monitoring resumes. Network failures now link to a new **Connection Problems** page section. Alert delivery messages stay within the correct check report and alert channels that still use placeholder configuration values are shown as not configured.
+
+**Features and improvements**:
+
+- **IMPROVE:** **Failure alerts share one shape** - Every monitoring failure email and webhook uses the subject **`Steam Monitor error: <what went wrong> (user: <username>)`** and lists the fix, the guide link, how many checks failed in a row, since when and when the next retry happens. A **recovery alert** follows on the channels that received the failure alert once monitoring resumes. `-e` / `--no-error-notify` and `--no-webhook-error-notify` switch both off
 
 **Bug fixes**:
 
+- **BUGFIX:** **Network failures point at the right page** - A timed-out or unreachable Steam Web API request now link to the new **Connection Problems** section, which explains the automatic retries and what to check if the failure continues.
 - **BUGFIX:** **Alert deliveries stay inside their report** - The hourly **`Monitoring degraded`** reminder previously closed the report before sending its alert. This caused lines such as **`Sending email notification to ...`** and webhook delivery messages to appear below the separator in a separate block. The report now closes after the delivery messages, keeping the entire check output together.
 - **BUGFIX:** **Unset alert channels are reported as unset** - The verbose startup summary previously treated placeholder configuration values as real alert settings. For example, an unconfigured email channel could appear as **`Email transport: your_smtp_server_ssl:587`** with recipient **`your_receiver_email`**, while the webhook provider could appear as **`Discord`**. These values are now shown as **`Not configured`**, while the channel summary shows **`Off (not configured)`**.
 
