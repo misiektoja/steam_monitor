@@ -248,7 +248,7 @@ def test_a_transient_failure_retries_once_quickly(tmp_path, monkeypatch, capsys)
     assert sleeps[1] == monitor.TRANSIENT_RETRY_SECONDS
     assert sleeps[2] == 60
     output = capsys.readouterr().out
-    assert f"* Error: The Steam Web API request timed out (retrying in {monitor.display_time(monitor.TRANSIENT_RETRY_SECONDS)})" in output
+    assert f"* Error: The Steam Web API did not answer in time (retrying in {monitor.display_time(monitor.TRANSIENT_RETRY_SECONDS)})" in output
 
 
 # Verifies a rate limit skips the short retry and waits the period Steam asked for
@@ -501,7 +501,7 @@ def test_a_failure_that_cannot_clear_itself_is_alerted_at_once(tmp_path, monkeyp
     run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=http_error(403), stop_after_sleeps=2, error_notifications=True)
 
     assert len(deliveries) == 1
-    assert deliveries[0].startswith("Steam API key error!")
+    assert deliveries[0] == "Steam Monitor error: Steam rejected the configured Web API key (user: TestPlayer)"
 
 
 # Verifies a retry that reaches the screen on a quiet cycle still ends with a timestamp
@@ -677,7 +677,7 @@ def test_a_second_failure_category_is_noted_in_one_line(tmp_path, monkeypatch, c
     reports = [line for line in lines if line.startswith("* Error:")]
     changes = [number for number, line in enumerate(lines) if line.startswith("* Monitoring failure changed for 76561201960435530. ")]
     assert len(reports) == 1 and "temporarily unavailable" in reports[0]
-    assert len(changes) == 1 and lines[changes[0]].endswith("The Steam Web API request timed out")
+    assert len(changes) == 1 and lines[changes[0]].endswith("The Steam Web API did not answer in time")
     assert lines[changes[0] + 1].startswith("Timestamp:")
     assert "\n".join(lines).count("To fix: ") == 1
 
@@ -716,3 +716,15 @@ def test_an_unusable_games_library_file_does_not_stop_the_run(tmp_path, monkeypa
     assert "* Warning: Cannot load the games library" in output
     assert "starts a fresh baseline" in output
     assert "games library changed" not in output
+
+
+# Verifies a cleared outage answers the failure alert on the same channel, so an inbox is not left with an outage that never ends
+def test_a_cleared_outage_answers_the_failure_alert(tmp_path, monkeypatch):
+    deliveries = []
+    monkeypatch.setattr(monitor, "send_notification_channels", lambda *args, **kwargs: deliveries.append(args[1]) or (True, True))
+
+    run_one_cycle(tmp_path, monkeypatch, diagnostics=False, poll_error=http_error(403), stop_after_sleeps=3, healthy_after=2, error_notifications=True)
+
+    assert len(deliveries) == 2
+    assert deliveries[0] == "Steam Monitor error: Steam rejected the configured Web API key (user: TestPlayer)"
+    assert deliveries[1].startswith("Steam Monitor recovered: monitoring TestPlayer resumed after ")

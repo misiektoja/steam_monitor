@@ -534,7 +534,7 @@ def test_a_failing_connectivity_check_reports_its_outcome_even_when_quiet(capsys
     output = capsys.readouterr().out
     assert "Connectivity check: url=https://example.invalid/probe, outcome=failed, error=ConnectionError" in output
     # A quiet caller renders the failure itself, so the structured advice must stay off the progress line
-    assert "* Error: Steam could not be reached" not in output
+    assert "* Error: The Steam Web API could not be reached" not in output
 
 
 # Verifies a delivered email confirms the SMTP outcome in debug, not only in verbose
