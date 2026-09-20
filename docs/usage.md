@@ -246,7 +246,7 @@ It requires games library tracking (`GAMES_LIBRARY_CHECK` / `--check-games`) to 
 steam_monitor <steam_target> --check-games --notify-games
 ```
 
-To disable sending an email on errors (enabled by default):
+To disable sending an email on errors and the recovery alert that follows (both enabled by default):
 - set `ERROR_NOTIFICATION` to `False`
 - or use the `-e` flag
 
@@ -255,6 +255,8 @@ steam_monitor <steam_target> -e
 ```
 
 Email and webhook error alerts are sent after **5 minutes** of a continuing failure. Problems that need your action, such as a rejected API key, alert immediately. Each kind of failure alerts once per channel. Failed deliveries are retried after 5 minutes, with increasing waits up to an hour. Alerts can fire again after monitoring recovers.
+
+A failure alert carries the subject `Steam Monitor error: <what went wrong> (user: <username>)` and lists the fix, the guide link, how many checks failed in a row, since when and when the next retry is. When the failure clears, a `Steam Monitor recovered: monitoring <username> resumed after <time>` alert follows on every channel that received the failure alert.
 
 Make sure you have configured your [SMTP settings](configuration.md#smtp-settings) first.
 
@@ -278,7 +280,9 @@ Webhook event switches mirror the email choices while remaining independent:
 | Friends list changes | `WEBHOOK_FRIENDS_NOTIFICATION` | `--webhook-friends` |
 | Games library changes | `WEBHOOK_GAMES_NOTIFICATION` | `--webhook-games` |
 | Display name changes | `WEBHOOK_NAME_CHANGE_NOTIFICATION` | `--webhook-name-change` |
-| Monitoring errors | `WEBHOOK_ERROR_NOTIFICATION` | `--webhook-errors` or `--no-webhook-error-notify` |
+| Monitoring errors and recoveries | `WEBHOOK_ERROR_NOTIFICATION` | `--webhook-errors` or `--no-webhook-error-notify` |
+
+A monitoring error webhook carries the same title and text as the error email, without the timestamp the webhook service shows itself, and the matching recovery alert follows on the same channel.
 
 Use `--webhook` or `--no-webhook` to override the master switch for one run. Event flags enable the master switch automatically. Level and XP, friends and games alerts require their corresponding tracking options.
 
