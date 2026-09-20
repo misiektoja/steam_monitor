@@ -72,7 +72,7 @@ STATUS_NOTIFICATION = False
 # Can also be enabled via the --notify-name-change flag
 NAME_CHANGE_NOTIFICATION = False
 
-# Whether to send an email on errors
+# Whether to send an email on errors and the recovery alert that follows once the failure clears
 # Can also be disabled via the -e flag
 ERROR_NOTIFICATION = True
 
@@ -133,7 +133,7 @@ WEBHOOK_GAMES_NOTIFICATION = False
 # Can also be enabled via the --webhook-name-change flag
 WEBHOOK_NAME_CHANGE_NOTIFICATION = False
 
-# Whether to send a webhook notification on monitoring errors
+# Whether to send a webhook notification on monitoring errors and the recovery alert that follows once the failure clears
 # Can also be enabled via --webhook-errors or disabled via --no-webhook-error-notify
 WEBHOOK_ERROR_NOTIFICATION = True
 
@@ -481,6 +481,8 @@ STEAM_TARGET_FORMS = "Steam64 ID, Steam3 identifier, vanity name or full profile
 STEAM_TARGET_INPUT_ERROR = f"Enter a {STEAM_TARGET_FORMS}, for example https://steamcommunity.com/id/<vanity_name>/"
 DOCTOR_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#doctor-preflight"
 DIAGNOSTICS_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#verbose-and-debug-output"
+CONNECTION_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#connection-problems"
+DESCRIPTOR_LIMIT_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#too-many-open-files"
 
 # Shared prefixes for the checks a delivery test depends on, kept as constants because the labels are dynamic
 SMTP_READY_CHECK_LABEL = "SMTP connection and login succeeded"
@@ -630,9 +632,10 @@ ERROR_ALERT_RETRY_SECONDS = 300  # 5 minutes
 ERROR_ALERT_RETRY_MAX_SECONDS = 3600  # 1 hour
 
 
-# Tracks the error alert per channel: what was delivered, and how long a channel that failed waits before the next attempt
+# Tracks the error alert per channel: what was delivered, how long a channel that failed waits before the next
+# attempt, and the failure and outage start the recovery alert names once the outage clears
 class ErrorAlertState:
-    # Starts with nothing delivered and no channel on hold
+    # Starts with nothing delivered, no channel on hold and no failure remembered
     def __init__(self) -> None:
         self.email_sent = False
         self.webhook_sent = False
@@ -640,10 +643,21 @@ class ErrorAlertState:
         self.webhook_failures = 0
         self.email_retry_at = 0
         self.webhook_retry_at = 0
+        self.advice = None
+        self.since = 0
 
-    # Forgets the delivered alert and any hold, so the next failure earns each channel a new one
+    # Forgets the delivered alert, any hold and the remembered failure, so the next outage earns each channel a new alert
     def reset(self) -> None:
         self.__init__()
+
+    # Remembers the latest failure and when the outage began, so the recovery alert can say what cleared and how long it took
+    def remember(self, advice, since: int) -> None:
+        self.advice = advice
+        self.since = since
+
+    # Tells whether a channel delivered the failure alert of this outage and is still switched on, so it is owed the recovery alert
+    def delivered(self, channel: str, enabled) -> bool:
+        return bool(enabled) and getattr(self, f"{channel}_sent")
 
     # Tells whether a channel still owes the alert and its wait after a failed attempt, if any, has passed
     def pending(self, channel: str, enabled, now: int) -> bool:
@@ -3058,6 +3072,10 @@ def is_too_many_open_files(error):
     return False
 
 
+# What to do about a network failure the monitor retries on its own, shared by the timeout and unreachable advices
+TRANSIENT_NETWORK_FIX = "Usually nothing to do, the tool retries on its own. If it continues, check network access, DNS, firewall and proxy settings"
+
+
 # Returns the next step for a failure no rule recognized, since a run already printing the technical cause cannot be told to re-run for it
 def unknown_failure_fix():
     return "Open an issue with this output if the failure continues" if DEBUG_MODE else "Re-run with --debug to see the technical cause"
@@ -3082,7 +3100,7 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
 
     # Checked ahead of every context, since a local descriptor limit is not a failure of whatever call hit it
     if error is not None and is_too_many_open_files(error):
-        return advice("resource.exhausted", "This process ran out of file descriptors, which is a local limit and not a Steam problem", "Raise the file descriptor limit, for example with 'ulimit -n 4096', or set LimitNOFILE= if you run under systemd, then restart the tool", False, DIAGNOSTICS_GUIDE_URL)
+        return advice("resource.exhausted", "This process ran out of file descriptors, which is a local limit and not a Steam problem", "Raise the file descriptor limit, for example with 'ulimit -n 4096', or set LimitNOFILE= if you run under systemd, then restart the tool", False, DESCRIPTOR_LIMIT_GUIDE_URL)
 
     if context == "config":
         if "does not exist" in message:
@@ -3116,9 +3134,9 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
         if "rate limit" in message or mentions_status_code("429", message) or status == 429:
             return advice("steam.rate_limited", "Steam rate limited the profile lookup", "Wait for the reported period then try again", True, INTERVALS_GUIDE_URL)
         if any(term in message for term in ("timed out", "timeout")):
-            return advice("network.timeout", "The Steam Web API request timed out", "Check connectivity then try again", True, DIAGNOSTICS_GUIDE_URL)
+            return advice("network.timeout", "The Steam Web API did not answer in time", "Check connectivity then try again", True, CONNECTION_GUIDE_URL)
         if "cannot connect" in message:
-            return advice("network.unavailable", "The Steam Web API could not be reached", "Check connectivity, DNS and any proxy then try again", True, DIAGNOSTICS_GUIDE_URL)
+            return advice("network.unavailable", "The Steam Web API could not be reached", "Check connectivity, DNS and any proxy then try again", True, CONNECTION_GUIDE_URL)
         if any(term in message for term in ("invalid steam", "only steam user", "not supported")):
             return advice("target.invalid", safe_detail or "That is not a recognized Steam profile", f"Pass a {STEAM_TARGET_FORMS}", False, USAGE_GUIDE_URL)
         return advice("target.not_found", safe_detail or "No Steam user matches that profile", "Check the Steam64 ID or profile URL and try again", False, USAGE_GUIDE_URL)
@@ -3149,8 +3167,8 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
 
     if context == "file":
         if any(term in message for term in ("cannot load", "unreadable", "not valid utf-8", "no such file")):
-            return advice("file.unreadable", safe_detail or "A file the tool keeps could not be read", "Check the path and its permissions, or delete the file so it is recreated", False, DIAGNOSTICS_GUIDE_URL)
-        return advice("file.unwritable", safe_detail or "A file the tool keeps could not be written", "Check that the directory exists and is writable, or choose another path", False, DIAGNOSTICS_GUIDE_URL)
+            return advice("file.unreadable", safe_detail or "A file the tool keeps could not be read", "Check the path and its permissions, or delete the file so it is recreated", False, CONFIG_GUIDE_URL)
+        return advice("file.unwritable", safe_detail or "A file the tool keeps could not be written", "Check that the directory exists and is writable, or choose another path", False, CONFIG_GUIDE_URL)
 
     if context == "file.exists":
         return advice("file.exists", safe_detail or "The destination file already exists", f"Re-run with --force to replace it after a timestamped backup, or write to a different path with '{render_command(['--generate-config', '<new-file>'], include_paths=False)}'", False, CONFIG_GUIDE_URL)
@@ -3161,7 +3179,7 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
             return advice("file.unwritable", safe_detail or "--setup has nowhere to write the private settings", "Replace '--env-file none' with a writable path, or drop the flag to write .env in the current directory", False, SECRETS_GUIDE_URL)
         if "nowhere to write the configuration" in message:
             return advice("file.unwritable", safe_detail or "--setup has nowhere to write the configuration", f"Replace '--config-file none' with a writable path, or drop the flag to write {DEFAULT_CONFIG_FILENAME} in the current directory", False, CONFIG_GUIDE_URL)
-        return advice("file.unwritable", safe_detail or "A file the tool keeps could not be written", "Check that the directory exists and is writable, or choose another path", False, DIAGNOSTICS_GUIDE_URL)
+        return advice("file.unwritable", safe_detail or "A file the tool keeps could not be written", "Check that the directory exists and is writable, or choose another path", False, CONFIG_GUIDE_URL)
 
     # Runtime, which is the monitoring loop and every Steam Web API call it makes
     if status == 429 or "rate limit" in message or "too many requests" in message:
@@ -3171,11 +3189,11 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
     if status == 404 or "not found" in message:
         return advice("target.not_found", "Steam has no profile for the monitored Steam64 ID", "Check the Steam64 ID, since a deleted or renamed account cannot be monitored", False, USAGE_GUIDE_URL)
     if status is not None and status >= 500 or "service unavailable" in message or "bad gateway" in message:
-        return advice("steam.unavailable", "The Steam Web API is temporarily unavailable", "This is usually a Steam outage. The tool will keep retrying", True, DIAGNOSTICS_GUIDE_URL)
+        return advice("steam.unavailable", "The Steam Web API is temporarily unavailable", "Usually nothing to do, the tool retries on its own. If it continues, wait for Steam to recover", True, CONNECTION_GUIDE_URL)
     if "timed out" in message or "timeout" in message:
-        return advice("network.timeout", "The Steam Web API request timed out", "Check connectivity. The tool will keep retrying", True, DIAGNOSTICS_GUIDE_URL)
+        return advice("network.timeout", "The Steam Web API did not answer in time", TRANSIENT_NETWORK_FIX, True, CONNECTION_GUIDE_URL)
     if any(term in message for term in ("connection", "name resolution", "network is unreachable", "no connectivity")):
-        return advice("network.unavailable", "Steam could not be reached", "Check connectivity, DNS and any proxy. The tool will keep retrying", True, DIAGNOSTICS_GUIDE_URL)
+        return advice("network.unavailable", "The Steam Web API could not be reached", TRANSIENT_NETWORK_FIX, True, CONNECTION_GUIDE_URL)
     if "private" in message or "visibility" in message:
         return advice("target.not_visible", "The monitored profile is not publicly visible", "Ask the user to set game details and profile visibility to Public", False, PRIVACY_GUIDE_URL)
     return advice("unknown", safe_detail or "The request could not be completed", unknown_failure_fix(), True, DIAGNOSTICS_GUIDE_URL)
@@ -3286,9 +3304,67 @@ def print_outage_change(target, advice):
 
 
 # Reports that a failure cleared, since a throttled failure no longer stops printing when it is over
-def print_outage_recovery(target, lasted):
+def print_outage_recovery(target, lasted, close=True):
     print(f"* Monitoring recovered for {target} after {display_time(max(1, lasted))}")
-    print_cur_ts("Timestamp:\t\t\t")
+    # A caller with a recovery alert to deliver closes the report itself, so the delivery lines stay inside it
+    if close:
+        print_cur_ts("Timestamp:\t\t\t")
+
+
+# Builds the subject every failure alert shares, so an inbox fed by several monitors sorts them by tool
+def recovery_alert_subject(advice, target):
+    return f"Steam Monitor error: {advice.summary} (user: {target})"
+
+
+# Returns the text groups a failure alert lists under its summary
+def recovery_alert_sections(advice, retry_seconds, failed_checks=0, failing_since=0):
+    retry_lines = []
+    # A first failure has no run to count, so the count and its start appear once a second check has failed
+    if failed_checks > 1:
+        retry_lines.append(f"Failed checks in a row: {failed_checks}")
+        retry_lines.append(f"Failing since: {get_date_from_ts(failing_since)}")
+    retry_lines.append(f"Next retry in: {display_time(retry_seconds)}")
+    sections = [f"To fix: {advice.fix}", "\n".join(retry_lines)]
+    # A detail that only repeats the summary spends a line saying nothing
+    if DEBUG_MODE and advice.detail and advice.detail != advice.summary:
+        sections.append(f"Technical detail: {advice.detail}")
+    return sections
+
+
+# Builds the text of a failure alert, without the timestamp when a webhook service shows its own
+def recovery_alert_body(advice, retry_seconds, failed_checks=0, failing_since=0, timestamp=True):
+    body = "\n\n".join([advice.summary, *recovery_alert_sections(advice, retry_seconds, failed_checks, failing_since)])
+    return body + get_cur_ts("\n\nTimestamp: ") if timestamp else body
+
+
+# Builds the subject of the alert that answers a delivered failure alert once the outage clears
+def outage_recovered_alert_subject(target, lasted):
+    return f"Steam Monitor recovered: monitoring {target} resumed after {display_time(lasted)}"
+
+
+# Builds the text of the recovery alert, naming the failure it closes
+def outage_recovered_alert_body(advice, target, lasted, timestamp=True):
+    body = f"Monitoring recovered for {target} after {display_time(lasted)}.\n\nThe failure was: {advice.summary}"
+    return body + get_cur_ts("\n\nTimestamp: ") if timestamp else body
+
+
+# Reports a successful check after an outage and answers each delivered failure alert with a recovery alert on the same channel
+def report_monitor_recovery(target, username, error_alert, outage, image_url=""):
+    lasted = outage.recovered()
+    if lasted is not None:
+        lasted = max(1, lasted)
+        advice = error_alert.advice
+        # Gated on the channels the failure alert reached and on their switches, so a channel that never heard of the outage stays quiet
+        email_owed = advice is not None and error_alert.delivered("email", ERROR_NOTIFICATION)
+        webhook_owed = advice is not None and error_alert.delivered("webhook", webhook_event_enabled("error"))
+        print_outage_recovery(target, lasted, close=False)
+        if email_owed or webhook_owed:
+            m_subject = outage_recovered_alert_subject(username, lasted)
+            webhook_body = outage_recovered_alert_body(advice, username, lasted, timestamp=False)
+            m_body = webhook_body + get_cur_ts(nl_ch + nl_ch + "Timestamp: ")
+            send_notification_channels("error", m_subject, m_body, email_enabled=email_owed, webhook_enabled=webhook_owed, image_url=image_url, webhook_body=webhook_body)
+        print_cur_ts("Timestamp:\t\t\t")
+    error_alert.reset()
 
 
 # Tracks which features are currently unavailable, so a lasting outage is reported once instead of every cycle
@@ -3838,8 +3914,9 @@ def send_webhook(title, description, notification_type="status", force=False, sl
     return 1
 
 
-# Sends one alert through the enabled email and webhook channels
-def send_notification_channels(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, image_url="", ntfy_priority=0, ntfy_tags=""):
+# Sends one alert through the enabled email and webhook channels, with its own webhook text when the email body
+# carries a part such as the timestamp that the webhook service already shows
+def send_notification_channels(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, image_url="", ntfy_priority=0, ntfy_tags="", webhook_body=None):
     email_attempted = bool(email_enabled)
     webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
     email_delivered = False
@@ -3850,7 +3927,7 @@ def send_notification_channels(notification_type, subject, body, body_html="", e
         debug_print("Email channel", event=notification_type, outcome="OK" if email_delivered else "failed")
     if webhook_attempted:
         print(f"Sending webhook notification via {webhook_provider_display_name()}")
-        webhook_delivered = send_webhook(subject, body, notification_type, force=True, image_url=image_url, ntfy_priority=ntfy_priority, ntfy_tags=ntfy_tags) == 0
+        webhook_delivered = send_webhook(subject, body if webhook_body is None else webhook_body, notification_type, force=True, image_url=image_url, ntfy_priority=ntfy_priority, ntfy_tags=ntfy_tags) == 0
         debug_print("Webhook channel", event=notification_type, outcome="OK" if webhook_delivered else "failed")
     # Delivery, not the attempt, so a channel that failed is retried while one that succeeded is not resent
     return email_delivered, webhook_delivered
@@ -7209,19 +7286,18 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 debug_print("Retry wait", check=f"#{check_count}", due_in=display_time(TRANSIENT_RETRY_SECONDS), reason="one short retry before the full interval")
                 time.sleep(TRANSIENT_RETRY_SECONDS)
                 continue
-            if advice.code == "auth.api_key_invalid":
-                m_subject = f"Steam API key error! (user: {username})"
-                m_body = f"{advice.summary}{nl_ch}{nl_ch}To fix: {advice.fix}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-            else:
-                m_subject = f"Steam monitoring error (user: {username})"
-                m_body = f"{advice.summary}{nl_ch}{nl_ch}To fix: {advice.fix}{nl_ch}{nl_ch}Steam Monitor will retry in {display_time(sleep_interval)}.{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+            error_alert.remember(advice, outage.since)
             # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
             alert_due = not advice.retryable or int(time.time()) - outage.since >= ERROR_ALERT_AFTER_SECONDS
             now = int(time.time())
             error_email_pending = alert_due and error_alert.pending("email", ERROR_NOTIFICATION, now)
             error_webhook_pending = alert_due and error_alert.pending("webhook", webhook_event_enabled("error"), now)
             if error_email_pending or error_webhook_pending:
-                email_delivered, webhook_delivered = send_notification_channels("error", m_subject, m_body, email_enabled=error_email_pending, webhook_enabled=error_webhook_pending, image_url=current_avatar_url, ntfy_priority=5, ntfy_tags="warning")
+                m_subject = recovery_alert_subject(advice, username)
+                # Built once without the timestamp, which the webhook service shows itself and only the email carries
+                webhook_body = recovery_alert_body(advice, sleep_interval, outage.failures, outage.since, timestamp=False)
+                m_body = webhook_body + get_cur_ts(nl_ch + nl_ch + "Timestamp: ")
+                email_delivered, webhook_delivered = send_notification_channels("error", m_subject, m_body, email_enabled=error_email_pending, webhook_enabled=error_webhook_pending, image_url=current_avatar_url, ntfy_priority=5, ntfy_tags="warning", webhook_body=webhook_body)
                 error_alert.record("email", error_email_pending, email_delivered, now)
                 error_alert.record("webhook", error_webhook_pending, webhook_delivered, now)
                 # A retry can reach the screen on a check the outage reporter keeps quiet, and a delivery line
@@ -7240,11 +7316,8 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
             continue
 
-        outage_lasted = outage.recovered()
-        if outage_lasted is not None:
-            print_outage_recovery(steamid, outage_lasted)
+        report_monitor_recovery(steamid, username, error_alert, outage, current_avatar_url)
         transient_retry_used = False
-        error_alert.reset()
 
         # A tracked feature that returned nothing cannot raise its alert, which is invisible without these lines
         unavailable_features = {}
@@ -8005,7 +8078,7 @@ def main():
         dest="notify_errors",
         action="store_false",
         default=None,
-        help="Disable email on errors"
+        help="Disable email on errors and the recovery alert that follows"
     )
     notify.add_argument(
         "--send-test-email",
@@ -8098,14 +8171,14 @@ def main():
         dest="webhook_errors",
         action="store_true",
         default=None,
-        help="Send webhook alerts when monitoring has a problem"
+        help="Send webhook alerts when monitoring has a problem and the recovery alert that follows"
     )
     webhook_error_toggle.add_argument(
         "--no-webhook-error-notify",
         dest="webhook_errors",
         action="store_false",
         default=None,
-        help="Disable webhook alerts when monitoring has a problem"
+        help="Disable webhook alerts when monitoring has a problem and the recovery alert that follows"
     )
     webhook_notify.add_argument(
         "--send-test-webhook",
