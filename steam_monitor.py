@@ -7679,7 +7679,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 if status_online_start_ts > 0:
                     m_subject_after = calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)
                     online_since_msg = f"(after {calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)}: {get_range_of_dates_from_tss(int(status_online_start_ts), int(status_ts), short=True)})"
-                    m_subject_since = f" - {get_short_date_from_ts(int(status_online_start_ts))}"
+                    m_subject_since = f": {get_range_of_dates_from_tss(int(status_online_start_ts), int(status_ts), short=True)}"
                     m_body_was_since = f" ({get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)})\n\nUser was available for {calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)} ({get_range_of_dates_from_tss(int(status_online_start_ts), int(status_ts), short=True)})"
                     m_body_was_since_html = f" ({html_text(get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True))})<br><br>User was available for <b>{html_text(calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False))}</b> ({html_text(get_range_of_dates_from_tss(int(status_online_start_ts), int(status_ts), short=True))})"
                 else:
