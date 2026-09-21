@@ -181,6 +181,43 @@ def test_a_reported_change_is_marked(colored):
     assert f"{colored['status_change']}changed game{monitor.ANSI_RESET}" in game_line
 
 
+# Verifies a value colour never equals a whole-line style that can enclose it, which would hide the value
+def test_block_styles_never_hide_a_name():
+    resolved = {name: monitor._build_ansi_sequence(monitor.DEFAULT_COLOR_THEME[name]) for name in monitor.BLOCK_STYLE_PARTS + monitor.NAME_STYLE_PARTS}
+
+    for block in monitor.BLOCK_STYLE_PARTS:
+        for name in monitor.NAME_STYLE_PARTS:
+            assert resolved[name] != resolved[block], f"{name} is invisible inside a {block} line"
+
+
+# Verifies a block style returns to itself after a value inside it, rather than leaving the rest of the line plain
+def test_a_block_line_keeps_its_colour_after_a_value(colored):
+    line = monitor._colorize_line("* Error: Steam did not answer in time (retrying in 3 minutes)")
+
+    assert line.startswith(colored["error"])
+    assert f"{colored['duration']}3 minutes{monitor.ANSI_RESET}{colored['error']})" in line
+    assert line.endswith(monitor.ANSI_RESET)
+
+
+# Verifies a fix line is marked like the sibling monitors mark it, rather than printing with no colour at all
+def test_a_fix_line_is_coloured(colored):
+    assert monitor._colorize_line("To fix: Copy a fresh key from the dashboard") == f"{colored['info']}To fix: Copy a fresh key from the dashboard{monitor.ANSI_RESET}"
+
+
+# Verifies a warning and a signal mark their own opening word, so a value inside them keeps its own colour
+def test_a_warning_and_a_signal_mark_their_label(colored):
+    warning = monitor._colorize_line("* Warning: misiektoja changed status while the check was failing")
+
+    assert warning == f"* {colored['warning']}Warning:{monitor.ANSI_RESET} misiektoja {colored['status_change']}changed status{monitor.ANSI_RESET} while the check was failing"
+    assert monitor._colorize_line("* Signal SIGUSR1 received") == f"* Signal {colored['signal']}SIGUSR1{monitor.ANSI_RESET} received"
+
+
+# Verifies the verbs that report a game starting or stopping take the presence colours the state words use
+def test_game_verbs_take_the_presence_colours(colored):
+    assert f"{colored['status_online']}started playing{monitor.ANSI_RESET}" in monitor._colorize_line("Steam user misiektoja started playing 'Portal 2'")
+    assert f"{colored['status_offline']}stopped playing{monitor.ANSI_RESET}" in monitor._colorize_line("Steam user misiektoja stopped playing 'Portal 2' after 2 hours")
+
+
 # Verifies a Yes or No answer is coloured only as the whole value of a labelled row
 def test_an_answer_row_is_coloured_like_a_boolean(colored):
     assert monitor._colorize_line("* Friends check:               Yes") == f"* Friends check:               {colored['boolean_true']}Yes{monitor.ANSI_RESET}"
@@ -844,7 +881,7 @@ def test_the_early_stream_colours_a_warning_printed_before_the_log_opens(colored
 
     monitor.ColorStream(buffer, truncate=False).write("* Warning: Configured webhook provider did not match the URL. Using Discord.\n")
 
-    assert buffer.getvalue() == f"{colored['warning']}* Warning: Configured webhook provider did not match the URL. Using Discord.{monitor.ANSI_RESET}\n"
+    assert buffer.getvalue() == f"* {colored['warning']}Warning:{monitor.ANSI_RESET} Configured webhook provider did not match the URL. Using Discord.\n"
 
 
 # Verifies the early stream leaves lines at full width, since truncation is only resolved once arguments are parsed
