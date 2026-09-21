@@ -7587,7 +7587,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             print(f"Steam user {username} changed status from {steam_personastates[status_old]} to {steam_personastates[status]}")
             print(f"User was {steam_personastates[status_old]} for {calculate_timespan(int(status_ts), int(status_ts_old))} ({get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)})")
 
-            m_subject_was_since = f", was {steam_personastates[status_old]}: {get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)}"
+            m_subject_since = f" - {get_short_date_from_ts(int(status_ts_old))}"
             m_subject_after = calculate_timespan(int(status_ts), int(status_ts_old), show_seconds=False)
             m_body_was_since = f" ({get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)})"
             m_body_was_since_html = f" ({html_text(get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True))})"
@@ -7661,7 +7661,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 if status_online_start_ts > 0:
                     m_subject_after = calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)
                     online_since_msg = f"(after {calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)}: {get_range_of_dates_from_tss(int(status_online_start_ts), int(status_ts), short=True)})"
-                    m_subject_was_since = f", was available: {get_range_of_dates_from_tss(int(status_online_start_ts), int(status_ts), short=True)}"
+                    m_subject_since = f" - {get_short_date_from_ts(int(status_online_start_ts))}"
                     m_body_was_since = f" ({get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)})\n\nUser was available for {calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)} ({get_range_of_dates_from_tss(int(status_online_start_ts), int(status_ts), short=True)})"
                     m_body_was_since_html = f" ({html_text(get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True))})<br><br>User was available for <b>{html_text(calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False))}</b> ({html_text(get_range_of_dates_from_tss(int(status_online_start_ts), int(status_ts), short=True))})"
                 else:
@@ -7687,7 +7687,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
             change = True
 
-            m_subject = f"Steam user {username} is now {steam_personastates[status]} (after {m_subject_after}{m_subject_was_since})"
+            m_subject = f"Steam user {username} is {steam_personastates[status]} (after {m_subject_after}{m_subject_since})"
             m_body = f"Steam user {username} changed status from {steam_personastates[status_old]} to {steam_personastates[status]}\n\nUser was {steam_personastates[status_old]} for {calculate_timespan(int(status_ts), int(status_ts_old))}{m_body_was_since}{m_body_inactivity_info}{m_body_short_offline_msg}{m_body_user_in_game}{m_body_played_games}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
             m_body_html = html_email_body(f"Steam user {steam_user_html(username, steamid)} changed status from <b>{html_text(steam_personastates[status_old])}</b> to <b>{html_text(steam_personastates[status])}</b><br><br>User was <b>{html_text(steam_personastates[status_old])}</b> for <b>{html_text(calculate_timespan(int(status_ts), int(status_ts_old)))}</b>{m_body_was_since_html}{m_body_inactivity_info_html}{m_body_short_offline_msg_html}{m_body_user_in_game_html}{m_body_played_games_html}{get_cur_ts('<br><br>Timestamp: ')}")
             webhook_notification_type = "active" if status_old == 0 and status > 0 else "inactive" if status_old > 0 and status == 0 else "status"
