@@ -331,6 +331,7 @@ COLORED_OUTPUT = True
 #     # Activity / game info
 #     "game": "bright_yellow",
 #     "duration": "green",
+#     "status_change": "yellow",
 #     # Misc
 #     "timestamp_label": "",
 #     "timestamp_value": "cyan",
@@ -1321,6 +1322,7 @@ DEFAULT_COLOR_THEME = {
     # Activity / game info
     "game": "bright_yellow",
     "duration": "green",
+    "status_change": "yellow",
     # Misc
     "timestamp_label": "",
     "timestamp_value": "cyan",
@@ -1403,9 +1405,11 @@ _SHORT_RANGE_DATE_RE = re.compile(
 _DATE_RANGE_RE = re.compile(
     r"\b(?:" + _WEEKDAY_ABBR_PATTERN + r")[\t ]\d{1,2}\s+\w{3}\s+\d{2}:\d{2}\s*-\s*\d{2}:\d{2}\b"
 )
-_STATUS_CHANGE_RE = re.compile(
+_STATUS_CHANGE_LINE_RE = re.compile(
     r"^(Steam user .+? changed status from\s+)([a-zA-Z ]+)(\s+to\s+)([a-zA-Z ]+)(.*)$"
 )
+# The verbs the monitoring loop uses to report a change, coloured wherever they appear
+_STATUS_CHANGE_RE = re.compile(r"\b(?:changed status|changed game)\b")
 _DURATION_RE = re.compile(
     r"(\d+\s+(seconds?|minutes?|hours?|days?|weeks?|months?|years?))", re.IGNORECASE
 )
@@ -1661,10 +1665,11 @@ def _colorize_line(line, notification_summary=False):
         return f"{prefix}{colorize('game', game)}"
 
     # Status change long line
-    m = _STATUS_CHANGE_RE.match(line)
+    m = _STATUS_CHANGE_LINE_RE.match(line)
     if m:
         pfx, old_s, mid, new_s, tail = m.groups()
-        # Colour only the status words; keep the surrounding text in default colour
+        # Colour only the verb and the status words; keep the surrounding text in default colour
+        pfx = _sub_outside_color(_STATUS_CHANGE_RE, lambda mo: colorize("status_change", mo.group(0)), pfx)
         return f"{pfx}{colorize_status(old_s)}{mid}{colorize_status(new_s)}{tail}"
 
     # Game change lines - don't color the verb, just process the line normally
@@ -1705,6 +1710,9 @@ def _colorize_line(line, notification_summary=False):
     label, body = row_match.groups() if row_match else ("", line)
     body = _sub_outside_color(_ONLINE_WORD_RE, lambda mo: colorize("status_online", mo.group(0)), body)
     line = label + _sub_outside_color(_OFFLINE_WORD_RE, _offline_repl, body)
+
+    # Highlight the verbs that report a change
+    line = _sub_outside_color(_STATUS_CHANGE_RE, lambda mo: colorize("status_change", mo.group(0)), line)
 
     # A line the caller already styled carries the colours it was meant to have, so the whole-line rules
     # below leave it alone rather than wrapping it in a second style
