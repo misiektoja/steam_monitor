@@ -255,6 +255,7 @@ The four presence colours apply where the tool reports a state, such as a `Statu
 | `status_other` | `white` | A presence value the tool does not recognise |
 | `game` | `bright_yellow` | Game titles |
 | `duration` | `green` | Time spans such as `3 hours, 21 minutes` |
+| `status_change` | `yellow` | The `changed status` and `changed game` part of a change report |
 | `timestamp_label` | *(empty)* | The `Timestamp:` label, left uncoloured by default |
 | `timestamp_value` | `cyan` | The timestamp itself |
 | `info` | `cyan` | `To fix:` lines, notes, prompts and `[SKIP]` rows |
