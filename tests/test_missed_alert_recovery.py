@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Covers the recovery alert sent to a channel that never received the failure alert."""
 
-import pytest
-
 import steam_monitor as monitor
 
 
