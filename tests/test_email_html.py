@@ -3,8 +3,11 @@
 import copy
 import difflib
 import html as html_module
+import json
+import os
 import re
 import time
+from pathlib import Path
 
 import pytest
 
@@ -347,3 +350,9 @@ def test_a_level_alert_without_xp_has_no_empty_line(tmp_path, monkeypatch, capsy
         assert "\n\n\n" not in alert["body"]
         assert "<br><br><br>" not in alert["body_html"]
         assert not structural_diff(alert["body"], alert["body_html"])
+
+
+# Writes the captured alerts as JSON when PREVIEW_ALERTS_JSON names a destination, so a preview tool can render them
+@pytest.mark.skipif(not os.environ.get("PREVIEW_ALERTS_JSON"), reason="set PREVIEW_ALERTS_JSON to dump the alerts")
+def test_dump_the_alerts_for_a_preview(scenario_alerts):
+    Path(os.environ["PREVIEW_ALERTS_JSON"]).write_text(json.dumps(scenario_alerts, indent=2), encoding="utf-8")
