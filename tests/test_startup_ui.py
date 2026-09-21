@@ -170,6 +170,17 @@ def test_a_reported_state_keeps_its_colour(colored, state, part):
     assert f"{colored[part]}{state}{monitor.ANSI_RESET}" in monitor._colorize_line(f"*** User got {state} !")
 
 
+# Verifies the words that report a change carry their own colour instead of blending into the line
+def test_a_reported_change_is_marked(colored):
+    status_line = monitor._colorize_line("Steam user misiektoja changed status from offline to online")
+    game_line = monitor._colorize_line("Steam user misiektoja changed game from 'Portal 2' to 'Half-Life: Alyx' after 2 hours")
+
+    assert f"{colored['status_change']}changed status{monitor.ANSI_RESET}" in status_line
+    assert f"{colored['status_offline']}offline{monitor.ANSI_RESET}" in status_line
+    assert f"{colored['status_online']}online{monitor.ANSI_RESET}" in status_line
+    assert f"{colored['status_change']}changed game{monitor.ANSI_RESET}" in game_line
+
+
 # Verifies a Yes or No answer is coloured only as the whole value of a labelled row
 def test_an_answer_row_is_coloured_like_a_boolean(colored):
     assert monitor._colorize_line("* Friends check:               Yes") == f"* Friends check:               {colored['boolean_true']}Yes{monitor.ANSI_RESET}"
