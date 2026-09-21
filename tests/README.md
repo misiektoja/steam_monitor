@@ -61,6 +61,7 @@ and again before anything is published to PyPI.
 | `test_doctor.py` | The doctor report, its checks, delivery-test consent, exit code and its terminal output contract |
 | `test_help_screen.py` | The `--help` screen: the option groups, the worked examples and the version banner |
 | `test_recovery_errors.py` | The recovery code taxonomy, classifier, rendered fix lines, hint deduplication and secret redaction |
+| `test_missed_alert_recovery.py` | The recovery alert sent to a channel that never received the failure alert |
 | `test_file_safety.py` | Atomic state writes, timestamped backups, untrusted text sanitizing and the declared Python minimum |
 | `test_install_method_commands.py` | Install method detection, printed commands, masked secrets and guide links |
 | `test_monitoring_diagnostics.py` | One monitoring cycle: Steam calls named, degraded features reported, quiet by default |
