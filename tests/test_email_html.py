@@ -289,6 +289,16 @@ def test_the_scenario_covers_every_notification_type(scenario_alerts):
     assert {alert["type"] for alert in scenario_alerts} == {"active", "inactive", "status", "game", "games", "level_xp", "friends", "name", "error"}
 
 
+# Verifies a status subject names one timestamp rather than the whole range, which the body already reports
+def test_a_status_subject_carries_a_single_timestamp(scenario_alerts):
+    subjects = [alert["subject"] for alert in scenario_alerts if alert["type"] in {"active", "inactive", "status"}]
+
+    assert subjects
+    for subject in subjects:
+        assert re.fullmatch(r"Steam user \w+ is \w+ \(after .+ - (?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2} \w{3} \d{2}:\d{2}\)", subject), subject
+        assert len(re.findall(r"\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b", subject)) == 1
+
+
 # Verifies every alert carries an HTML body next to its plain one
 def test_every_alert_has_an_html_body(scenario_alerts):
     missing = [alert["subject"] for alert in scenario_alerts if not alert["body_html"]]
