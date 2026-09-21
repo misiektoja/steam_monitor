@@ -73,6 +73,8 @@ Send one test message to verify the settings:
 steam_monitor --send-test-email
 ```
 
+Every alert is sent as both HTML and plain text in one message. Mail clients that render HTML show the Steam user, the game, the status and the values that changed in bold, with the profile and store pages as links. Clients that do not fall back to the plain text, which is unchanged.
+
 <a id="webhook-settings"></a>
 ## Webhook Settings
 
@@ -167,6 +169,8 @@ Keep the default provider in `steam_monitor.conf`:
 ```ini
 WEBHOOK_PROVIDER = "discord"
 ```
+
+Discord alerts carry the same emphasis as the HTML email, since Discord renders markdown in an embed. Bold values stay bold and links stay clickable. Only Discord gets that wording: ntfy receives the plain body, because it would show the markers literally.
 
 <a id="advanced-discord-format-customization"></a>
 ### Advanced Discord-format customization
