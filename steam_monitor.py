@@ -3390,6 +3390,62 @@ def steam_game_html(gamename, appid=None):
     return f"<b>{html_link(steam_store_url(appid), gamename)}</b>"
 
 
+# Returns the game names Steam knows for the given application IDs, empty when the lookup is unavailable
+def fetch_app_names(s_api, steamid, appids):
+    wanted = sorted({int(appid) for appid in appids})
+    if not wanted:
+        return {}
+    try:
+        owned = s_api.call("IPlayerService.GetOwnedGames", steamid=steamid, include_appinfo=1, include_played_free_games=1, appids_filter=wanted, include_free_sub=0, include_extended_appinfo=0, language="en")
+        return app_names_from_owned(owned)
+    except Exception as exc:
+        debug_swallowed_exception("Fetching game names (IPlayerService.GetOwnedGames)", exc)
+        return {}
+
+
+# Returns the application ID to name mapping carried by one owned-games response
+def app_names_from_owned(payload):
+    response = payload.get("response") if isinstance(payload, dict) else None
+    games = response.get("games", []) if isinstance(response, dict) else []
+    names = {}
+    for game in games if isinstance(games, list) else []:
+        if not isinstance(game, dict) or not isinstance(game.get("appid"), int) or isinstance(game.get("appid"), bool):
+            continue
+        name = sanitize_untrusted_text(game.get("name"))
+        if name:
+            names[int(game["appid"])] = name
+    return names
+
+
+# Returns the game names kept in one saved games library file, dropping any entry it cannot use
+def saved_app_names(payload):
+    stored = payload.get("app_names") if isinstance(payload, dict) else None
+    names = {}
+    for appid, name in stored.items() if isinstance(stored, dict) else []:
+        try:
+            resolved = sanitize_untrusted_text(name)
+        except (TypeError, ValueError):
+            continue
+        if resolved:
+            try:
+                names[int(appid)] = resolved
+            except (TypeError, ValueError):
+                continue
+    return names
+
+
+# Renders one library entry as its game name followed by the application ID, or the ID alone when the name is unknown
+def steam_app_label(appid, app_names):
+    name = app_names.get(int(appid))
+    return f"{name} ({appid})" if name else str(appid)
+
+
+# Renders one library entry as a bold store link, matching the plain label
+def steam_app_label_html(appid, app_names):
+    name = app_names.get(int(appid))
+    return f"{steam_game_html(name, appid)} ({appid})" if name else steam_game_html(str(appid), appid)
+
+
 # Renders one friend list entry as a bold profile link followed by the same details the plain line carries
 def steam_friend_line_html(persona, realname, steamid):
     if realname:
@@ -3445,16 +3501,18 @@ def recovery_alert_body(advice, retry_seconds, failed_checks=0, failing_since=0,
     return body + get_cur_ts("\n\nTimestamp: ") if timestamp else body
 
 
-# Bolds the moment an outage started, the field a reader looks for first in a failure alert
-def html_bold_failing_since(content):
-    return re.sub(r"(Failing since: )([^<]+)", r"\1<b>\2</b>", content, count=1)
+# Bolds the values a reader scans a failure alert for: how often it has failed and since when
+def html_bold_outage_fields(content):
+    for label in ("Failed checks in a row: ", "Failing since: "):
+        content = re.sub(f"({re.escape(label)})([^<]+)", r"\1<b>\2</b>", content, count=1)
+    return content
 
 
 # Builds the HTML body of a failure alert, with the summary in bold and the same paragraphs as the plain text
 def recovery_alert_body_html(advice, retry_seconds, failed_checks=0, failing_since=0, timestamp=True):
     sections = recovery_alert_sections(advice, retry_seconds, failed_checks, failing_since)
     content = "<br><br>".join([f"<b>{html_text(advice.summary)}</b>", *(html_autolink_urls(html_text(section)) for section in sections)])
-    return html_bold_failing_since(html_email_body(f"{content}{get_cur_ts('<br><br>Timestamp: ') if timestamp else ''}"))
+    return html_bold_outage_fields(html_email_body(f"{content}{get_cur_ts('<br><br>Timestamp: ') if timestamp else ''}"))
 
 
 # Builds the subject of the alert that answers a delivered failure alert once the outage clears
@@ -7037,6 +7095,8 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     last_friend_ids = None
     last_games_count = None
     last_games_appids = None
+    # Names for the owned application IDs, so a library change reads as titles rather than bare numbers
+    games_app_names = {}
 
     try:
         if csv_file_name:
@@ -7132,7 +7192,8 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             with open(steam_games_file, 'r', encoding="utf-8") as f:
                 games_data = json.load(f)
             last_games_count, last_games_appids = games_library_snapshot(games_data, saved=True)
-            debug_print("Reading the games library file", path=steam_games_file, games=last_games_count, outcome="OK")
+            games_app_names = saved_app_names(games_data)
+            debug_print("Reading the games library file", path=steam_games_file, games=last_games_count, names=len(games_app_names) or None, outcome="OK")
         except Exception as e:
             # The next successful lookup replaces this file, so an unusable one costs the baseline rather than the run
             print_recovery_error(e, context="file", detail=f"Cannot load the games library from '{steam_games_file}': {e}. The first lookup starts a fresh baseline and reports no library change for it", label="Warning")
@@ -7225,10 +7286,11 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     # Optional games library snapshot at monitoring start
     if GAMES_LIBRARY_CHECK:
         try:
+            # The single snapshot per run asks for app info, so a game removed later can still be named
             owned = s_api.call(
                 "IPlayerService.GetOwnedGames",
                 steamid=steamid,
-                include_appinfo=0,
+                include_appinfo=1,
                 include_played_free_games=1,
                 appids_filter=[],
                 include_free_sub=0,
@@ -7237,11 +7299,12 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             )
             current_count, owned_appids = games_library_snapshot(owned)
             current_appids = sorted(owned_appids)
+            games_app_names.update(app_names_from_owned(owned))
             print(f"\nGames in library:\t\t{current_count}")
             last_games_count = current_count
             last_games_appids = set(current_appids)
             try:
-                write_json_atomic(steam_games_file, {"game_count": current_count, "appids": current_appids})
+                write_json_atomic(steam_games_file, {"game_count": current_count, "appids": current_appids, "app_names": {str(appid): games_app_names[appid] for appid in current_appids if appid in games_app_names}})
                 debug_print("Saved the games library", path=steam_games_file, outcome="OK")
             except Exception as e:
                 print_recovery_error(e, context="file", detail=f"Cannot save games library to '{steam_games_file}'")
@@ -7877,13 +7940,18 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     else:
                         print(f"Steam user {username} games library changed (same count: {new_count}, titles changed)")
 
+                    # Only the changed IDs are looked up, and only when the library actually changed
+                    unknown_appids = [appid for appid in added_appids + removed_appids if appid not in games_app_names]
+                    if unknown_appids:
+                        games_app_names.update(fetch_app_names(s_api, steamid, unknown_appids))
+
                     if added_appids:
-                        print(f"Added: {', '.join(str(a) for a in added_appids)}")
+                        print(f"Added: {', '.join(steam_app_label(a, games_app_names) for a in added_appids)}")
                     if removed_appids:
-                        print(f"Removed: {', '.join(str(a) for a in removed_appids)}")
+                        print(f"Removed: {', '.join(steam_app_label(a, games_app_names) for a in removed_appids)}")
 
                     try:
-                        write_json_atomic(steam_games_file, {"game_count": new_count, "appids": sorted(current_games_appids)})
+                        write_json_atomic(steam_games_file, {"game_count": new_count, "appids": sorted(current_games_appids), "app_names": {str(appid): games_app_names[appid] for appid in sorted(current_games_appids) if appid in games_app_names}})
                     except Exception as e:
                         print_recovery_error(e, context="file.unwritable", detail=f"Cannot save the games library to '{steam_games_file}': {e}")
 
@@ -7905,11 +7973,11 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                             body_parts.append(f"Steam user {username} games library changed (same count: {new_count}, titles changed)")
                             body_parts_html.append(f"Steam user {steam_user_html(username, steamid)} games library changed (same count: <b>{new_count}</b>, titles changed)")
                         if added_appids:
-                            body_parts.append(f"Added: {', '.join(str(a) for a in added_appids)}")
-                            body_parts_html.append(f"Added: {', '.join(html_link(steam_store_url(a), a) for a in added_appids)}")
+                            body_parts.append(f"Added: {', '.join(steam_app_label(a, games_app_names) for a in added_appids)}")
+                            body_parts_html.append(f"Added: {', '.join(steam_app_label_html(a, games_app_names) for a in added_appids)}")
                         if removed_appids:
-                            body_parts.append(f"Removed: {', '.join(str(a) for a in removed_appids)}")
-                            body_parts_html.append(f"Removed: {', '.join(html_link(steam_store_url(a), a) for a in removed_appids)}")
+                            body_parts.append(f"Removed: {', '.join(steam_app_label(a, games_app_names) for a in removed_appids)}")
+                            body_parts_html.append(f"Removed: {', '.join(steam_app_label_html(a, games_app_names) for a in removed_appids)}")
                         m_body_games = "\n".join(body_parts) + get_cur_ts(nl_ch + nl_ch + "Timestamp: ")
                         m_body_games_html = html_email_body("<br>".join(body_parts_html) + get_cur_ts("<br><br>Timestamp: "))
                         send_notification_channels("games", m_subject_games, m_body_games, m_body_games_html, email_enabled=GAMES_LIBRARY_NOTIFICATION, image_url=current_avatar_url)
