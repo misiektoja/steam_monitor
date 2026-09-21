@@ -3064,6 +3064,24 @@ def iter_exc_chain(error, max_depth=8):
         current = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
 
 
+# Names the transport failure behind an exception chain, since a timeout raised with no message leaves the text rules nothing to read
+def network_failure_code(error):
+    timed_out = False
+    unreachable = False
+    for current in iter_exc_chain(error):
+        name = type(current).__name__
+        # A TLS failure has its own advice, so a chain that names one is left to the rules that recognize it
+        if "SSL" in name or "Certificate" in name:
+            return ""
+        if isinstance(current, TimeoutError) or "Timeout" in name:
+            timed_out = True
+        elif isinstance(current, ConnectionError) or name in ("gaierror", "herror") or any(term in name for term in ("Connect", "ProxyError", "NameResolution", "Unreachable")):
+            unreachable = True
+    if timed_out:
+        return "network.timeout"
+    return "network.unavailable" if unreachable else ""
+
+
 # Reports whether this process hit the local file descriptor limit rather than a remote failure
 def is_too_many_open_files(error):
     for current in iter_exc_chain(error):
@@ -3196,6 +3214,10 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
         return advice("target.not_found", "Steam has no profile for the monitored Steam64 ID", "Check the Steam64 ID, since a deleted or renamed account cannot be monitored", False, USAGE_GUIDE_URL)
     if status is not None and status >= 500 or "service unavailable" in message or "bad gateway" in message:
         return advice("steam.unavailable", "The Steam Web API is temporarily unavailable", "Usually nothing to do, the tool retries on its own. If it continues, wait for Steam to recover", True, CONNECTION_GUIDE_URL)
+    # Read before the text rules, since a transport error can arrive with an empty message
+    transport_code = network_failure_code(error)
+    if transport_code:
+        return advice(transport_code, "The Steam Web API did not answer in time" if transport_code == "network.timeout" else "The Steam Web API could not be reached", TRANSIENT_NETWORK_FIX, True, CONNECTION_GUIDE_URL)
     if "timed out" in message or "timeout" in message:
         return advice("network.timeout", "The Steam Web API did not answer in time", TRANSIENT_NETWORK_FIX, True, CONNECTION_GUIDE_URL)
     if any(term in message for term in ("connection", "name resolution", "network is unreachable", "no connectivity")):
