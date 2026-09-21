@@ -477,6 +477,8 @@ SECRETS_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#storing-secrets"
 TLS_GUIDE_URL = f"{DOCS_BASE_URL}/configuration/#tls-verification"
 USAGE_GUIDE_URL = f"{DOCS_BASE_URL}/usage/"
 STEAM_API_KEY_REGISTRATION_URL = "https://steamcommunity.com/dev/apikey"
+STEAM_COMMUNITY_PROFILE_URL = "https://steamcommunity.com/profiles/"
+STEAM_STORE_APP_URL = "https://store.steampowered.com/app/"
 STEAM_TARGET_FORMS = "Steam64 ID, Steam3 identifier, vanity name or full profile URL"
 STEAM_TARGET_INPUT_ERROR = f"Enter a {STEAM_TARGET_FORMS}, for example https://steamcommunity.com/id/<vanity_name>/"
 DOCTOR_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#doctor-preflight"
@@ -587,6 +589,7 @@ import re
 import shlex
 import subprocess
 from collections import namedtuple
+from html import escape, unescape
 import unicodedata
 import ipaddress
 import tempfile
@@ -3339,6 +3342,83 @@ def print_outage_recovery(target, lasted, close=True):
         print_cur_ts("Timestamp:\t\t\t")
 
 
+# Returns one escaped HTML text fragment with newlines turned into line breaks
+def html_text(text):
+    return escape(str(text)).replace("\n", "<br>")
+
+
+# Returns one value escaped for use inside an HTML attribute
+def escape_html_attr(value):
+    return escape(str(value or ""), quote=True)
+
+
+# Wraps one rendered fragment in the document every HTML alert body shares
+def html_email_body(content):
+    return f"<html><head></head><body>{content}</body></html>"
+
+
+# Turns a bare URL inside already escaped HTML text into a link, so an alert that prints a guide link is clickable
+def html_autolink_urls(content):
+    return re.sub(r"(?<![\"'=])(https?://[^\s<>\"']+[^\s<>\"'.,;:!?)\]])", r'<a href="\1">\1</a>', str(content))
+
+
+# Returns the Steam community profile of one Steam64 ID
+def steam_profile_url(steamid):
+    return f"{STEAM_COMMUNITY_PROFILE_URL}{steamid}" if steamid else ""
+
+
+# Returns the Steam store page of one application ID
+def steam_store_url(appid):
+    try:
+        return f"{STEAM_STORE_APP_URL}{int(appid)}/" if appid else ""
+    except (TypeError, ValueError):
+        return ""
+
+
+# Renders one escaped label as a link when a destination is known, and as plain text when it is not
+def html_link(url, label):
+    return f'<a href="{escape_html_attr(url)}">{html_text(label)}</a>' if url else html_text(label)
+
+
+# Renders one Steam account as a bold link to its community profile
+def steam_user_html(username, steamid=None):
+    return f"<b>{html_link(steam_profile_url(steamid), username)}</b>"
+
+
+# Renders one game title as a bold link to its Steam store page
+def steam_game_html(gamename, appid=None):
+    return f"<b>{html_link(steam_store_url(appid), gamename)}</b>"
+
+
+# Renders one friend list entry as a bold profile link followed by the same details the plain line carries
+def steam_friend_line_html(persona, realname, steamid):
+    if realname:
+        return f"- {steam_user_html(persona, steamid)} ({html_text(realname)}) [{html_text(steamid)}]"
+    return f"- {steam_user_html(persona or steamid, steamid)} [{html_text(steamid)}]"
+
+
+# Converts one HTML anchor to Discord markdown, leaving a self-labeled link bare so Discord turns it into a link itself
+def anchor_to_discord_markdown(url, inner_html):
+    target = unescape(str(url or "")).strip()
+    label = " ".join(unescape(re.sub(r"(?s)<[^>]+>", "", str(inner_html or ""))).split())
+    # Discord prints a masked link as plain text when its label repeats the destination, while a bare URL always links
+    if not target or not label or label == target:
+        return target or label
+    return f"[{inner_html}]({target})"
+
+
+# Converts one HTML email body to the Discord markdown subset, so a Discord alert reads like the email
+def html_body_to_discord_markdown(body_html):
+    text = re.sub(r"(?is)</?(?:html|head|body)\s*>", "", str(body_html or ""))
+    text = re.sub(r"(?is)<a\s[^>]*?href=[\"']([^\"']*)[\"'][^>]*>(.*?)</a>", lambda m: anchor_to_discord_markdown(m.group(1), m.group(2)), text)
+    text = re.sub(r"(?is)<b\s*>(.*?)</b\s*>", lambda m: f"**{m.group(1)}**" if m.group(1).strip() else m.group(1), text)
+    text = re.sub(r"(?is)<i\s*>(.*?)</i\s*>", lambda m: f"*{m.group(1)}*" if m.group(1).strip() else m.group(1), text)
+    text = re.sub(r"(?is)<br\s*/?>", "\n", text)
+    # Anything still tag-shaped is layout the markdown body has no use for, such as a stray paragraph or list wrapper
+    text = re.sub(r"(?s)<[^>]+>", "", text)
+    return unescape(text).strip()
+
+
 # Builds the subject every failure alert shares, so an inbox fed by several monitors sorts them by tool
 def recovery_alert_subject(advice, target):
     return f"Steam Monitor error: {advice.summary} (user: {target})"
@@ -3365,6 +3445,18 @@ def recovery_alert_body(advice, retry_seconds, failed_checks=0, failing_since=0,
     return body + get_cur_ts("\n\nTimestamp: ") if timestamp else body
 
 
+# Bolds the moment an outage started, the field a reader looks for first in a failure alert
+def html_bold_failing_since(content):
+    return re.sub(r"(Failing since: )([^<]+)", r"\1<b>\2</b>", content, count=1)
+
+
+# Builds the HTML body of a failure alert, with the summary in bold and the same paragraphs as the plain text
+def recovery_alert_body_html(advice, retry_seconds, failed_checks=0, failing_since=0, timestamp=True):
+    sections = recovery_alert_sections(advice, retry_seconds, failed_checks, failing_since)
+    content = "<br><br>".join([f"<b>{html_text(advice.summary)}</b>", *(html_autolink_urls(html_text(section)) for section in sections)])
+    return html_bold_failing_since(html_email_body(f"{content}{get_cur_ts('<br><br>Timestamp: ') if timestamp else ''}"))
+
+
 # Builds the subject of the alert that answers a delivered failure alert once the outage clears
 def outage_recovered_alert_subject(target, lasted):
     return f"Steam Monitor recovered: monitoring {target} resumed after {display_time(lasted)}"
@@ -3374,6 +3466,13 @@ def outage_recovered_alert_subject(target, lasted):
 def outage_recovered_alert_body(advice, target, lasted, timestamp=True):
     body = f"Monitoring recovered for {target} after {display_time(lasted)}.\n\nThe failure was: {advice.summary}"
     return body + get_cur_ts("\n\nTimestamp: ") if timestamp else body
+
+
+# Builds the HTML body of the recovery alert, matching the plain text
+def outage_recovered_alert_body_html(advice, target, lasted, steamid=None, timestamp=True):
+    target_html = f"<b>{html_link(steam_profile_url(steamid), target)}</b>"
+    body = f"Monitoring recovered for {target_html} after <b>{html_text(display_time(lasted))}</b>.<br><br>The failure was: {html_text(advice.summary)}"
+    return html_email_body(f"{body}{get_cur_ts('<br><br>Timestamp: ') if timestamp else ''}")
 
 
 # Reports a successful check after an outage and answers each delivered failure alert with a recovery alert on the same channel
@@ -3390,7 +3489,9 @@ def report_monitor_recovery(target, username, error_alert, outage, image_url="")
             m_subject = outage_recovered_alert_subject(username, lasted)
             webhook_body = outage_recovered_alert_body(advice, username, lasted, timestamp=False)
             m_body = webhook_body + get_cur_ts(nl_ch + nl_ch + "Timestamp: ")
-            send_notification_channels("error", m_subject, m_body, email_enabled=email_owed, webhook_enabled=webhook_owed, image_url=image_url, webhook_body=webhook_body)
+            m_body_html = outage_recovered_alert_body_html(advice, username, lasted, steamid=target)
+            webhook_body_html = outage_recovered_alert_body_html(advice, username, lasted, steamid=target, timestamp=False)
+            send_notification_channels("error", m_subject, m_body, m_body_html, email_enabled=email_owed, webhook_enabled=webhook_owed, image_url=image_url, webhook_body=webhook_body, webhook_body_html=webhook_body_html)
         print_cur_ts("Timestamp:\t\t\t")
     error_alert.reset()
 
@@ -3852,7 +3953,7 @@ def _retain_webhook_secrets(deliver):
 
 @_retain_webhook_secrets
 # Sends one webhook through an isolated bounded retry path
-def send_webhook(title, description, notification_type="status", force=False, sleeper=None, image_url="", ntfy_priority=0, ntfy_tags="", report_delivery=True):
+def send_webhook(title, description, notification_type="status", force=False, sleeper=None, image_url="", ntfy_priority=0, ntfy_tags="", report_delivery=True, discord_description=""):
     if not force and not webhook_event_enabled(notification_type):
         return 1
     destination = str(WEBHOOK_URL or "").strip()
@@ -3876,10 +3977,12 @@ def send_webhook(title, description, notification_type="status", force=False, sl
         print_webhook_error(header_error)
         return 1
     normalized_image_url = normalize_steam_image_url(image_url)
+    # Discord renders markdown, so it gets the email's formatting while ntfy keeps the plain body it can display
+    effective_description = discord_description if provider == "discord" and discord_description else description
     try:
-        webhook_values = build_webhook_values(title, description, notification_type, normalized_image_url)
+        webhook_values = build_webhook_values(title, effective_description, notification_type, normalized_image_url)
         request_headers = build_webhook_headers(provider, webhook_values)
-        discord_payload = build_webhook_payload(title, description, notification_type, normalized_image_url, webhook_values) if provider == "discord" else None
+        discord_payload = build_webhook_payload(title, effective_description, notification_type, normalized_image_url, webhook_values) if provider == "discord" else None
     except ValueError as exc:
         print_webhook_error(str(exc))
         return 1
@@ -3944,7 +4047,7 @@ def send_webhook(title, description, notification_type="status", force=False, sl
 
 # Sends one alert through the enabled email and webhook channels, with its own webhook text when the email body
 # carries a part such as the timestamp that the webhook service already shows
-def send_notification_channels(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, image_url="", ntfy_priority=0, ntfy_tags="", webhook_body=None):
+def send_notification_channels(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, image_url="", ntfy_priority=0, ntfy_tags="", webhook_body=None, webhook_body_html=""):
     email_attempted = bool(email_enabled)
     webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
     email_delivered = False
@@ -3955,7 +4058,8 @@ def send_notification_channels(notification_type, subject, body, body_html="", e
         debug_print("Email channel", event=notification_type, outcome="OK" if email_delivered else "failed")
     if webhook_attempted:
         print(f"Sending webhook notification via {webhook_provider_display_name()}")
-        webhook_delivered = send_webhook(subject, body if webhook_body is None else webhook_body, notification_type, force=True, image_url=image_url, ntfy_priority=ntfy_priority, ntfy_tags=ntfy_tags) == 0
+        discord_description = html_body_to_discord_markdown(webhook_body_html or body_html)
+        webhook_delivered = send_webhook(subject, body if webhook_body is None else webhook_body, notification_type, force=True, image_url=image_url, ntfy_priority=ntfy_priority, ntfy_tags=ntfy_tags, discord_description=discord_description) == 0
         debug_print("Webhook channel", event=notification_type, outcome="OK" if webhook_delivered else "failed")
     # Delivery, not the attempt, so a channel that failed is retried while one that succeeded is not resent
     return email_delivered, webhook_delivered
@@ -7327,7 +7431,9 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 # Built once without the timestamp, which the webhook service shows itself and only the email carries
                 webhook_body = recovery_alert_body(advice, sleep_interval, outage.failures, outage.since, timestamp=False)
                 m_body = webhook_body + get_cur_ts(nl_ch + nl_ch + "Timestamp: ")
-                email_delivered, webhook_delivered = send_notification_channels("error", m_subject, m_body, email_enabled=error_email_pending, webhook_enabled=error_webhook_pending, image_url=current_avatar_url, ntfy_priority=5, ntfy_tags="warning", webhook_body=webhook_body)
+                m_body_html = recovery_alert_body_html(advice, sleep_interval, outage.failures, outage.since)
+                webhook_body_html = recovery_alert_body_html(advice, sleep_interval, outage.failures, outage.since, timestamp=False)
+                email_delivered, webhook_delivered = send_notification_channels("error", m_subject, m_body, m_body_html, email_enabled=error_email_pending, webhook_enabled=error_webhook_pending, image_url=current_avatar_url, ntfy_priority=5, ntfy_tags="warning", webhook_body=webhook_body, webhook_body_html=webhook_body_html)
                 error_alert.record("email", error_email_pending, email_delivered, now)
                 error_alert.record("webhook", error_webhook_pending, webhook_delivered, now)
                 # A retry can reach the screen on a check the outage reporter keeps quiet, and a delivery line
@@ -7389,9 +7495,12 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             m_subject_was_since = f", was {steam_personastates[status_old]}: {get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)}"
             m_subject_after = calculate_timespan(int(status_ts), int(status_ts_old), show_seconds=False)
             m_body_was_since = f" ({get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)})"
+            m_body_was_since_html = f" ({html_text(get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True))})"
 
             m_body_short_offline_msg = ""
+            m_body_short_offline_msg_html = ""
             m_body_inactivity_info = ""
+            m_body_inactivity_info_html = ""
 
             # Track inactivity for away/snooze status changes
             # User changed from "online" to "away" - estimate last activity as ~5 minutes before status change
@@ -7403,9 +7512,11 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
                 inactivity_msg = f"User was likely active for ~{display_time(estimated_active_duration)}, then inactive for ~{display_time(estimated_inactive_duration)} before status changed to away"
                 inactivity_msg_email = f"\n\n{inactivity_msg}\n\nEstimated last activity: {get_date_from_ts(estimated_last_activity_ts)}"
+                inactivity_msg_html = f"User was likely active for ~<b>{html_text(display_time(estimated_active_duration))}</b>, then inactive for ~<b>{html_text(display_time(estimated_inactive_duration))}</b> before status changed to <b>away</b>"
                 print(inactivity_msg)
                 print(f"Estimated last activity:\t{get_date_from_ts(estimated_last_activity_ts)}")
                 m_body_inactivity_info = inactivity_msg_email
+                m_body_inactivity_info_html = f"<br><br>{inactivity_msg_html}<br><br>Estimated last activity: <b>{html_text(get_date_from_ts(estimated_last_activity_ts))}</b>"
 
             # User changed from "away" to "snooze" - total inactivity is ~5 minutes (before away) + away duration
             elif status_old == 3 and status == 4:  # away (3) to snooze (4)
@@ -7423,9 +7534,11 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
                 inactivity_msg = f"User was likely inactive for ~{display_time(total_inactivity)} total before status changed to snooze (including ~{display_time(STEAM_AWAY_INACTIVITY_THRESHOLD)} before away status + {display_time(away_duration)} away)"
                 inactivity_msg_email = f"\n\n{inactivity_msg}\n\nEstimated last activity: {estimated_last_activity_display}"
+                inactivity_msg_html = f"User was likely inactive for ~<b>{html_text(display_time(total_inactivity))}</b> total before status changed to <b>snooze</b> (including ~{html_text(display_time(STEAM_AWAY_INACTIVITY_THRESHOLD))} before away status + {html_text(display_time(away_duration))} away)"
                 print(inactivity_msg)
                 print(f"Estimated last activity:\t{estimated_last_activity_display}")
                 m_body_inactivity_info = inactivity_msg_email
+                m_body_inactivity_info_html = f"<br><br>{inactivity_msg_html}<br><br>Estimated last activity: <b>{html_text(estimated_last_activity_display)}</b>"
 
             # Player got online (from offline, away, or snooze)
             if status_old == 0 and status > 0:
@@ -7439,12 +7552,14 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 elif (status_ts - status_ts_old) <= OFFLINE_INTERRUPT and status_online_start_ts_old > 0:
                     status_online_start_ts = status_online_start_ts_old
                     m_body_short_offline_msg = f"\n\nShort offline interruption ({display_time(status_ts - status_ts_old)}), online start timestamp set back to {get_short_date_from_ts(status_online_start_ts_old)}"
+                    m_body_short_offline_msg_html = f"<br><br>Short offline interruption (<b>{html_text(display_time(status_ts - status_ts_old))}</b>), online start timestamp set back to <b>{html_text(get_short_date_from_ts(status_online_start_ts_old))}</b>"
                     print(f"Short offline interruption ({display_time(status_ts - status_ts_old)}), online start timestamp set back to {get_short_date_from_ts(status_online_start_ts_old)}")
                 act_inact_flag = True
             elif (status_old == 3 or status_old == 4) and status == 1:  # away (3) or snooze (4) to online (1)
                 estimated_last_activity_ts = 0  # Reset when user becomes active again
 
             m_body_played_games = ""
+            m_body_played_games_html = ""
 
             # Player got offline
             if status_old > 0 and status == 0:
@@ -7453,6 +7568,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     online_since_msg = f"(after {calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)}: {get_range_of_dates_from_tss(int(status_online_start_ts), int(status_ts), short=True)})"
                     m_subject_was_since = f", was available: {get_range_of_dates_from_tss(int(status_online_start_ts), int(status_ts), short=True)}"
                     m_body_was_since = f" ({get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True)})\n\nUser was available for {calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False)} ({get_range_of_dates_from_tss(int(status_online_start_ts), int(status_ts), short=True)})"
+                    m_body_was_since_html = f" ({html_text(get_range_of_dates_from_tss(int(status_ts_old), int(status_ts), short=True))})<br><br>User was available for <b>{html_text(calculate_timespan(int(status_ts), int(status_online_start_ts), show_seconds=False))}</b> ({html_text(get_range_of_dates_from_tss(int(status_online_start_ts), int(status_ts), short=True))})"
                 else:
                     online_since_msg = ""
                 if games_number > 0:
@@ -7460,6 +7576,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                         game_total_ts += (int(game_ts) - int(game_ts_old))
                         game_total_after_offline_counted = True
                     m_body_played_games = f"\n\nUser played {games_number} games for total time of {display_time(game_total_ts)}"
+                    m_body_played_games_html = f"<br><br>User played <b>{games_number}</b> games for total time of <b>{html_text(display_time(game_total_ts))}</b>"
                     print(f"User played {games_number} games for total time of {display_time(game_total_ts)}")
                 print(f"*** User got OFFLINE ! {online_since_msg}")
                 status_online_start_ts_old = status_online_start_ts
@@ -7467,23 +7584,28 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 act_inact_flag = True
 
             m_body_user_in_game = ""
+            m_body_user_in_game_html = ""
             if gameid:
                 print(f"User is currently in-game: {gamename}")
                 m_body_user_in_game = f"\n\nUser is currently in-game: {gamename}"
+                m_body_user_in_game_html = f"<br><br>User is currently in-game: {steam_game_html(gamename, gameid)}"
 
             change = True
 
             m_subject = f"Steam user {username} is now {steam_personastates[status]} (after {m_subject_after}{m_subject_was_since})"
             m_body = f"Steam user {username} changed status from {steam_personastates[status_old]} to {steam_personastates[status]}\n\nUser was {steam_personastates[status_old]} for {calculate_timespan(int(status_ts), int(status_ts_old))}{m_body_was_since}{m_body_inactivity_info}{m_body_short_offline_msg}{m_body_user_in_game}{m_body_played_games}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+            m_body_html = html_email_body(f"Steam user {steam_user_html(username, steamid)} changed status from <b>{html_text(steam_personastates[status_old])}</b> to <b>{html_text(steam_personastates[status])}</b><br><br>User was <b>{html_text(steam_personastates[status_old])}</b> for <b>{html_text(calculate_timespan(int(status_ts), int(status_ts_old)))}</b>{m_body_was_since_html}{m_body_inactivity_info_html}{m_body_short_offline_msg_html}{m_body_user_in_game_html}{m_body_played_games_html}{get_cur_ts('<br><br>Timestamp: ')}")
             webhook_notification_type = "active" if status_old == 0 and status > 0 else "inactive" if status_old > 0 and status == 0 else "status"
             webhook_status_enabled = webhook_event_enabled("status") or webhook_event_enabled(webhook_notification_type)
             if STATUS_NOTIFICATION or (ACTIVE_INACTIVE_NOTIFICATION and act_inact_flag) or webhook_status_enabled:
-                send_notification_channels(webhook_notification_type, m_subject, m_body, email_enabled=STATUS_NOTIFICATION or (ACTIVE_INACTIVE_NOTIFICATION and act_inact_flag), webhook_enabled=webhook_status_enabled, image_url=current_avatar_url)
+                send_notification_channels(webhook_notification_type, m_subject, m_body, m_body_html, email_enabled=STATUS_NOTIFICATION or (ACTIVE_INACTIVE_NOTIFICATION and act_inact_flag), webhook_enabled=webhook_status_enabled, image_url=current_avatar_url)
             status_ts_old = status_ts
             print_cur_ts("Timestamp:\t\t\t")
 
         # Player started/stopped/changed the game
         if gameid != gameid_old:
+            # Cleared so the guard below cannot resend the status alert when no game branch produced a body
+            m_subject = m_body = m_body_html = ""
 
             # User changed the game
             if gameid_old and gameid:
@@ -7493,6 +7615,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 games_number += 1
                 m_subject = f"Steam user {username} changed game to '{gamename}' (after {calculate_timespan(int(game_ts), int(game_ts_old), show_seconds=False)}: {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True)})"
                 m_body = f"Steam user {username} changed game from '{gamename_old}' to '{gamename}' after {calculate_timespan(int(game_ts), int(game_ts_old))}\n\nUser played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=' to ')}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                m_body_html = html_email_body(f"Steam user {steam_user_html(username, steamid)} changed game from '{steam_game_html(gamename_old, gameid_old)}' to '{steam_game_html(gamename, gameid)}' after <b>{html_text(calculate_timespan(int(game_ts), int(game_ts_old)))}</b><br><br>User played game from {html_text(get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=' to '))}{get_cur_ts('<br><br>Timestamp: ')}")
 
             # User started playing new game
             elif not gameid_old and gameid:
@@ -7500,6 +7623,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 games_number += 1
                 m_subject = f"Steam user {username} now plays '{gamename}'"
                 m_body = f"Steam user {username} now plays '{gamename}'{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                m_body_html = html_email_body(f"Steam user {steam_user_html(username, steamid)} now plays '{steam_game_html(gamename, gameid)}'{get_cur_ts('<br><br>Timestamp: ')}")
 
             # User stopped playing the game
             elif gameid_old and not gameid:
@@ -7509,12 +7633,13 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     game_total_ts += (int(game_ts) - int(game_ts_old))
                 m_subject = f"Steam user {username} stopped playing '{gamename_old}' (after {calculate_timespan(int(game_ts), int(game_ts_old), show_seconds=False)}: {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True)})"
                 m_body = f"Steam user {username} stopped playing '{gamename_old}' after {calculate_timespan(int(game_ts), int(game_ts_old))}\n\nUser played game from {get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=' to ')}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                m_body_html = html_email_body(f"Steam user {steam_user_html(username, steamid)} stopped playing '{steam_game_html(gamename_old, gameid_old)}' after <b>{html_text(calculate_timespan(int(game_ts), int(game_ts_old)))}</b><br><br>User played game from {html_text(get_range_of_dates_from_tss(int(game_ts_old), int(game_ts), short=True, between_sep=' to '))}{get_cur_ts('<br><br>Timestamp: ')}")
 
             change = True
 
             if (GAME_CHANGE_NOTIFICATION or webhook_event_enabled("game")) and m_subject and m_body:
                 game_image_url = steam_game_image_url(gameid or gameid_old)
-                send_notification_channels("game", m_subject, m_body, email_enabled=GAME_CHANGE_NOTIFICATION, image_url=game_image_url)
+                send_notification_channels("game", m_subject, m_body, m_body_html, email_enabled=GAME_CHANGE_NOTIFICATION, image_url=game_image_url)
 
             game_ts_old = game_ts
             print_cur_ts("Timestamp:\t\t\t")
@@ -7534,13 +7659,16 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 delta = level_int - last_level_int
                 direction = "increased" if delta > 0 else "decreased"
                 print(f"Steam user {username} level {direction} from {last_level_int} to {level_int} (delta {delta})")
-                xp_info_str = ""
+                # The fragment carries its own line break, so an unavailable XP value leaves no empty line behind
+                xp_info_line = ""
+                xp_info_line_html = ""
                 if current_player_xp is not None:
                     try:
                         xp_int_for_level = int(current_player_xp)
-                        xp_info_str = f"Total XP after level change:\t{xp_int_for_level}"
+                        xp_info_line = f"\nTotal XP after level change: {xp_int_for_level}"
+                        xp_info_line_html = f"<br>Total XP after level change: <b>{xp_int_for_level}</b>"
                     except (TypeError, ValueError):
-                        xp_info_str = ""
+                        pass
                 if profile_csv_file_name:
                     try:
                         write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="steam_level_change", old_value=last_level_int, new_value=level_int, delta=delta,)
@@ -7551,10 +7679,15 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     m_subject = f"Steam user {username} level changed to {level_int}"
                     m_body = (
                         f"Steam user {username} level {direction} from {last_level_int} to {level_int} (delta {delta})"
-                        f"\n{xp_info_str}"
+                        f"{xp_info_line}"
                         f"{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                     )
-                    send_notification_channels("level_xp", m_subject, m_body, email_enabled=STEAM_LEVEL_XP_NOTIFICATION, image_url=current_avatar_url)
+                    m_body_html = html_email_body(
+                        f"Steam user {steam_user_html(username, steamid)} level <b>{html_text(direction)}</b> from <b>{last_level_int}</b> to <b>{level_int}</b> (delta <b>{delta}</b>)"
+                        f"{xp_info_line_html}"
+                        f"{get_cur_ts('<br><br>Timestamp: ')}"
+                    )
+                    send_notification_channels("level_xp", m_subject, m_body, m_body_html, email_enabled=STEAM_LEVEL_XP_NOTIFICATION, image_url=current_avatar_url)
 
                 print_cur_ts("Timestamp:\t\t\t")
 
@@ -7589,7 +7722,11 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                         f"Steam user {username} total XP {direction} from {last_xp_int} to {xp_int} (delta {delta})"
                         f"{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                     )
-                    send_notification_channels("level_xp", m_subject, m_body, email_enabled=STEAM_LEVEL_XP_NOTIFICATION, image_url=current_avatar_url)
+                    m_body_html = html_email_body(
+                        f"Steam user {steam_user_html(username, steamid)} total XP <b>{html_text(direction)}</b> from <b>{last_xp_int}</b> to <b>{xp_int}</b> (delta <b>{delta}</b>)"
+                        f"{get_cur_ts('<br><br>Timestamp: ')}"
+                    )
+                    send_notification_channels("level_xp", m_subject, m_body, m_body_html, email_enabled=STEAM_LEVEL_XP_NOTIFICATION, image_url=current_avatar_url)
 
                 print_cur_ts("Timestamp:\t\t\t")
 
@@ -7619,6 +7756,8 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
 
                     added_details = []
                     removed_details = []
+                    added_details_html = []
+                    removed_details_html = []
 
                     # Defined and called inside this iteration, so the enclosing s_api cannot change under it
                     def _fetch_friend_summaries(id_set):
@@ -7657,6 +7796,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                                 added_details.append(f"- {persona} ({real}) [{sid}]")
                             else:
                                 added_details.append(f"- {persona or sid} [{sid}]")
+                            added_details_html.append(steam_friend_line_html(persona, real, sid))
                     except Exception as exc:
                         debug_swallowed_exception("Building the added friends detail list", exc)
 
@@ -7676,6 +7816,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                                 removed_details.append(f"- {persona} ({real}) [{sid}]")
                             else:
                                 removed_details.append(f"- {persona or sid} [{sid}]")
+                            removed_details_html.append(steam_friend_line_html(persona, real, sid))
                     except Exception as exc:
                         debug_swallowed_exception("Building the removed friends detail list", exc)
 
@@ -7693,14 +7834,22 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                         body_lines = [
                             f"Steam user {username} friends count changed from {old_count} to {new_count} (delta {delta})",
                         ]
+                        body_lines_html = [
+                            f"Steam user {steam_user_html(username, steamid)} friends count changed from <b>{old_count}</b> to <b>{new_count}</b> (delta <b>{delta}</b>)",
+                        ]
                         if added_details:
                             body_lines.append("\nNew friends added:")
                             body_lines.extend(added_details)
+                            body_lines_html.append("<br><b>New friends added:</b>")
+                            body_lines_html.extend(added_details_html)
                         if removed_details:
                             body_lines.append("\nFriends removed:")
                             body_lines.extend(removed_details)
+                            body_lines_html.append("<br><b>Friends removed:</b>")
+                            body_lines_html.extend(removed_details_html)
                         m_body_friends = "\n".join(body_lines) + get_cur_ts(nl_ch + nl_ch + "Timestamp: ")
-                        send_notification_channels("friends", m_subject_friends, m_body_friends, email_enabled=FRIENDS_NOTIFICATION, image_url=current_avatar_url)
+                        m_body_friends_html = html_email_body("<br>".join(body_lines_html) + get_cur_ts("<br><br>Timestamp: "))
+                        send_notification_channels("friends", m_subject_friends, m_body_friends, m_body_friends_html, email_enabled=FRIENDS_NOTIFICATION, image_url=current_avatar_url)
 
                     print_cur_ts("Timestamp:\t\t\t")
 
@@ -7747,17 +7896,23 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     if GAMES_LIBRARY_NOTIFICATION or webhook_event_enabled("games"):
                         m_subject_games = f"Steam user {username} games library changed (now {new_count})"
                         body_parts = []
+                        body_parts_html = []
                         if delta != 0:
                             delta_str = f"+{delta}" if delta > 0 else str(delta)
                             body_parts.append(f"Steam user {username} games library changed from {old_count} to {new_count} ({delta_str})")
+                            body_parts_html.append(f"Steam user {steam_user_html(username, steamid)} games library changed from <b>{old_count}</b> to <b>{new_count}</b> (<b>{html_text(delta_str)}</b>)")
                         else:
                             body_parts.append(f"Steam user {username} games library changed (same count: {new_count}, titles changed)")
+                            body_parts_html.append(f"Steam user {steam_user_html(username, steamid)} games library changed (same count: <b>{new_count}</b>, titles changed)")
                         if added_appids:
                             body_parts.append(f"Added: {', '.join(str(a) for a in added_appids)}")
+                            body_parts_html.append(f"Added: {', '.join(html_link(steam_store_url(a), a) for a in added_appids)}")
                         if removed_appids:
                             body_parts.append(f"Removed: {', '.join(str(a) for a in removed_appids)}")
+                            body_parts_html.append(f"Removed: {', '.join(html_link(steam_store_url(a), a) for a in removed_appids)}")
                         m_body_games = "\n".join(body_parts) + get_cur_ts(nl_ch + nl_ch + "Timestamp: ")
-                        send_notification_channels("games", m_subject_games, m_body_games, email_enabled=GAMES_LIBRARY_NOTIFICATION, image_url=current_avatar_url)
+                        m_body_games_html = html_email_body("<br>".join(body_parts_html) + get_cur_ts("<br><br>Timestamp: "))
+                        send_notification_channels("games", m_subject_games, m_body_games, m_body_games_html, email_enabled=GAMES_LIBRARY_NOTIFICATION, image_url=current_avatar_url)
 
                     print_cur_ts("Timestamp:\t\t\t")
                     alive_since = int(time.time())
@@ -7779,7 +7934,8 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             if NAME_CHANGE_NOTIFICATION or webhook_event_enabled("name"):
                 m_subject_name = f"Steam user {old_name} changed display name to {new_name}"
                 m_body_name = f"Steam user {old_name} changed display name to {new_name}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                send_notification_channels("name", m_subject_name, m_body_name, email_enabled=NAME_CHANGE_NOTIFICATION, image_url=current_avatar_url)
+                m_body_name_html = html_email_body(f"Steam user <b>{html_text(old_name)}</b> changed display name to {steam_user_html(new_name, steamid)}{get_cur_ts('<br><br>Timestamp: ')}")
+                send_notification_channels("name", m_subject_name, m_body_name, m_body_name_html, email_enabled=NAME_CHANGE_NOTIFICATION, image_url=current_avatar_url)
 
             print_cur_ts("Timestamp:\t\t\t")
             alive_since = int(time.time())
