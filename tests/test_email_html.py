@@ -1,0 +1,298 @@
+"""Tests for the HTML notification body, its Discord markdown form and its match with the plain text."""
+
+import copy
+import difflib
+import html as html_module
+import re
+import time
+
+import pytest
+
+import steam_monitor as monitor
+
+
+STEAM_ID = 76561201960435530
+PROFILE_URL = "https://steamcommunity.com/id/testplayer/"
+AVATAR_URL = "https://avatars.steamstatic.com/test_full.jpg"
+
+FRIEND_PROFILES = {
+    "1": {"personaname": "FirstFriend", "realname": "First Person"},
+    "2": {"personaname": "SecondFriend", "realname": ""},
+}
+
+
+# One monitoring cycle's worth of Steam state, so a scenario reads as the timeline it represents
+def cycle(personaname="TestPlayer", personastate=0, gameid=None, gamename="", level=42, xp=5000, friends=("1",), owned=(440,)):
+    return {"personaname": personaname, "personastate": personastate, "gameid": gameid, "gamename": gamename, "level": level, "xp": xp, "friends": tuple(friends), "owned": tuple(owned)}
+
+
+# The timeline that fires every notification the monitor can send at least once
+SCENARIO = [
+    cycle(),
+    cycle(personastate=1),
+    cycle(personastate=1, gameid=440, gamename="Team Fortress 2"),
+    cycle(personastate=1, gameid=570, gamename="Dota 2"),
+    cycle(personastate=1),
+    cycle(personastate=3),
+    cycle(personastate=4),
+    cycle(personastate=0, owned=(440, 570)),
+    cycle(level=43, xp=5400),
+    cycle(level=43, xp=5400, friends=("1", "2")),
+    cycle(level=43, xp=5400, friends=("2",)),
+    cycle(personaname="RenamedPlayer", level=43, xp=5400, friends=("2",)),
+]
+
+
+class StopScenario(Exception):
+    pass
+
+
+class ScriptedSteamWebAPI:
+    # Answers each Steam endpoint from the scenario entry for the current cycle
+    def __init__(self, scenario, fail_cycles=()):
+        self.scenario = scenario
+        self.fail_cycles = set(fail_cycles)
+        self.index = 0
+
+    @property
+    def state(self):
+        return self.scenario[min(self.index, len(self.scenario) - 1)]
+
+    def call(self, endpoint, **kwargs):
+        state = self.state
+        if endpoint == "ISteamUser.GetPlayerSummaries":
+            steamids = str(kwargs.get("steamids", ""))
+            # The friend lookup reuses this endpoint, told apart by the ids it asks for
+            if steamids and str(STEAM_ID) not in steamids:
+                return {"response": {"players": [{"steamid": sid, **FRIEND_PROFILES.get(sid, {"personaname": f"Friend{sid}", "realname": ""})} for sid in steamids.split(",")]}}
+            if self.index in self.fail_cycles:
+                raise RuntimeError("Steam returned no profile")
+            player = {"steamid": str(STEAM_ID), "personaname": state["personaname"], "personastate": state["personastate"], "communityvisibilitystate": 3, "profileurl": PROFILE_URL, "avatarfull": AVATAR_URL, "timecreated": 1300000000, "lastlogoff": 1700000000}
+            if state["gameid"]:
+                player["gameid"] = state["gameid"]
+                player["gameextrainfo"] = state["gamename"]
+            return {"response": {"players": [copy.deepcopy(player)]}}
+        if endpoint == "IPlayerService.GetRecentlyPlayedGames":
+            return {"response": {"games": []}}
+        if endpoint == "IPlayerService.GetSteamLevel":
+            return {"response": {"player_level": state["level"]}}
+        if endpoint == "IPlayerService.GetBadges":
+            return {"response": {"player_xp": state["xp"], "player_xp_needed_to_level_up": 100, "player_xp_needed_current_level": 4900, "badges": []}}
+        if endpoint == "ISteamUser.GetFriendList":
+            return {"friendslist": {"friends": [{"steamid": sid, "friend_since": 1600000000} for sid in state["friends"]]}}
+        if endpoint == "IPlayerService.GetOwnedGames":
+            return {"response": {"games": [{"appid": appid} for appid in state["owned"]]}}
+        if endpoint == "ISteamUser.GetPlayerBans":
+            return {"players": []}
+        return {}
+
+
+# Reduces one HTML body back to the text it represents, independently of the module's own converter
+def html_to_text(body_html):
+    text = re.sub(r"(?is)</?(?:html|head|body)\s*>", "", str(body_html or ""))
+    text = re.sub(r"(?is)<br\s*/?>", "\n", text)
+    text = re.sub(r"(?s)<[^>]+>", "", text)
+    return html_module.unescape(text)
+
+
+# Returns the unified diff between the plain body and the text the HTML body reduces to, empty when they match
+def structural_diff(body, body_html):
+    reduced = html_to_text(body_html)
+    if reduced == body:
+        return ""
+    return "\n".join(difflib.unified_diff(body.split("\n"), reduced.split("\n"), fromfile="plain", tofile="html-reduced", lineterm=""))
+
+
+# Collects every alert the monitoring loop tries to send, without delivering any of them
+def capture_alerts(tmp_path, monkeypatch, scenario, fail_cycles=(), api_class=None):
+    captured = []
+
+    def fake_send(notification_type, subject, body, body_html="", **kwargs):
+        captured.append({"type": notification_type, "subject": subject, "body": body, "body_html": body_html, "webhook_body": kwargs.get("webhook_body") or body, "discord": monitor.html_body_to_discord_markdown(kwargs.get("webhook_body_html") or body_html)})
+        return bool(kwargs.get("email_enabled")), bool(kwargs.get("webhook_enabled"))
+
+    api = (api_class or ScriptedSteamWebAPI)(scenario, fail_cycles=fail_cycles)
+    clock = [float(int(time.time())) - 86400]
+
+    def advance(seconds):
+        # Each sleep is one cycle boundary, so the scenario steps in lockstep with the loop
+        clock[0] += max(seconds, 1)
+        api.index += 1
+        if api.index >= len(scenario):
+            raise StopScenario()
+
+    for name, value in {"STATUS_NOTIFICATION": True, "ACTIVE_INACTIVE_NOTIFICATION": True, "GAME_CHANGE_NOTIFICATION": True, "STEAM_LEVEL_XP_NOTIFICATION": True, "STEAM_LEVEL_XP_CHECK": True, "FRIENDS_NOTIFICATION": True, "FRIENDS_CHECK": True, "GAMES_LIBRARY_NOTIFICATION": True, "GAMES_LIBRARY_CHECK": True, "NAME_CHANGE_NOTIFICATION": True, "ERROR_NOTIFICATION": True, "STEAM_CHECK_INTERVAL": 60, "STEAM_ACTIVE_CHECK_INTERVAL": 30, "ERROR_ALERT_AFTER_SECONDS": 0, "FILE_SUFFIX": "", "VERBOSE_MODE": False, "DEBUG_MODE": False}.items():
+        monkeypatch.setattr(monitor, name, value)
+    monkeypatch.setattr(monitor, "send_notification_channels", fake_send)
+    monkeypatch.setattr(monitor, "steam_web_api_client", lambda *args, **kwargs: api)
+    monkeypatch.setattr(monitor.time, "time", lambda: clock[0])
+    monkeypatch.setattr(monitor.time, "sleep", advance)
+    monkeypatch.chdir(tmp_path)
+
+    try:
+        monitor.steam_monitor_user(STEAM_ID, "", None)
+    except StopScenario:
+        pass
+    return captured
+
+
+@pytest.fixture
+# Every alert the scenario produces, including the failure alert and the recovery that answers it
+def scenario_alerts(tmp_path, monkeypatch, capsys):
+    alerts = capture_alerts(tmp_path, monkeypatch, SCENARIO)
+    alerts.extend(capture_alerts(tmp_path, monkeypatch, [SCENARIO[0]] * 4, fail_cycles=(1, 2)))
+    capsys.readouterr()
+    return alerts
+
+
+# Verifies a value taken from Steam is escaped before it reaches the HTML body
+def test_untrusted_text_is_escaped():
+    assert monitor.html_text("<script>alert(1)</script>") == "&lt;script&gt;alert(1)&lt;/script&gt;"
+    assert monitor.html_text("line\nbreak") == "line<br>break"
+    assert monitor.escape_html_attr('" onload="x') == "&quot; onload=&quot;x"
+
+
+# Verifies a crafted display name cannot inject markup through the bolded profile link
+def test_a_crafted_name_cannot_inject_markup():
+    rendered = monitor.steam_user_html('<img src=x onerror=alert(1)>', STEAM_ID)
+
+    assert "<img" not in rendered
+    assert "&lt;img src=x onerror=alert(1)&gt;" in rendered
+    assert rendered.startswith(f'<b><a href="https://steamcommunity.com/profiles/{STEAM_ID}">')
+
+
+# Verifies an entity without a known URL still renders as bold text rather than an empty link
+def test_an_entity_without_a_url_renders_unlinked():
+    assert monitor.steam_user_html("TestPlayer", None) == "<b>TestPlayer</b>"
+    assert monitor.steam_game_html("Team Fortress 2", None) == "<b>Team Fortress 2</b>"
+    assert monitor.html_link("", "label") == "label"
+
+
+# Verifies the store and profile links are built from the ids the monitor already holds
+def test_entity_links_point_at_steam():
+    assert monitor.steam_profile_url(STEAM_ID) == f"https://steamcommunity.com/profiles/{STEAM_ID}"
+    assert monitor.steam_store_url(440) == "https://store.steampowered.com/app/440/"
+    assert monitor.steam_store_url("570") == "https://store.steampowered.com/app/570/"
+    assert monitor.steam_store_url("not-an-appid") == ""
+    assert monitor.steam_store_url(None) == ""
+
+
+# Verifies a friend entry keeps the real name and the Steam64 ID the plain line carries
+def test_friend_entries_keep_the_plain_details():
+    assert monitor.steam_friend_line_html("FirstFriend", "First Person", "1") == '- <b><a href="https://steamcommunity.com/profiles/1">FirstFriend</a></b> (First Person) [1]'
+    assert monitor.steam_friend_line_html("SecondFriend", "", "2") == '- <b><a href="https://steamcommunity.com/profiles/2">SecondFriend</a></b> [2]'
+    assert monitor.steam_friend_line_html("", "", "3") == '- <b><a href="https://steamcommunity.com/profiles/3">3</a></b> [3]'
+
+
+# Verifies a bare URL in an alert becomes a link while one already inside an attribute is left alone
+def test_bare_urls_are_linked_once():
+    assert monitor.html_autolink_urls("Guide: https://example.test/a") == 'Guide: <a href="https://example.test/a">https://example.test/a</a>'
+    assert monitor.html_autolink_urls("See https://example.test/a.") == 'See <a href="https://example.test/a">https://example.test/a</a>.'
+    assert monitor.html_autolink_urls('<a href="https://example.test/a">x</a>') == '<a href="https://example.test/a">x</a>'
+
+
+# Verifies the Discord body carries the email's emphasis and links instead of raw markup
+def test_discord_markdown_mirrors_the_html_body():
+    body_html = monitor.html_email_body('Steam user <b><a href="https://steamcommunity.com/profiles/1">Name</a></b> is now <b>online</b><br><br>Note: <i>quiet</i>')
+
+    assert monitor.html_body_to_discord_markdown(body_html) == "Steam user **[Name](https://steamcommunity.com/profiles/1)** is now **online**\n\nNote: *quiet*"
+
+
+# Verifies a link whose label repeats its destination is left bare, which Discord turns into a link itself
+def test_a_self_labeled_link_stays_bare_in_discord():
+    body_html = '<a href="https://example.test/a">https://example.test/a</a>'
+
+    assert monitor.html_body_to_discord_markdown(body_html) == "https://example.test/a"
+
+
+# Verifies a tag the markdown subset has no form for is dropped rather than printed
+def test_unsupported_markup_is_dropped_in_discord():
+    assert monitor.html_body_to_discord_markdown("<p>text</p><ul><li>item</li></ul>") == "textitem"
+    assert monitor.html_body_to_discord_markdown("<b></b>done") == "done"
+
+
+# Verifies the failure alert bolds its summary and the moment the outage started
+def test_the_failure_alert_bolds_its_summary_and_start():
+    advice = monitor.make_recovery_advice("steam.unavailable", "Steam is unreachable", "Retry later", True)
+
+    rendered = monitor.recovery_alert_body_html(advice, 60, failed_checks=2, failing_since=1700000000)
+
+    assert rendered.startswith("<html><head></head><body><b>Steam is unreachable</b><br><br>")
+    assert "Failing since: <b>" in rendered
+    assert rendered.endswith("</body></html>")
+
+
+# Verifies the webhook copy of an alert leaves out the timestamp the email carries
+def test_the_webhook_body_has_no_timestamp():
+    advice = monitor.make_recovery_advice("steam.unavailable", "Steam is unreachable", "Retry later", True)
+
+    assert "Timestamp: " not in monitor.recovery_alert_body_html(advice, 60, timestamp=False)
+    assert "Timestamp: " in monitor.recovery_alert_body_html(advice, 60)
+
+
+# Verifies the scenario reaches every notification type, so the structural check is not silently narrow
+def test_the_scenario_covers_every_notification_type(scenario_alerts):
+    assert {alert["type"] for alert in scenario_alerts} == {"active", "inactive", "status", "game", "games", "level_xp", "friends", "name", "error"}
+
+
+# Verifies every alert carries an HTML body next to its plain one
+def test_every_alert_has_an_html_body(scenario_alerts):
+    missing = [alert["subject"] for alert in scenario_alerts if not alert["body_html"]]
+
+    assert missing == []
+
+
+# Verifies each HTML body reduces back to its plain body, so no line break was added or lost
+def test_html_bodies_match_the_plain_text(scenario_alerts):
+    mismatches = [f"{alert['type']}: {alert['subject']}\n{structural_diff(alert['body'], alert['body_html'])}" for alert in scenario_alerts if structural_diff(alert["body"], alert["body_html"])]
+
+    assert mismatches == []
+
+
+# Verifies every HTML body is one complete document, so no fragment reaches a mail client unwrapped
+def test_html_bodies_are_complete_documents(scenario_alerts):
+    for alert in scenario_alerts:
+        assert alert["body_html"].startswith("<html><head></head><body>")
+        assert alert["body_html"].endswith("</body></html>")
+
+
+# Verifies the Discord body keeps the wording the ntfy body carries once its markers are removed
+def test_discord_bodies_keep_the_plain_wording(scenario_alerts):
+    for alert in scenario_alerts:
+        stripped = re.sub(r"\[([^\]]*)\]\((?:[^)]*)\)", r"\1", alert["discord"]).replace("**", "").replace("*", "")
+
+        assert stripped == alert["webhook_body"].strip()
+
+
+# Verifies the monitored account and the games it plays are linked in every alert that names them
+def test_alerts_link_the_entities_they_name(scenario_alerts):
+    for alert in scenario_alerts:
+        if alert["type"] in ("active", "inactive", "status", "friends", "games", "name", "level_xp"):
+            assert f'href="https://steamcommunity.com/profiles/{STEAM_ID}"' in alert["body_html"]
+    game_alerts = [alert for alert in scenario_alerts if alert["type"] == "game"]
+
+    assert game_alerts
+    for alert in game_alerts:
+        assert "https://store.steampowered.com/app/" in alert["body_html"]
+
+
+class NoBadgesSteamWebAPI(ScriptedSteamWebAPI):
+    # Answers the badge endpoint with nothing, the shape a private or empty profile returns
+    def call(self, endpoint, **kwargs):
+        if endpoint == "IPlayerService.GetBadges":
+            return {"response": {}}
+        return super().call(endpoint, **kwargs)
+
+
+# Verifies an unavailable XP value leaves no empty line behind in either body
+def test_a_level_alert_without_xp_has_no_empty_line(tmp_path, monkeypatch, capsys):
+    alerts = capture_alerts(tmp_path, monkeypatch, [cycle(), cycle(), cycle(level=43), cycle(level=43)], api_class=NoBadgesSteamWebAPI)
+    capsys.readouterr()
+    level_alerts = [alert for alert in alerts if alert["type"] == "level_xp"]
+
+    assert level_alerts
+    for alert in level_alerts:
+        assert "Total XP after level change" not in alert["body"]
+        assert "\n\n\n" not in alert["body"]
+        assert "<br><br><br>" not in alert["body_html"]
+        assert not structural_diff(alert["body"], alert["body_html"])

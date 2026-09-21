@@ -252,7 +252,7 @@ class WebhookNotificationTests(unittest.TestCase):
 
         self.assertEqual(attempted, (False, True))
         email.assert_not_called()
-        webhook.assert_called_once_with("Title", "Body", "status", force=True, image_url="", ntfy_priority=0, ntfy_tags="")
+        webhook.assert_called_once_with("Title", "Body", "status", force=True, image_url="", ntfy_priority=0, ntfy_tags="", discord_description="")
 
     # Verifies invalid custom headers are rejected before any request is attempted
     def test_invalid_headers_are_rejected(self):

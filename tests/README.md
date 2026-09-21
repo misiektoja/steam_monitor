@@ -64,6 +64,7 @@ and again before anything is published to PyPI.
 | `test_file_safety.py` | Atomic state writes, timestamped backups, untrusted text sanitizing and the declared Python minimum |
 | `test_install_method_commands.py` | Install method detection, printed commands, masked secrets and guide links |
 | `test_monitoring_diagnostics.py` | One monitoring cycle: Steam calls named, degraded features reported, quiet by default |
+| `test_email_html.py` | HTML notification bodies: escaping, Steam profile and store links, the Discord markdown form and the plain-text match |
 | `test_repository_contracts.py` | Governance documents, issue templates, action pinning, release gating and the CI contract |
 | `test_repository_metadata.py` | Governance files, citation, funding, line endings, the declared editor style, the pinned linter and release integrity |
 | `test_tls_verification.py` | Every connection honouring `VERIFY_SSL` and the single shared TLS context builder |
