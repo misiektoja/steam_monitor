@@ -20,6 +20,8 @@ FRIEND_PROFILES = {
     "2": {"personaname": "SecondFriend", "realname": ""},
 }
 
+APP_NAMES = {440: "Team Fortress 2", 570: "Dota 2"}
+
 
 # One monitoring cycle's worth of Steam state, so a scenario reads as the timeline it represents
 def cycle(personaname="TestPlayer", personastate=0, gameid=None, gamename="", level=42, xp=5000, friends=("1",), owned=(440,)):
@@ -81,7 +83,12 @@ class ScriptedSteamWebAPI:
         if endpoint == "ISteamUser.GetFriendList":
             return {"friendslist": {"friends": [{"steamid": sid, "friend_since": 1600000000} for sid in state["friends"]]}}
         if endpoint == "IPlayerService.GetOwnedGames":
-            return {"response": {"games": [{"appid": appid} for appid in state["owned"]]}}
+            wanted = kwargs.get("appids_filter") or []
+            # A filtered lookup only answers for games the account still owns, the way Steam does
+            appids = [appid for appid in state["owned"] if not wanted or appid in wanted]
+            if kwargs.get("include_appinfo"):
+                return {"response": {"games": [{"appid": appid, "name": APP_NAMES.get(appid, f"Game {appid}")} for appid in appids]}}
+            return {"response": {"games": [{"appid": appid} for appid in appids]}}
         if endpoint == "ISteamUser.GetPlayerBans":
             return {"players": []}
         return {}
@@ -211,15 +218,59 @@ def test_unsupported_markup_is_dropped_in_discord():
     assert monitor.html_body_to_discord_markdown("<b></b>done") == "done"
 
 
-# Verifies the failure alert bolds its summary and the moment the outage started
-def test_the_failure_alert_bolds_its_summary_and_start():
+# Verifies the failure alert bolds its summary and the two values that say how bad the outage is
+def test_the_failure_alert_bolds_its_summary_and_outage_fields():
     advice = monitor.make_recovery_advice("steam.unavailable", "Steam is unreachable", "Retry later", True)
 
     rendered = monitor.recovery_alert_body_html(advice, 60, failed_checks=2, failing_since=1700000000)
 
     assert rendered.startswith("<html><head></head><body><b>Steam is unreachable</b><br><br>")
+    assert "Failed checks in a row: <b>2</b>" in rendered
     assert "Failing since: <b>" in rendered
+    # The retry delay is configured rather than observed, so it carries no emphasis
+    assert "Next retry in: 1 minute" in rendered
     assert rendered.endswith("</body></html>")
+
+
+# Verifies a library entry names the game and keeps the application ID next to it
+def test_library_entries_name_the_game():
+    names = {570: "Dota 2"}
+
+    assert monitor.steam_app_label(570, names) == "Dota 2 (570)"
+    assert monitor.steam_app_label_html(570, names) == '<b><a href="https://store.steampowered.com/app/570/">Dota 2</a></b> (570)'
+
+
+# Verifies an unresolved application ID still renders as a bold store link rather than disappearing
+def test_an_unnamed_library_entry_falls_back_to_the_id():
+    assert monitor.steam_app_label(999, {}) == "999"
+    assert monitor.steam_app_label_html(999, {}) == '<b><a href="https://store.steampowered.com/app/999/">999</a></b>'
+
+
+# Verifies a game name taken from Steam is escaped before it reaches the HTML body
+def test_a_crafted_game_name_cannot_inject_markup():
+    rendered = monitor.steam_app_label_html(570, {570: "<script>alert(1)</script>"})
+
+    assert "<script>" not in rendered
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered
+
+
+# Verifies names are read from an owned-games response and from a saved library file, skipping unusable entries
+def test_app_names_are_read_from_steam_and_from_the_saved_file():
+    owned = {"response": {"games": [{"appid": 570, "name": "Dota 2"}, {"appid": 440, "name": ""}, {"name": "No id"}, "junk"]}}
+
+    assert monitor.app_names_from_owned(owned) == {570: "Dota 2"}
+    assert monitor.saved_app_names({"app_names": {"570": "Dota 2", "bad": "x", "440": ""}}) == {570: "Dota 2"}
+    assert monitor.saved_app_names({}) == {}
+
+
+# Verifies a failed name lookup leaves the alert on the application IDs instead of stopping the check
+def test_a_failed_name_lookup_is_survivable():
+    class Failing:
+        def call(self, *args, **kwargs):
+            raise RuntimeError("Steam is unreachable")
+
+    assert monitor.fetch_app_names(Failing(), STEAM_ID, [570]) == {}
+    assert monitor.fetch_app_names(Failing(), STEAM_ID, []) == {}
 
 
 # Verifies the webhook copy of an alert leaves out the timestamp the email carries
