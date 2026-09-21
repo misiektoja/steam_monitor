@@ -248,8 +248,8 @@ The four presence colours apply where the tool reports a state, such as a `Statu
 | `section` | `bright_white` | Section names and every command the tool tells you to run |
 | `username` | `bright_cyan underline` | The monitored account name and the detected install method |
 | `id` | `bright_magenta` | The Steam64 ID |
-| `status_online` | `green` | An online presence |
-| `status_offline` | `red` | An offline presence |
+| `status_online` | `green` | An online presence or a game that just started |
+| `status_offline` | `red` | An offline presence or a game that just stopped |
 | `status_away` | `yellow` | An away presence |
 | `status_snooze` | `magenta` | A snooze presence |
 | `status_other` | `white` | A presence value the tool does not recognise |
