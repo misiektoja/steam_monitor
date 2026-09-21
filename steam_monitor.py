@@ -1305,6 +1305,13 @@ SGR_SEQUENCE_RE = re.compile(r"\x1b\[[0-9;]*m")
 COLOR_ENABLED = False
 _COLOR_STYLES = {}
 
+# Parts that paint a whole line. A warning and a signal mark their own opening word instead
+BLOCK_STYLE_PARTS = ("error", "info", "email", "webhook")
+
+# Parts that carry a name supplied by Steam or by the user, or that report a change, which a block style
+# must never hide
+NAME_STYLE_PARTS = ("username", "id", "game", "status_change", "link")
+
 # Default built-in colour theme. Values can be overridden via COLOR_THEME in config
 DEFAULT_COLOR_THEME = {
     # General sections
@@ -1410,6 +1417,12 @@ _STATUS_CHANGE_LINE_RE = re.compile(
 )
 # The verbs the monitoring loop uses to report a change, coloured wherever they appear
 _STATUS_CHANGE_RE = re.compile(r"\b(?:changed status|changed game)\b")
+_GAME_STARTED_RE = re.compile(r"\bstarted playing\b")
+_GAME_STOPPED_RE = re.compile(r"\bstopped playing\b")
+
+# The opening word of a warning and the name of a reported signal, marked instead of painting the line
+_WARNING_LABEL_RE = re.compile(r"^\s*\*+\s*(Warning:|Caution:)")
+_SIGNAL_NAME_RE = re.compile(r"(?<=^\* Signal )(\w+)(?= received$)")
 _DURATION_RE = re.compile(
     r"(\d+\s+(seconds?|minutes?|hours?|days?|weeks?|months?|years?))", re.IGNORECASE
 )
@@ -1713,6 +1726,12 @@ def _colorize_line(line, notification_summary=False):
 
     # Highlight the verbs that report a change
     line = _sub_outside_color(_STATUS_CHANGE_RE, lambda mo: colorize("status_change", mo.group(0)), line)
+    line = _sub_outside_color(_GAME_STARTED_RE, lambda mo: colorize("status_online", mo.group(0)), line)
+    line = _sub_outside_color(_GAME_STOPPED_RE, lambda mo: colorize("status_offline", mo.group(0)), line)
+
+    # Mark the opening word of a warning and the name of a reported signal, rather than painting the whole line
+    line = _sub_outside_color(_WARNING_LABEL_RE, lambda mo: mo.group(0)[:mo.start(1) - mo.start(0)] + colorize("warning", mo.group(1)), line)
+    line = _sub_outside_color(_SIGNAL_NAME_RE, lambda mo: colorize("signal", mo.group(0)), line)
 
     # A line the caller already styled carries the colours it was meant to have, so the whole-line rules
     # below leave it alone rather than wrapping it in a second style
@@ -1723,20 +1742,19 @@ def _colorize_line(line, notification_summary=False):
     if is_startup_summary_row(original):
         return line
 
-    # Errors / warnings (avoid colouring summary lines like 'errors = False')
+    # Whole-line styling last and nested, so the colours applied above survive instead of cancelling the block.
+    # A summary line such as 'errors = False' names a setting, so it must not read as a failure
     lowered = original.lower()
-    if any(w in lowered for w in ("failure", "forbidden", "timeout")) or (
+    if lowered.startswith("to fix:"):
+        line = _apply_style_nested(line, "info")
+    elif any(w in lowered for w in ("failure", "forbidden", "timeout")) or (
         "error" in lowered and "[errors =" not in lowered
     ):
-        return colorize("error", line)
-    if "warning" in lowered and "[warnings =" not in lowered:
-        return colorize("warning", line)
-    if "signal" in lowered and "received" in lowered:
-        return colorize("signal", line)
-    if "sending email" in lowered:
-        return colorize("email", line)
-    if "sending webhook" in lowered:
-        return colorize("webhook", line)
+        line = _apply_style_nested(line, "error")
+    elif "sending email" in lowered:
+        line = _apply_style_nested(line, "email")
+    elif "sending webhook" in lowered:
+        line = _apply_style_nested(line, "webhook")
 
     return line
 
