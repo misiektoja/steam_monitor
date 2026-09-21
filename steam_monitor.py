@@ -3025,6 +3025,12 @@ def recovery_fix_with_guide(fix, guide_url):
     return f"{fix}\nGuide: {guide_url}"
 
 
+# Returns the guide a built fix already carries, so a caller that rewords the fix keeps the link the failure earned
+def recovery_guide_from_fix(fix):
+    _, separator, guide_url = str(fix or "").rpartition("\nGuide: ")
+    return guide_url if separator else ""
+
+
 # Returns the advice an optional library that is missing carries, naming what the run loses and how to install it
 def missing_dependency_advice(package, effect, install_command, alternative=""):
     return make_recovery_advice("dependency.missing", f"{effect} because the optional '{package}' library is missing", recovery_fix_with_guide(f"Install it with: {install_command}" + (f". {alternative}" if alternative else ""), INSTALLATION_GUIDE_URL), False)
@@ -4216,7 +4222,7 @@ def doctor_check_configuration(config_path=None, env_path=None, target_value=Non
         checks.append(make_doctor_check("Configuration", "PASS", "No configuration file selected", "Using built-in defaults and command-line overrides"))
     if env_path and str(env_path) in DOTENV_STARTUP_ERRORS:
         detail, fix = DOTENV_STARTUP_ERRORS[str(env_path)]
-        advice = make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide(f"{fix}, then run Doctor again", CONFIG_GUIDE_URL), False)
+        advice = make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide(f"{fix}, then run Doctor again", SECRETS_GUIDE_URL), False)
         checks.append(make_doctor_check("Configuration", "FAIL", "Dotenv file could not be loaded", detail, advice))
     elif env_path and os.path.isfile(str(env_path)):
         checks.append(make_doctor_check("Configuration", "PASS", "Dotenv file loaded", f"Path: {env_path}"))
@@ -6615,7 +6621,9 @@ def display_recent_achievements(steamid, s_api, s_played, max_games=15, max_achi
             retry_note = f"try again in {display_time(steam_retry_after_seconds(exc.response, 60))}"
         advice = classify_recovery_error(exc, context="runtime", detail="Recent achievements are unavailable. The lookup was stopped")
         fix = "Wait for the reported delay then run the command again" if retry_note else "Correct the reported problem then run the command again"
-        print_recovery_advice(make_recovery_advice(advice.code, advice.summary, recovery_fix_with_guide(fix, CONFIG_GUIDE_URL), advice.retryable, advice.detail), retry_note=retry_note)
+        # A one-shot command retries nothing by itself, so it rewords the fix but keeps the guide the classified failure earned
+        guide_url = recovery_guide_from_fix(advice.fix)
+        print_recovery_advice(make_recovery_advice(advice.code, advice.summary, recovery_fix_with_guide(fix, guide_url) if guide_url else fix, advice.retryable, advice.detail), retry_note=retry_note)
         return False
 
     if not achievements:
@@ -8438,7 +8446,7 @@ def main():
             detail, fix = dotenv_load_problem(env_path, exc)
             DOTENV_STARTUP_ERRORS[str(env_path)] = (detail, fix)
             if not args.doctor:
-                print_recovery_advice(make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide(fix, CONFIG_GUIDE_URL), False))
+                print_recovery_advice(make_recovery_advice("file.unreadable", detail, recovery_fix_with_guide(fix, SECRETS_GUIDE_URL), False))
                 if not command_reports_configuration(args):
                     sys.exit(1)
 
