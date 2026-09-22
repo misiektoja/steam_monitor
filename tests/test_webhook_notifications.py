@@ -71,10 +71,20 @@ class WebhookNotificationTests(unittest.TestCase):
         for name, value in self.originals.items():
             setattr(steam_monitor, name, value)
 
+    # Verifies unavailable automatic channels make no attempt or status line
+    def test_unavailable_channels_are_silent(self):
+        steam_monitor.WEBHOOK_URL = ""
+        output = io.StringIO()
+        with patch.object(steam_monitor, "SMTP_PASSWORD", ""), patch.object(steam_monitor, "send_email") as email, patch.object(steam_monitor, "send_webhook") as webhook, contextlib.redirect_stdout(output):
+            self.assertEqual(steam_monitor.send_notification_channels("error", "Subject", "Body", email_enabled=True, webhook_enabled=True), (False, False))
+        email.assert_not_called()
+        webhook.assert_not_called()
+        self.assertEqual(output.getvalue(), "")
+
     # Verifies startup summaries use short labels and unstarred bounded continuation lines
     def test_startup_notification_summaries_use_compact_rollups(self):
-        # The rollup reports a channel with no destination as off, whatever its alert types are
-        for setting, value in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("RECEIVER_EMAIL", "michal.k@example.com"), ("WEBHOOK_PROVIDER", "discord"), ("WEBHOOK_URL", "https://discord.com/api/webhooks/1/private-token")):
+        # The rollup reports selected categories as on when both channels have valid local settings
+        for setting, value in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "sender@example.com"), ("SMTP_PASSWORD", "test-password"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "michal.k@example.com"), ("WEBHOOK_PROVIDER", "discord"), ("WEBHOOK_URL", "https://discord.com/api/webhooks/1/private-token")):
             self.addCleanup(setattr, steam_monitor, setting, getattr(steam_monitor, setting))
             setattr(steam_monitor, setting, value)
         for setting in ("ACTIVE_INACTIVE_NOTIFICATION", "STATUS_NOTIFICATION", "GAME_CHANGE_NOTIFICATION", "STEAM_LEVEL_XP_NOTIFICATION", "FRIENDS_NOTIFICATION", "GAMES_LIBRARY_NOTIFICATION", "NAME_CHANGE_NOTIFICATION", "ERROR_NOTIFICATION", "WEBHOOK_ENABLED", "WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_GAME_CHANGE_NOTIFICATION", "WEBHOOK_LEVEL_XP_NOTIFICATION", "WEBHOOK_FRIENDS_NOTIFICATION", "WEBHOOK_GAMES_NOTIFICATION", "WEBHOOK_NAME_CHANGE_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION"):

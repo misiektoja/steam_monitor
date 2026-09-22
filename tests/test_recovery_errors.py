@@ -767,6 +767,8 @@ def test_the_failure_alert_body_lists_the_retry_and_hides_the_cause(monkeypatch)
 # Verifies the recovery alert names the failure it closes and reaches only the channels that heard about it
 def test_the_recovery_alert_answers_the_channels_that_were_told(monkeypatch):
     sent = []
+    for name, value in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "sender@example.com"), ("SMTP_PASSWORD", "test-password"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "receiver@example.com"), ("WEBHOOK_ENABLED", True), ("WEBHOOK_PROVIDER", "discord"), ("WEBHOOK_URL", "https://discord.com/api/webhooks/123/private-token")):
+        monkeypatch.setattr(monitor, name, value)
     monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
     monkeypatch.setattr(monitor, "webhook_event_enabled", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(monitor, "send_notification_channels", lambda *args, **kwargs: sent.append((args[1], args[2], kwargs.get("email_enabled"), kwargs.get("webhook_enabled"))) or (True, True))

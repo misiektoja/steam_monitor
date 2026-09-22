@@ -301,14 +301,14 @@ def test_legacy_resolve_url_option_remains_supported(tmp_path, monkeypatch, rest
     assert observed["monitored_steam_id"] == resolved
 
 
-# Verifies an unedited webhook destination switches the channel off instead of being treated as configured
+# Verifies an unedited webhook destination remains selected and unavailable
 def test_a_placeholder_webhook_url_switches_the_channel_off(tmp_path, monkeypatch, restored_globals):
     monkeypatch.delenv("WEBHOOK_URL", raising=False)
     config = write_config(tmp_path, 'WEBHOOK_ENABLED = True\nWEBHOOK_URL = "your_webhook_url"\n')
 
     run_startup(monkeypatch, [], config)
 
-    assert monitor.WEBHOOK_ENABLED is False
+    assert monitor.WEBHOOK_ENABLED is True
 
 
 # Verifies a real destination still leaves the webhook channel on

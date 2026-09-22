@@ -133,6 +133,8 @@ def capture_alerts(tmp_path, monkeypatch, scenario, fail_cycles=(), api_class=No
 
     for name, value in {"STATUS_NOTIFICATION": True, "ACTIVE_INACTIVE_NOTIFICATION": True, "GAME_CHANGE_NOTIFICATION": True, "STEAM_LEVEL_XP_NOTIFICATION": True, "STEAM_LEVEL_XP_CHECK": True, "FRIENDS_NOTIFICATION": True, "FRIENDS_CHECK": True, "GAMES_LIBRARY_NOTIFICATION": True, "GAMES_LIBRARY_CHECK": True, "NAME_CHANGE_NOTIFICATION": True, "ERROR_NOTIFICATION": True, "STEAM_CHECK_INTERVAL": 60, "STEAM_ACTIVE_CHECK_INTERVAL": 30, "ERROR_ALERT_AFTER_SECONDS": 0, "FILE_SUFFIX": "", "VERBOSE_MODE": False, "DEBUG_MODE": False}.items():
         monkeypatch.setattr(monitor, name, value)
+    for name, value in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "sender@example.com"), ("SMTP_PASSWORD", "test-password"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "receiver@example.com")):
+        monkeypatch.setattr(monitor, name, value)
     monkeypatch.setattr(monitor, "send_notification_channels", fake_send)
     monkeypatch.setattr(monitor, "steam_web_api_client", lambda *args, **kwargs: api)
     monkeypatch.setattr(monitor.time, "time", lambda: clock[0])

@@ -478,9 +478,12 @@ def test_the_concise_summary_points_at_the_diagnostic_modes(summary_globals):
 
 # Verifies both notification channels are reported with the categories that are actually enabled
 def test_the_notification_rollups_name_their_categories(monkeypatch, summary_globals):
-    # The rollup reports a channel with no mail server as off, whatever its alert types are
+    # The rollup reports selected categories as on when email has valid local settings
     monkeypatch.setattr(monitor, "SMTP_HOST", "smtp.example.com")
     monkeypatch.setattr(monitor, "SMTP_PORT", 587)
+    monkeypatch.setattr(monitor, "SMTP_USER", "sender@example.com")
+    monkeypatch.setattr(monitor, "SMTP_PASSWORD", "test-password")
+    monkeypatch.setattr(monitor, "SENDER_EMAIL", "sender@example.com")
     monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "michal.k@example.com")
     monkeypatch.setattr(monitor, "ACTIVE_INACTIVE_NOTIFICATION", True)
     monkeypatch.setattr(monitor, "GAME_CHANGE_NOTIFICATION", True)

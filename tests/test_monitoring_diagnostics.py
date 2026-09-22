@@ -84,6 +84,8 @@ class FakeSteamWebAPI:
 
 # Runs one monitoring cycle with every tracked feature on and the named endpoints failing
 def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True, poll_error=None, stop_after_sleeps=2, error_notifications=False, liveness_seconds=0, debug=None, persona_state=0, healthy_after=None):
+    for name, value in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "sender@example.com"), ("SMTP_PASSWORD", "test-password"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "receiver@example.com"), ("WEBHOOK_PROVIDER", "discord"), ("WEBHOOK_URL", "https://discord.com/api/webhooks/123/private-token")):
+        monkeypatch.setattr(monitor, name, value)
     monkeypatch.setattr(monitor, "DEBUG_MODE", diagnostics if debug is None else debug)
     monkeypatch.setattr(monitor, "VERBOSE_MODE", diagnostics)
     monkeypatch.setattr(monitor, "STEAM_LEVEL_XP_CHECK", True)
