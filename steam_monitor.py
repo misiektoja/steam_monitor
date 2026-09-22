@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v2.1
+v2.1.1
 
 Tool implementing real-time tracking of Steam players activities:
 https://github.com/misiektoja/steam_monitor/
@@ -16,7 +16,7 @@ Pillow (optional, needed only when NTFY_IMAGES attaches artwork to ntfy alerts)
 colorama (optional, for better colours on Windows terminals)
 """
 
-VERSION = "2.1"
+VERSION = "2.1.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -2486,6 +2486,14 @@ def smtp_settings_problem():
     return None
 
 
+# Names a missing SMTP credential or the local setting that prevents automatic email delivery
+def email_settings_problem():
+    unset = [name for name in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD") if not doctor_value_is_set(globals()[name])]
+    if unset:
+        return f"{join_setting_names(unset, 'or')} is empty or still set to its placeholder"
+    return smtp_settings_problem()
+
+
 # Closes an SMTP session without changing the result of an accepted or failed message
 def smtp_quit_quietly(smtp_object):
     if smtp_object is None:
@@ -2994,11 +3002,11 @@ def _selected_webhook_notification_categories():
     return [label for enabled, label in settings if enabled]
 
 
-# Returns one channel's rollup value, naming the enabled categories, or reporting a channel with no destination as off
-def _startup_notification_state(categories, configured):
+# Returns selected alert categories or names an unusable local setting
+def _startup_notification_state(categories, problem):
     if not categories:
         return "Off"
-    return "On (" + ", ".join(categories) + ")" if configured else "Off (not configured)"
+    return f"Unavailable ({problem})" if problem else "On (" + ", ".join(categories) + ")"
 
 
 # Redacts configured secrets and API key query values from one error-shaped value
@@ -3584,12 +3592,14 @@ def report_monitor_recovery(target, username, error_alert, outage, image_url="")
         lasted = max(1, lasted)
         advice = error_alert.advice
         # Gated on the channels the failure alert reached and on their switches, so a channel that never heard of the outage stays quiet
-        email_owed = advice is not None and error_alert.delivered("email", ERROR_NOTIFICATION)
-        webhook_owed = advice is not None and error_alert.delivered("webhook", webhook_event_enabled("error"))
+        email_ready = bool(ERROR_NOTIFICATION and email_settings_problem() is None)
+        webhook_ready = bool(webhook_event_enabled("error") and webhook_settings_problem() is None)
+        email_owed = advice is not None and error_alert.delivered("email", email_ready)
+        webhook_owed = advice is not None and error_alert.delivered("webhook", webhook_ready)
         # A channel whose failure alert never got through hears about the outage and its end together, rather than
         # nothing at all, which is what a channel blocked for the length of the outage would otherwise receive
-        email_missed = advice is not None and error_alert.missed("email", ERROR_NOTIFICATION)
-        webhook_missed = advice is not None and error_alert.missed("webhook", webhook_event_enabled("error"))
+        email_missed = advice is not None and error_alert.missed("email", email_ready)
+        webhook_missed = advice is not None and error_alert.missed("webhook", webhook_ready)
         print_outage_recovery(target, lasted, close=False)
         if email_owed or webhook_owed or email_missed or webhook_missed:
             m_subject = outage_recovered_alert_subject(username, lasted)
@@ -4156,8 +4166,9 @@ def send_webhook(title, description, notification_type="status", force=False, sl
 # Sends one alert through the enabled email and webhook channels, with its own webhook text when the email body
 # carries a part such as the timestamp that the webhook service already shows
 def send_notification_channels(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, image_url="", ntfy_priority=0, ntfy_tags="", webhook_body=None, webhook_body_html=""):
-    email_attempted = bool(email_enabled)
-    webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    email_attempted = bool(email_enabled and email_settings_problem() is None)
+    webhook_selected = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    webhook_attempted = bool(webhook_selected and WEBHOOK_ENABLED and webhook_settings_problem() is None)
     email_delivered = False
     webhook_delivered = False
     if email_attempted:
@@ -6069,6 +6080,20 @@ def webhook_channel_configured():
     return bool(normalized_webhook_provider()) and doctor_value_is_set(WEBHOOK_URL)
 
 
+# Names the first local webhook setting that prevents automatic alert delivery
+def webhook_settings_problem():
+    if not doctor_value_is_set(WEBHOOK_URL):
+        return "WEBHOOK_URL is empty or still set to its placeholder"
+    if not validate_webhook_url():
+        return "WEBHOOK_URL must contain a complete HTTPS link"
+    provider = normalized_webhook_provider()
+    if not provider:
+        return "WEBHOOK_PROVIDER must be discord or ntfy"
+    if validate_webhook_customization(provider) is not None:
+        return "Webhook customization is invalid"
+    return validate_webhook_headers(provider)
+
+
 # Names the mail server this run would use, leaving out the account that signs in to it
 def startup_email_transport():
     if not smtp_server_configured():
@@ -6093,10 +6118,10 @@ def build_startup_summary(target=None, config_path=None, env_path=None, log_path
         StartupSummaryRow("Target", str(target) if target else "None", concise=True),
         StartupSummaryRow("Polling intervals", f"[offline: {display_time(STEAM_CHECK_INTERVAL)}] [online: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]", concise=True),
         StartupSummaryRow("Offline grace period", display_time(OFFLINE_INTERRUPT) if OFFLINE_INTERRUPT else "Disabled"),
-        StartupSummaryRow("Notifications (email)", _startup_notification_state(_startup_email_notification_categories(), email_channel_configured()), concise=True),
+        StartupSummaryRow("Notifications (email)", _startup_notification_state(_startup_email_notification_categories(), email_settings_problem() if _startup_email_notification_categories() else None), concise=True),
         StartupSummaryRow("Email transport", startup_email_transport()),
         StartupSummaryRow("Email recipient", mask_email_address(RECEIVER_EMAIL) if doctor_value_is_set(RECEIVER_EMAIL) else "Not configured"),
-        StartupSummaryRow("Notifications (webhook)", _startup_notification_state(_startup_webhook_notification_categories(), webhook_channel_configured()), concise=True),
+        StartupSummaryRow("Notifications (webhook)", _startup_notification_state(_startup_webhook_notification_categories(), webhook_settings_problem() if _startup_webhook_notification_categories() else None), concise=True),
         StartupSummaryRow("Webhook provider", startup_webhook_provider()),
     ]
     # The ntfy attachment setting says nothing about a run that posts to Discord, which ignores it
@@ -7537,8 +7562,8 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
             alert_due = not advice.retryable or int(time.time()) - outage.since >= ERROR_ALERT_AFTER_SECONDS
             now = int(time.time())
-            error_email_pending = alert_due and error_alert.pending("email", ERROR_NOTIFICATION, now)
-            error_webhook_pending = alert_due and error_alert.pending("webhook", webhook_event_enabled("error"), now)
+            error_email_pending = alert_due and error_alert.pending("email", ERROR_NOTIFICATION and email_settings_problem() is None, now)
+            error_webhook_pending = alert_due and error_alert.pending("webhook", webhook_event_enabled("error") and webhook_settings_problem() is None, now)
             if error_email_pending or error_webhook_pending:
                 m_subject = recovery_alert_subject(advice, username)
                 # Built once without the timestamp, which the webhook service shows itself and only the email carries
@@ -8911,7 +8936,7 @@ def main():
         sys.stdout = stdout_bck
         sys.exit(1 if info_result is False else 0)
 
-    if SMTP_HOST.startswith("your_smtp_server_"):
+    if SMTP_HOST.startswith("your_smtp_server_") and set(_startup_email_notification_categories()) <= {"errors"}:
         verbose_print("Email notifications are off because SMTP_HOST is still the shipped placeholder")
         ACTIVE_INACTIVE_NOTIFICATION = False
         GAME_CHANGE_NOTIFICATION = False
@@ -8921,9 +8946,6 @@ def main():
         STEAM_LEVEL_XP_NOTIFICATION = False
         FRIENDS_NOTIFICATION = False
         GAMES_LIBRARY_NOTIFICATION = False
-    if WEBHOOK_ENABLED and not validate_webhook_url():
-        verbose_print("Webhook notifications are off because WEBHOOK_URL is not a complete HTTPS link")
-        WEBHOOK_ENABLED = False
 
     emit_startup_summary(build_startup_summary(s_id, cfg_path, env_path, FINAL_LOG_PATH), show_full=full_startup_summary_enabled())
 
