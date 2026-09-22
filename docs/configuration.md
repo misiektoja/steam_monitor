@@ -67,6 +67,8 @@ steam_monitor 76561201960287930
 
 Email notifications need SMTP server details for the sending account. Add them to `steam_monitor.conf` or use the setup wizard. Setup checks the login without sending an email. To replace only the password, run `steam_monitor --set-smtp-password`. Password entry is hidden and preserves spaces.
 
+If email alerts are selected but local SMTP settings are missing or invalid, the startup summary shows `Unavailable` with the reason. Automatic email sends are skipped silently until the settings are fixed. `Off` means no email alert types are selected.
+
 Send one test message to verify the settings:
 
 ```sh
@@ -101,7 +103,7 @@ WEBHOOK_NAME_CHANGE_NOTIFICATION = False
 WEBHOOK_ERROR_NOTIFICATION = True
 ```
 
-A `WEBHOOK_URL` left unset, or left at its `your_webhook_url` placeholder, switches webhook alerts off at startup instead of failing at the first alert. `--verbose` reports why.
+If webhook alerts are selected but the URL, provider or other local settings are invalid, the startup summary shows `Unavailable` with the reason. Automatic webhook sends are skipped silently until the settings are fixed. `Off` means the master switch or all webhook alert types are off.
 
 The service is detected from the URL. While `WEBHOOK_PROVIDER` is left at its default, that detection is silent and `--verbose` reports it. A warning appears only when your configuration file sets a provider the URL disagrees with.
 
