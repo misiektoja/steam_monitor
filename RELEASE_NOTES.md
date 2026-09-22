@@ -4,11 +4,12 @@ This is a high-level summary of the most important changes.
 
 # Changes in 2.1.1 (TBD)
 
-Version **2.1.1** shows when selected email or webhook alerts cannot be delivered and skips automatic sends until local settings are fixed.
+Version **2.1.1** shows when selected email or webhook alerts cannot be delivered and skips automatic sends until local settings are fixed. It also fixes webhook alerts that were dropped when a custom header used a placeholder such as `{title}` and the alert text held emoji or non-Latin letters.
 
 **Bug fixes**:
 
 - **BUGFIX:** **Unavailable notification channels stay quiet** - The startup summary shows **`Unavailable`** and names the missing or invalid local setting. Automatic email and webhook alerts make no send attempt and print no delivery line until that channel is configured. **`Off`** means alerts are disabled for that channel
+- **BUGFIX:** **Custom headers with emoji no longer drop webhook alerts** - A **`WEBHOOK_HEADERS`** value built from a placeholder such as `{title}` failed the whole alert with `'latin-1' codec can't encode character` when the expanded text held emoji or letters outside Latin-1. Such values are now sent RFC 2047 encoded (`=?UTF-8?B?...?=`) and the alert is delivered. ntfy decodes them back to the original text. Other receivers see the encoded form. ASCII values, including ones you already encoded, are sent unchanged
 
 # Changes in 2.1 (22 Sep 2026)
 
