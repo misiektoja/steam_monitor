@@ -73,6 +73,10 @@ class WebhookNotificationTests(unittest.TestCase):
 
     # Verifies startup summaries use short labels and unstarred bounded continuation lines
     def test_startup_notification_summaries_use_compact_rollups(self):
+        # The rollup reports a channel with no destination as off, whatever its alert types are
+        for setting, value in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("RECEIVER_EMAIL", "michal.k@example.com"), ("WEBHOOK_PROVIDER", "discord"), ("WEBHOOK_URL", "https://discord.com/api/webhooks/1/private-token")):
+            self.addCleanup(setattr, steam_monitor, setting, getattr(steam_monitor, setting))
+            setattr(steam_monitor, setting, value)
         for setting in ("ACTIVE_INACTIVE_NOTIFICATION", "STATUS_NOTIFICATION", "GAME_CHANGE_NOTIFICATION", "STEAM_LEVEL_XP_NOTIFICATION", "FRIENDS_NOTIFICATION", "GAMES_LIBRARY_NOTIFICATION", "NAME_CHANGE_NOTIFICATION", "ERROR_NOTIFICATION", "WEBHOOK_ENABLED", "WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION", "WEBHOOK_STATUS_NOTIFICATION", "WEBHOOK_GAME_CHANGE_NOTIFICATION", "WEBHOOK_LEVEL_XP_NOTIFICATION", "WEBHOOK_FRIENDS_NOTIFICATION", "WEBHOOK_GAMES_NOTIFICATION", "WEBHOOK_NAME_CHANGE_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION"):
             setattr(steam_monitor, setting, True)
         rows = {row.label: row.value for row in steam_monitor.build_startup_summary(target="76561201960287930")}
@@ -248,7 +252,7 @@ class WebhookNotificationTests(unittest.TestCase):
 
         self.assertEqual(attempted, (False, True))
         email.assert_not_called()
-        webhook.assert_called_once_with("Title", "Body", "status", force=True, image_url="", ntfy_priority=0, ntfy_tags="")
+        webhook.assert_called_once_with("Title", "Body", "status", force=True, image_url="", ntfy_priority=0, ntfy_tags="", discord_description="")
 
     # Verifies invalid custom headers are rejected before any request is attempted
     def test_invalid_headers_are_rejected(self):

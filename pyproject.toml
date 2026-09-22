@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "steam_monitor"
-version = "2.0"
+version = "2.1"
 description = "Tool implementing real-time tracking of Steam players activities"
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -47,7 +47,7 @@ test = [
   "Pillow>=12.0.0; python_version >= '3.10'",
 ]
 # Pinned so a new ruff release cannot fail CI on a rule that did not exist when the change was written
-lint = ["ruff==0.16.7"]
+lint = ["ruff==0.16.8"]
 # Each Pillow major dropped an older Python, so every supported version pins the newest release that still supports it
 ntfy-images = [
   "Pillow>=8.0,<9.0; python_version < '3.7'",

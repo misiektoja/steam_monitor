@@ -2,6 +2,25 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 2.1 (22 Sep 2026)
+
+Version **2.1** sends every alert as an **HTML email** with the changed values in bold and the Steam profile and store pages as links, and gives Discord the same formatting. Games library changes now name the **game title** instead of the bare app ID. It also gives every monitoring failure unified subject and body across email and webhook, followed by a **recovery alert** when monitoring resumes. Network failures now link to a new **Connection Problems** page section. Alert delivery messages stay within the correct check report and alert channels that still use placeholder configuration values are shown as not configured.
+
+**Features and improvements**:
+
+- **NEW:** **HTML email notifications** - Every alert now carries an **HTML** part next to the plain text. The Steam user, the game, the status, the counts and the times that changed are in **bold**, the monitored account and every named friend link to their **Steam community profile**, and games and library changes link to their **Steam store page**. Mail clients that cannot show HTML fall back to the plain text, which is unchanged
+- **NEW:** **Games library changes name the game** - Added and removed games are reported as **`Dota 2 (570)`** instead of the bare app ID, in the terminal and in every alert. Titles come from the startup snapshot plus a lookup limited to the games that changed, so regular checks are unaffected. A title that cannot be resolved falls back to the app ID
+- **NEW:** **Discord alerts match the email** - Discord receives the same emphasis and links as the HTML email, rendered as markdown in the embed. **ntfy** keeps the plain body, since it would show the markers literally
+- **IMPROVE:** **Failure alerts share one shape** - Every monitoring failure email and webhook uses the subject **`Steam Monitor error: <what went wrong> (user: <username>)`** and lists the fix, the guide link, how many checks failed in a row, since when and when the next retry happens. A **recovery alert** follows on the channels that received the failure alert once monitoring resumes. `-e` / `--no-error-notify` and `--no-webhook-error-notify` switch both off
+
+**Bug fixes**:
+
+- **BUGFIX:** **Network failures point at the right page** - A timed-out or unreachable Steam Web API request now link to the new **Connection Problems** section, which explains the automatic retries and what to check if the failure continues.
+- **BUGFIX:** **Alert deliveries stay inside their report** - The hourly **`Monitoring degraded`** reminder previously closed the report before sending its alert. This caused lines such as **`Sending email notification to ...`** and webhook delivery messages to appear below the separator in a separate block. The report now closes after the delivery messages, keeping the entire check output together.
+- **BUGFIX:** **Level alerts read as one block** - The **Steam level** alert separated its **Total XP after level change** line with a tab, and left an empty line in its place when the XP value was unavailable. The line now reads as ordinary text and disappears completely when there is no XP to report.
+- **BUGFIX:** **A game change cannot resend the status alert** - When a game transition produced no message of its own, the previous status alert could be delivered a second time under the game event. Each game check now starts from an empty message.
+- **BUGFIX:** **Unset alert channels are reported as unset** - The verbose startup summary previously treated placeholder configuration values as real alert settings. For example, an unconfigured email channel could appear as **`Email transport: your_smtp_server_ssl:587`** with recipient **`your_receiver_email`**, while the webhook provider could appear as **`Discord`**. These values are now shown as **`Not configured`**, while the channel summary shows **`Off (not configured)`**.
+
 # Changes in 2.0 (18 Sep 2026)
 
 Version **2.0** adds **guided setup**, a read-only **Doctor preflight check** and **private SMTP password entry**. **Coloured output**, startup summaries and verbose/debug modes make monitoring easier to follow. It protects saved history and credentials, improves error alerts and adds verifiable downloads. **ntfy artwork is now optional** and needs an extra dependency.

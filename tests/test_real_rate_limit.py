@@ -87,4 +87,4 @@ def test_persistent_rate_limit_delivers_one_error_alert(tmp_path, monkeypatch, f
             monitor.steam_monitor_user(76561201960435530, None)
     assert state["waits"] == [150] * 6
     assert len(state["deliveries"]) == 1
-    assert "monitoring error" in state["deliveries"][0]["embeds"][0]["title"]
+    assert state["deliveries"][0]["embeds"][0]["title"] == "Steam Monitor error: Steam is rate limiting requests (user: TestPlayer)"

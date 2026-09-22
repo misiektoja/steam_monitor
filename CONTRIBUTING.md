@@ -20,10 +20,11 @@ pip install -e '.[test]'
 
 The test extra already includes Pillow, which the ntfy artwork tests need. The `ntfy-images` extra installs the same dependency for normal use.
 
-Optional local hooks catch what CI would reject before a commit is written:
+Optional local hooks catch what CI would reject before a commit is written. The lint hook calls the Ruff installed by the `lint` extra rather than a copy of its own, so it always matches the version CI runs:
 
 ```sh
 pip install pre-commit
+pip install -e '.[lint]'
 pre-commit install
 ```
 

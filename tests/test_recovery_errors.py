@@ -383,7 +383,7 @@ def test_a_failed_file_write_is_classified_as_unwritable(restored_globals):
 
     assert advice.code == "file.unwritable"
     assert advice.fix.startswith("Check that the directory exists and is writable, or choose another path")
-    assert advice.fix.endswith(f"Guide: {monitor.DIAGNOSTICS_GUIDE_URL}")
+    assert advice.fix.endswith(f"Guide: {monitor.CONFIG_GUIDE_URL}")
 
 
 # Verifies a profile CSV row that cannot be written carries the same fix as every other unwritable file
@@ -707,3 +707,101 @@ def test_the_loop_tracks_the_error_alert_through_the_state():
     assert source.count('error_alert.pending("email"') == source.count('error_alert.record("email"') >= 1
     assert source.count('error_alert.pending("webhook"') == source.count('error_alert.record("webhook"') >= 1
     assert not re.search(r"^\s*error_(email|webhook)_sent = ", source, re.MULTILINE)
+
+
+# The verbose and debug section explains the output flags, so a network failure sent there finds nothing about its cause
+@pytest.mark.parametrize("error", [TimeoutError("request timed out"), req.exceptions.ConnectionError("connection refused")])
+def test_network_failures_link_to_the_connection_guide(error):
+    advice = monitor.classify_recovery_error(error)
+
+    assert advice.retryable is True
+    assert f"\nGuide: {monitor.CONNECTION_GUIDE_URL}" in advice.fix
+    assert advice.fix.startswith("Usually nothing to do, the tool retries on its own.")
+    assert "--doctor" not in advice.fix
+    assert "--debug" not in advice.fix
+
+
+# Verifies a Steam outage reads like one rather than sending the reader to the output flags
+def test_a_steam_outage_links_to_the_connection_guide():
+    advice = monitor.classify_recovery_error(monitor.req.exceptions.HTTPError("503 Server Error"), detail="503 Service Unavailable")
+
+    assert advice.code == "steam.unavailable"
+    assert advice.retryable is True
+    assert advice.fix == monitor.recovery_fix_with_guide("Usually nothing to do, the tool retries on its own. If it continues, wait for Steam to recover", monitor.CONNECTION_GUIDE_URL)
+
+
+# Only a failure nothing recognized asks for --debug, so no other guide may point at the page describing it
+def test_only_the_unrecognized_failure_points_at_the_output_modes():
+    source = Path(monitor.__file__).read_text(encoding="utf-8")
+    users = [line for line in source.splitlines() if "DIAGNOSTICS_GUIDE_URL" in line and "DIAGNOSTICS_GUIDE_URL = " not in line]
+
+    assert len(users) == 1
+    assert "unknown_failure_fix()" in users[0]
+
+
+# Verifies the failure and recovery alert subjects name the tool, so an inbox fed by several monitors sorts them apart
+def test_the_alert_subjects_name_the_tool():
+    advice = monitor.make_recovery_advice("network.timeout", "The Steam Web API did not answer in time", "do the thing", True)
+
+    assert monitor.recovery_alert_subject(advice, "watched") == "Steam Monitor error: The Steam Web API did not answer in time (user: watched)"
+    assert monitor.outage_recovered_alert_subject("watched", 514) == "Steam Monitor recovered: monitoring watched resumed after 8 minutes, 34 seconds"
+
+
+# Verifies the failure alert body counts the run only once a check has failed again and carries the cause only in debug
+def test_the_failure_alert_body_lists_the_retry_and_hides_the_cause(monkeypatch):
+    monkeypatch.setattr(monitor, "DEBUG_MODE", False)
+    advice = monitor.make_recovery_advice("network.timeout", "The Steam Web API did not answer in time", "Usually nothing to do", True, "the socket gave up")
+
+    first = monitor.recovery_alert_body(advice, 300)
+    later = monitor.recovery_alert_body(advice, 300, 4, 1800000000)
+
+    assert first.startswith("The Steam Web API did not answer in time\n\nTo fix: Usually nothing to do\n\nNext retry in: 5 minutes")
+    assert "Failed checks in a row" not in first
+    assert "Failed checks in a row: 4" in later and "Failing since: " in later
+    assert "Technical detail" not in later
+    assert "Timestamp: " not in monitor.recovery_alert_body(advice, 300, timestamp=False)
+    monkeypatch.setattr(monitor, "DEBUG_MODE", True)
+    assert "Technical detail: the socket gave up" in monitor.recovery_alert_body(advice, 300)
+
+
+# Verifies the recovery alert names the failure it closes and reaches only the channels that heard about it
+def test_the_recovery_alert_answers_the_channels_that_were_told(monkeypatch):
+    sent = []
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "webhook_event_enabled", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(monitor, "send_notification_channels", lambda *args, **kwargs: sent.append((args[1], args[2], kwargs.get("email_enabled"), kwargs.get("webhook_enabled"))) or (True, True))
+
+    advice = monitor.make_recovery_advice("network.timeout", "The Steam Web API did not answer in time", "do the thing", True)
+    outage = monitor.OutageReporter()
+    outage.failed(advice)
+    error_alert = monitor.ErrorAlertState()
+    error_alert.remember(advice, outage.since)
+    # Only the email alert was delivered, so the webhook never heard of this outage
+    error_alert.record("email", True, True, outage.since)
+
+    monitor.report_monitor_recovery("76561201960435530", "watched", error_alert, outage)
+
+    assert len(sent) == 1
+    subject, body, email_enabled, webhook_enabled = sent[0]
+    assert subject.startswith("Steam Monitor recovered: monitoring watched resumed after ")
+    assert "The failure was: The Steam Web API did not answer in time" in body
+    assert (email_enabled, webhook_enabled) == (True, False)
+    assert error_alert.advice is None and error_alert.email_sent is False
+
+
+# Verifies a recovery nobody was alerted about stays on the screen, since an inbox that never heard of the outage has nothing to close
+def test_a_recovery_without_a_failure_alert_stays_quiet(monkeypatch):
+    sent = []
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "webhook_event_enabled", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(monitor, "send_notification_channels", lambda *args, **kwargs: sent.append(args) or (True, True))
+
+    advice = monitor.make_recovery_advice("network.timeout", "The Steam Web API did not answer in time", "do the thing", True)
+    outage = monitor.OutageReporter()
+    outage.failed(advice)
+    error_alert = monitor.ErrorAlertState()
+    error_alert.remember(advice, outage.since)
+
+    monitor.report_monitor_recovery("76561201960435530", "watched", error_alert, outage)
+
+    assert sent == []

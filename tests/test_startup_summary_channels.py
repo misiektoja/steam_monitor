@@ -176,3 +176,22 @@ def test_the_offline_grace_period_row_reports_the_setting(monkeypatch):
     monkeypatch.setattr(monitor, "OFFLINE_INTERRUPT", 420)
 
     assert summary_values()["Offline grace period"] == "7 minutes"
+
+
+# Verifies a configuration still holding the shipped sample values reports no channel, rather than naming a server and a recipient no alert can reach
+@pytest.mark.parametrize("label,setting,placeholder", [
+    ("Email transport", "SMTP_HOST", "your_smtp_server_ssl"),
+    ("Email recipient", "RECEIVER_EMAIL", "your_receiver_email"),
+    ("Webhook provider", "WEBHOOK_URL", "your_webhook_url"),
+])
+def test_a_placeholder_destination_is_reported_as_unconfigured(monkeypatch, label, setting, placeholder):
+    monkeypatch.setattr(monitor, setting, placeholder)
+
+    assert summary_values()[label] == "Not configured"
+
+
+# Verifies a channel with its alert types on but no destination is not reported as live, since the rollup is the only line the short view prints
+def test_a_channel_without_a_destination_is_reported_as_off():
+    assert monitor._startup_notification_state(["errors"], True) == "On (errors)"
+    assert monitor._startup_notification_state(["errors"], False) == "Off (not configured)"
+    assert monitor._startup_notification_state([], False) == "Off"

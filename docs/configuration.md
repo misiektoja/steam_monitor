@@ -73,6 +73,8 @@ Send one test message to verify the settings:
 steam_monitor --send-test-email
 ```
 
+Every alert is sent as both HTML and plain text in one message. Mail clients that render HTML show the Steam user, the game, the status and the values that changed in bold, with the profile and store pages as links. Clients that do not fall back to the plain text, which is unchanged.
+
 <a id="webhook-settings"></a>
 ## Webhook Settings
 
@@ -168,6 +170,8 @@ Keep the default provider in `steam_monitor.conf`:
 WEBHOOK_PROVIDER = "discord"
 ```
 
+Discord alerts carry the same emphasis as the HTML email, since Discord renders markdown in an embed. Bold values stay bold and links stay clickable. Only Discord gets that wording: ntfy receives the plain body, because it would show the markers literally.
+
 <a id="advanced-discord-format-customization"></a>
 ### Advanced Discord-format customization
 
@@ -244,13 +248,14 @@ The four presence colours apply where the tool reports a state, such as a `Statu
 | `section` | `bright_white` | Section names and every command the tool tells you to run |
 | `username` | `bright_cyan underline` | The monitored account name and the detected install method |
 | `id` | `bright_magenta` | The Steam64 ID |
-| `status_online` | `green` | An online presence |
-| `status_offline` | `red` | An offline presence |
+| `status_online` | `green` | An online presence or a game that just started |
+| `status_offline` | `red` | An offline presence or a game that just stopped |
 | `status_away` | `yellow` | An away presence |
 | `status_snooze` | `magenta` | A snooze presence |
 | `status_other` | `white` | A presence value the tool does not recognise |
 | `game` | `bright_yellow` | Game titles |
 | `duration` | `green` | Time spans such as `3 hours, 21 minutes` |
+| `status_change` | `yellow` | The `changed status` and `changed game` part of a change report |
 | `timestamp_label` | *(empty)* | The `Timestamp:` label, left uncoloured by default |
 | `timestamp_value` | `cyan` | The timestamp itself |
 | `info` | `cyan` | `To fix:` lines, notes, prompts and `[SKIP]` rows |
