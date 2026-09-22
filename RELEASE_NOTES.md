@@ -2,6 +2,14 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 2.1.1 (TBD)
+
+Version **2.1.1** shows when selected email or webhook alerts cannot be delivered and skips automatic sends until local settings are fixed.
+
+**Bug fixes**:
+
+- **BUGFIX:** **Unavailable notification channels stay quiet** - The startup summary shows **`Unavailable`** and names the missing or invalid local setting. Automatic email and webhook alerts make no send attempt and print no delivery line until that channel is configured. **`Off`** means alerts are disabled for that channel
+
 # Changes in 2.1 (22 Sep 2026)
 
 Version **2.1** sends every alert as an **HTML email** with the changed values in bold and the Steam profile and store pages as links, and gives Discord the same formatting. Games library changes now name the **game title** instead of the bare app ID. It also gives every monitoring failure unified subject and body across email and webhook, followed by a **recovery alert** when monitoring resumes. Network failures now link to a new **Connection Problems** page section. Alert delivery messages stay within the correct check report and alert channels that still use placeholder configuration values are shown as not configured.
