@@ -974,7 +974,7 @@
 <p>You can monitor multiple Steam players by running multiple instances of the script.</p>
 <p>The tool automatically saves its output to <code>steam_monitor_&lt;user_steam_id/file_suffix&gt;.log</code> file. The log file name can be changed via <code>ST_LOGFILE</code> configuration option and its suffix via <code>FILE_SUFFIX</code> / <code>-y</code> flag. Logging can be disabled completely via <code>DISABLE_LOGGING</code> / <code>-d</code> flag.</p>
 <p>Set <code>ASCII_LOG_SEPARATORS</code> to <code>"Auto"</code> (default) to use ASCII separator-only lines on Windows, <code>"On"</code> to use them on every operating system or <code>"Off"</code> to preserve Unicode separators in logs everywhere. Terminal separators stay Unicode. Log files and all other logged text remain UTF-8.</p>
-<p>The tool also saves the timestamp and last status (after every change) to the <code>steam_&lt;steam64_id&gt;_last_status.json</code> file, so the last status is available after the restart of the tool. See <a href="#status-file">Status File</a> to keep it somewhere else. When games library tracking is enabled, a snapshot of the library (game count and app IDs) is stored in <code>steam_&lt;steam64_id&gt;_games.json</code> and only changes are reported.</p>
+<p>The tool also saves the timestamp and last status (after every change) to the <code>steam_&lt;steam64_id&gt;_last_status.json</code> file, so the last status is available after the restart of the tool. See <a href="#status-file">Status File</a> to keep it somewhere else. When games library tracking is enabled, a snapshot of the library (game count, app IDs and the titles seen so far) is stored in <code>steam_&lt;steam64_id&gt;_games.json</code> and only changes are reported.</p>
 <p>To track when the user's <strong>Steam level and total XP</strong> changes:
 - set <code>STEAM_LEVEL_XP_CHECK</code> to <code>True</code>
 - or use the <code>--check-level-xp</code> flag</p>
@@ -984,6 +984,7 @@
 <p>To track changes in the user's <strong>games library</strong> (game count and added/removed games):
 - set <code>GAMES_LIBRARY_CHECK</code> to <code>True</code>
 - or use the <code>--check-games</code> flag</p>
+<p>Added and removed games are reported by title with the app ID after it, for example <code>Dota 2 (570)</code>. Titles come from one snapshot taken at startup plus a lookup limited to the games that actually changed, so the regular checks stay small. A title the lookup cannot resolve is reported as the bare app ID.</p>
 <p>The user's <strong>display (persona) name</strong> is tracked automatically with no extra configuration. Whenever it changes, the tool logs the old and new name and (when a profile CSV is configured) records a <code>name_change</code> row. To also receive an email on such changes use <code>--notify-name-change</code> (see <a href="#email-notifications">Email Notifications</a>).</p>
 <p><a id="terminal-output"></a></p>
 <h2 id="terminal-output">Terminal Output<a class="headerlink" href="#terminal-output" title="Permanent link">&para;</a></h2>
@@ -1044,12 +1045,13 @@
 <p>It requires games library tracking (<code>GAMES_LIBRARY_CHECK</code> / <code>--check-games</code>) to be enabled.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>--check-games<span class="w"> </span>--notify-games
 </code></pre></div>
-<p>To disable sending an email on errors (enabled by default):
+<p>To disable sending an email on errors and the recovery alert that follows (both enabled by default):
 - set <code>ERROR_NOTIFICATION</code> to <code>False</code>
 - or use the <code>-e</code> flag</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>-e
 </code></pre></div>
 <p>Email and webhook error alerts are sent after <strong>5 minutes</strong> of a continuing failure. Problems that need your action, such as a rejected API key, alert immediately. Each kind of failure alerts once per channel. Failed deliveries are retried after 5 minutes, with increasing waits up to an hour. Alerts can fire again after monitoring recovers.</p>
+<p>A failure alert carries the subject <code>Steam Monitor error: &lt;what went wrong&gt; (user: &lt;username&gt;)</code> and lists the fix, the guide link, how many checks failed in a row, since when and when the next retry is. When the failure clears, a <code>Steam Monitor recovered: monitoring &lt;username&gt; resumed after &lt;time&gt;</code> alert follows on every channel that received the failure alert.</p>
 <p>Make sure you have configured your <a href="../configuration/#smtp-settings">SMTP settings</a> first.</p>
 <p>Example email:</p>
 <p align="center">
@@ -1104,12 +1106,13 @@
 <td><code>--webhook-name-change</code></td>
 </tr>
 <tr>
-<td>Monitoring errors</td>
+<td>Monitoring errors and recoveries</td>
 <td><code>WEBHOOK_ERROR_NOTIFICATION</code></td>
 <td><code>--webhook-errors</code> or <code>--no-webhook-error-notify</code></td>
 </tr>
 </tbody>
 </table>
+<p>A monitoring error webhook carries the same title and text as the error email, without the timestamp the webhook service shows itself, and the matching recovery alert follows on the same channel.</p>
 <p>Use <code>--webhook</code> or <code>--no-webhook</code> to override the master switch for one run. Event flags enable the master switch automatically. Level and XP, friends and games alerts require their corresponding tracking options.</p>
 <p>For example:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>--webhook-active-inactive<span class="w"> </span>--webhook-game-changes

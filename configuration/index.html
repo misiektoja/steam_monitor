@@ -848,6 +848,7 @@
 <p>Send one test message to verify the settings:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>steam_monitor<span class="w"> </span>--send-test-email
 </code></pre></div>
+<p>Every alert is sent as both HTML and plain text in one message. Mail clients that render HTML show the Steam user, the game, the status and the values that changed in bold, with the profile and store pages as links. Clients that do not fall back to the plain text, which is unchanged.</p>
 <p><a id="webhook-settings"></a></p>
 <h2 id="webhook-settings">Webhook Settings<a class="headerlink" href="#webhook-settings" title="Permanent link">&para;</a></h2>
 <p>Steam Monitor can send activity alerts through Discord or the native <a href="https://docs.ntfy.sh/publish/">ntfy publish API</a>. Webhook alerts are independent from email, so either channel can be enabled alone or both can receive the same event.</p>
@@ -906,6 +907,7 @@
 <p>Keep the default provider in <code>steam_monitor.conf</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="na">WEBHOOK_PROVIDER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"discord"</span>
 </code></pre></div>
+<p>Discord alerts carry the same emphasis as the HTML email, since Discord renders markdown in an embed. Bold values stay bold and links stay clickable. Only Discord gets that wording: ntfy receives the plain body, because it would show the markers literally.</p>
 <p><a id="advanced-discord-format-customization"></a></p>
 <h3 id="advanced-discord-format-customization">Advanced Discord-format customization<a class="headerlink" href="#advanced-discord-format-customization" title="Permanent link">&para;</a></h3>
 <p><code>WEBHOOK_USERNAME</code> and <code>WEBHOOK_AVATAR_URL</code> change the sender name and HTTPS avatar for Discord-format payloads:</p>
@@ -984,12 +986,12 @@
 <tr>
 <td><code>status_online</code></td>
 <td><code>green</code></td>
-<td>An online presence</td>
+<td>An online presence or a game that just started</td>
 </tr>
 <tr>
 <td><code>status_offline</code></td>
 <td><code>red</code></td>
-<td>An offline presence</td>
+<td>An offline presence or a game that just stopped</td>
 </tr>
 <tr>
 <td><code>status_away</code></td>
@@ -1015,6 +1017,11 @@
 <td><code>duration</code></td>
 <td><code>green</code></td>
 <td>Time spans such as <code>3 hours, 21 minutes</code></td>
+</tr>
+<tr>
+<td><code>status_change</code></td>
+<td><code>yellow</code></td>
+<td>The <code>changed status</code> and <code>changed game</code> part of a change report</td>
 </tr>
 <tr>
 <td><code>timestamp_label</code></td>
