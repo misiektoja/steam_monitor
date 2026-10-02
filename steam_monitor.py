@@ -3195,7 +3195,7 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
         return advice("webhook.invalid", safe_detail or "The webhook URL was not changed", f"Copy a complete Discord or ntfy webhook URL then run {flag} again", False, guide)
 
     if context == "target.missing":
-        return advice("target.missing", safe_detail or "No Steam profile was provided", f"Pass the profile to watch as a {STEAM_TARGET_FORMS}: {render_command(['<steam_target>'])}", False, QUICK_START_GUIDE_URL)
+        return advice("target.missing", safe_detail or "No Steam profile was provided", f"Save TARGET_STEAM_ID in the configuration file or include a {STEAM_TARGET_FORMS} on each run: {render_command(['<steam_target>'])}", False, QUICK_START_GUIDE_URL)
 
     if context == "target":
         if "rate limit" in message or mentions_status_code("429", message) or status == 429:
@@ -3250,7 +3250,7 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
 
     # Runtime, which is the monitoring loop and every Steam Web API call it makes
     if status == 429 or "rate limit" in message or "too many requests" in message:
-        return advice("steam.rate_limited", "Steam is rate limiting requests", "The tool will wait and retry. Increase the polling intervals if this repeats", True, INTERVALS_GUIDE_URL)
+        return advice("steam.rate_limited", "Steam is rate limiting requests", "The tool will wait and retry. If this repeats, raise STEAM_CHECK_INTERVAL and STEAM_ACTIVE_CHECK_INTERVAL in the configuration file, then restart. To override them without saving, include --check-interval SECONDS and --active-interval SECONDS on each run", True, INTERVALS_GUIDE_URL)
     if status in (401, 403) or "forbidden" in message or "unauthorized" in message:
         return advice("auth.api_key_invalid", "Steam rejected the configured Web API key", f"Validate and replace it with '{render_command(['--set-steam-api-key'])}'", False, STEAM_API_KEY_GUIDE_URL)
     if status == 404 or "not found" in message:
@@ -5188,7 +5188,7 @@ def _wizard_collect_target_section(state, initial_target=None, input_func=None):
         print(f"  '{vanity}' will be resolved after the Steam Web API key is set up.")
         break
     if not state.target and not state.pending_vanity:
-        print("  No target selected. Nothing can be monitored until one is set. Run --setup again or pass the target on the command line.")
+        print("  No target selected. Nothing can be monitored until one is set. Run --setup again to save a target or include the target on each monitoring run.")
         _wizard_apply_target(state)
         return
     state.persist_target = _wizard_ask_yes_no("Persist this target in the generated config?", default=state.persist_target, input_func=input_func)
@@ -5990,14 +5990,41 @@ def _wizard_print_command(label, command, suffix=""):
     print(f"    {colorize('section', command)}{colorize('info', suffix) if suffix else ''}\n")
 
 
-# Prints the command that starts monitoring with the files this run checked, so a report read on its own
-# ends with the next action rather than leaving the reader to assemble the command
-def print_doctor_next_steps(target_value=None, saved_target=None, doctor_exit=0):
+# Rebuilds explicit monitoring options while replacing private values with named placeholders
+def doctor_monitoring_overrides(args):
+    parts = []
+    value_options = (("webhook_provider", "--webhook-provider"), ("check_interval", "--check-interval"), ("active_interval", "--active-interval"), ("csv_file", "--csv-file"), ("profile_csv_file", "--profile-csv-file"), ("status_file", "--status-file"), ("file_suffix", "--file-suffix"), ("truncate", "--truncate"))
+    for name, option in value_options:
+        value = getattr(args, name, None)
+        if value is not None:
+            # An equals sign keeps a value beginning with a dash from being parsed as another option
+            if str(value).startswith("-"):
+                parts.append(f"{option}={value}")
+            else:
+                parts.extend((option, str(value)))
+    switches = (("notify_active_inactive", "--notify-active-inactive", True), ("notify_game_change", "--notify-game-change", True), ("notify_status", "--notify-status", True), ("notify_name_change", "--notify-name-change", True), ("notify_level_xp", "--notify-level-xp", True), ("notify_friends", "--notify-friends", True), ("notify_games", "--notify-games", True), ("notify_errors", "--no-error-notify", False), ("webhook_enabled", "--webhook", True), ("webhook_enabled", "--no-webhook", False), ("webhook_active_inactive", "--webhook-active-inactive", True), ("webhook_status", "--webhook-status", True), ("webhook_game_changes", "--webhook-game-changes", True), ("webhook_level_xp", "--webhook-level-xp", True), ("webhook_friends", "--webhook-friends", True), ("webhook_games", "--webhook-games", True), ("webhook_name_change", "--webhook-name-change", True), ("webhook_errors", "--webhook-errors", True), ("webhook_errors", "--no-webhook-error-notify", False), ("check_level_xp", "--check-level-xp", True), ("check_friends", "--check-friends", True), ("check_games", "--check-games", True), ("disable_logging", "--disable-logging", True), ("no_color", "--no-color", True), ("verbose", "--verbose", True), ("debug", "--debug", True))
+    for name, option, selected in switches:
+        if getattr(args, name, None) is selected:
+            parts.append(option)
+    private_options = (("steam_api_key", "--steam-api-key", "STEAM_API_KEY"), ("webhook_url", "--webhook-url", "WEBHOOK_URL"))
+    has_private_values = False
+    for name, option, placeholder in private_options:
+        if getattr(args, name, None) is not None:
+            parts.extend((option, placeholder))
+            has_private_values = True
+    return parts, has_private_values
+
+
+# Prints the monitoring command with the settings selected for Doctor
+def print_doctor_next_steps(target_value=None, saved_target=None, doctor_exit=0, cli_args=None):
     print(colorize("header", "\nNext steps\n"))
     label = "After Doctor passes, start monitoring:" if doctor_exit else "Start monitoring:"
     monitor_target = command_targets(target_value, saved_target)[1]
-    _wizard_print_command(label, render_command([monitor_target] if monitor_target else []))
-    # No trailing blank line: the command printer already left one and the report must not end on two
+    monitor_arguments = [monitor_target] if monitor_target else []
+    overrides, private_values = doctor_monitoring_overrides(cli_args)
+    _wizard_print_command(label, render_command(monitor_arguments + overrides))
+    if private_values:
+        print("Replace the uppercase credential placeholders before running. Doctor does not repeat private command-line values.\n")
     print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}")
 
 
@@ -6218,7 +6245,8 @@ def help_examples():
             ("Trace what the tool is doing", f"{prefix} <steam_target> --debug"),
         )),
     )
-    return render_help_examples(groups, QUICK_START_GUIDE_URL)
+    notice = "Setting options apply to the current run and do not update the configuration file.\nInclude them on each run or save the settings through --setup or in a configuration file.\n\n"
+    return notice + render_help_examples(groups, QUICK_START_GUIDE_URL)
 
 
 # Initializes the CSV file
@@ -8843,7 +8871,7 @@ def main():
         doctor_target = args.resolve_community_url or args.steam64_id or TARGET_STEAM_ID
         doctor_exit = run_doctor(target_value=doctor_target, config_path=cfg_path, env_path=env_path)
         # A target the config file already carries is left out, so the command stays as short as the wizard's
-        print_doctor_next_steps(doctor_target, TARGET_STEAM_ID, doctor_exit)
+        print_doctor_next_steps(doctor_target, TARGET_STEAM_ID, doctor_exit, cli_args=args)
         sys.exit(doctor_exit)
 
     configuration_errors = runtime_configuration_errors() + runtime_boolean_errors()
