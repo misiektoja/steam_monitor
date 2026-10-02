@@ -557,7 +557,8 @@ def test_the_help_examples_are_grouped():
 
     for group in ("Getting started", "Notifications", "Information and diagnostics"):
         assert f"\n{group}:\n" in epilog, f"the {group} group is missing"
-    assert epilog.startswith("Examples:")
+    assert epilog.startswith("Setting options apply to the current run")
+    assert "\n\nExamples:\n\n" in epilog
     assert monitor.QUICK_START_GUIDE_URL in epilog
 
 
@@ -832,7 +833,7 @@ def test_a_missing_target_reports_the_shared_error_block():
 
     assert result.returncode == 1
     assert "* Error: A Steam profile target needs to be defined" in result.stdout
-    assert f"To fix: Pass the profile to watch as a {monitor.STEAM_TARGET_FORMS}" in result.stdout
+    assert f"To fix: Save TARGET_STEAM_ID in the configuration file or include a {monitor.STEAM_TARGET_FORMS} on each run" in result.stdout
     assert f"Guide: {monitor.QUICK_START_GUIDE_URL}" in result.stdout
     assert "usage: steam_monitor" not in result.stdout + result.stderr
 
