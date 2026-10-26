@@ -8,6 +8,7 @@ import os
 import re
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -55,6 +56,7 @@ class StopScenario(Exception):
 class ScriptedSteamWebAPI:
     # Answers each Steam endpoint from the scenario entry for the current cycle
     def __init__(self, scenario, fail_cycles=()):
+        self.IPlayerService = SimpleNamespace(GetOwnedGames=SimpleNamespace(parameters={}))
         self.scenario = scenario
         self.fail_cycles = set(fail_cycles)
         self.index = 0

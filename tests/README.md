@@ -36,6 +36,7 @@ and again before anything is published to PyPI.
 
 | File | Area under test |
 | --- | --- |
+| `test_owned_games.py` | Real-client required-parameter checks across all owned-games paths, metadata defaults, safe error classification and retained-snapshot messages |
 | `test_setting_persistence.py` | Setting lifetime in help, Doctor CLI options, disabled switches and private-value placeholders |
 | `test_recovery_command_privacy.py` | Generated commands, credential redaction and output stream handling |
 | `test_notification_receipts.py` | SMTP acceptance despite cleanup failures, receipt controls and unchanged notification content |
@@ -78,6 +79,7 @@ and again before anything is published to PyPI.
 | `test_real_rate_limit.py` | Real-client rate-limit alerts and fatal resource failures |
 
 ## Conventions
+
 
 * Keep every test offline. If a code path needs network access, stub it with
   `monkeypatch` rather than skipping the test.
