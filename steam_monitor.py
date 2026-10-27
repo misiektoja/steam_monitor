@@ -1247,9 +1247,12 @@ def owned_games_arguments(api, steamid, include_appinfo=0, appids_filter=None):
         if name in arguments or name in steam.webapi.DEFAULT_PARAMS or parameter["optional"]:
             continue
         kind = str(parameter.get("type", "")).lower()
+        # Every owned-games parameter selects what the response includes, so zero, empty text and an empty
+        # list are the neutral choices. An enum's zero member is its unset value. A protobuf message carries
+        # no neutral value, so an unfamiliar type is reported instead of guessed
         if parameter.get("_array") or kind.endswith("[]"):
             value = []
-        elif kind == "bool" or re.fullmatch(r"uint\d*", kind):
+        elif kind in ("bool", "{enum}") or re.fullmatch(r"u?int\d*", kind):
             value = 0
         elif kind == "string":
             value = ""
@@ -3198,7 +3201,7 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
 
     # Match provider argument validation narrowly: response decoding and snapshot validation also use ValueError
     if isinstance(error, OwnedGamesParameterError) or isinstance(error, ValueError) and not isinstance(error, req.RequestException) and re.fullmatch(r"Method requires '[\w]+' to be set|Unrecognized parameter '[\w]+'|Expected '[\w]+' to be a list, got .+", str(error)):
-        return advice("steam.parameters", "Steam Monitor's request parameters are incompatible with Steam's API metadata", "Update steam_monitor. If this persists, report the parameter error with reviewed --debug output; changing profile privacy or the API key does not fix client argument validation", False, OWNED_GAMES_GUIDE_URL)
+        return advice("steam.parameters", "Steam Monitor's request parameters are incompatible with Steam's API metadata", "Update steam_monitor. Changing profile privacy or the API key does not fix client argument validation. If this persists, report the parameter error with reviewed --debug output", False, OWNED_GAMES_GUIDE_URL)
 
     if context == "config":
         if "does not exist" in message:
@@ -7444,9 +7447,15 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 print_recovery_error(e, context="file", detail=f"Cannot save games library to '{steam_games_file}'")
         except Exception as e:
             print("\nGames in library:\tN/A")
-            games_parameter_error_reported = classify_recovery_error(e).code == "steam.parameters"
-            retained = ". The saved snapshot was kept" if last_games_appids is not None else ""
-            print_recovery_error(e, context="runtime", detail="" if games_parameter_error_reported else "The games library is unavailable" + retained)
+            advice = classify_recovery_error(e, context="runtime")
+            games_parameter_error_reported = advice.code == "steam.parameters"
+            if games_parameter_error_reported:
+                # A local argument defect carries its own advice, which an availability detail would overwrite
+                print_recovery_advice(advice)
+            else:
+                # Only a snapshot that actually loaded can be kept
+                retained = ". The saved snapshot was kept" if last_games_appids is not None else ""
+                print_recovery_error(e, context="runtime", detail="The games library is unavailable" + retained)
 
     if last_status_ts == 0:
         if lastlogoff and status == 0:
