@@ -87,3 +87,59 @@ def test_help_explains_setting_lifetime():
     assert result.returncode == 0
     assert "Setting options apply to the current run" in result.stdout
     assert "Include them on each run" in result.stdout
+
+
+# Exercises the actual parser, configuration layers, override mapping and reusable Doctor command without network.
+@pytest.mark.parametrize("configured,disable,expected", [(None, False, True), (None, True, False), (True, False, True), (True, True, False), (False, False, False), (False, True, False)])
+def test_restart_reporting_cli_and_config_reach_doctor(tmp_path, configured, disable, expected):
+    config = tmp_path / "monitor.conf"
+    text = "" if configured is None else "REPORT_CHANGES_AFTER_RESTART = {!r}\n".format(configured)
+    config.write_text(text, encoding="utf-8")
+    arguments = ["steam_monitor.py", "--doctor", "--config-file", str(config), "--env-file", "none", "--no-color"]
+    if disable:
+        arguments.append("--no-restart-changes")
+    arguments.append("76561198000000000")
+    program = '''import socket, sys
+import steam_monitor as monitor
+socket.socket.connect = lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("Unexpected network access"))
+monitor.run_doctor = lambda *args, **kwargs: print("REPORT_RESTART=" + str(monitor.REPORT_CHANGES_AFTER_RESTART)) or 0
+sys.argv = ''' + repr(arguments) + '''
+monitor.main()
+'''
+    result = subprocess.run([sys.executable, "-c", program], cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, env=dict(os.environ, NO_COLOR="1"), timeout=30)
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "REPORT_RESTART=" + str(expected) in result.stdout
+    next_command = result.stdout.split("Next steps", 1)[1]
+    assert ("--no-restart-changes" in next_command) is disable
+
+
+# Loading and regenerating the setting preserves both explicit false and the documented default-on value.
+@pytest.mark.parametrize("selected", [False, True])
+def test_restart_reporting_setting_round_trips_through_saved_config(tmp_path, selected):
+    defaults = monitor.parse_config_content(monitor.CONFIG_BLOCK)
+    assert defaults["REPORT_CHANGES_AFTER_RESTART"] is True
+    config = tmp_path / "monitor.conf"
+    config.write_text(monitor.generate_config_with_current_values({"REPORT_CHANGES_AFTER_RESTART": selected}), encoding="utf-8")
+    namespace = {}
+    assert monitor.load_config_file(config, namespace=namespace, report_errors=False) is True
+    assert namespace["REPORT_CHANGES_AFTER_RESTART"] is selected
+
+
+# The documented boolean participates in the existing runtime validation, rather than silently accepting a string.
+@pytest.mark.parametrize("invalid", ["False", None, [], 2])
+def test_restart_reporting_uses_existing_boolean_validation(monkeypatch, invalid):
+    monkeypatch.setattr(monitor, "REPORT_CHANGES_AFTER_RESTART", invalid)
+    assert any("REPORT_CHANGES_AFTER_RESTART must be True or False" in error for error in monitor.runtime_boolean_errors())
+
+
+# Startup exposes the effective switch immediately beside the feature whose stopped-period changes it controls.
+@pytest.mark.parametrize("selected", [False, True])
+def test_restart_reporting_summary_row_follows_games_tracking(monkeypatch, selected):
+    monkeypatch.setattr(monitor, "REPORT_CHANGES_AFTER_RESTART", selected)
+    monkeypatch.setattr(monitor, "GAMES_LIBRARY_CHECK", True)
+    rows = monitor.build_startup_summary(target="76561198000000000")
+    labels = [row.label for row in rows]
+    index = labels.index("Games tracking") + 1
+    assert rows[index].label == "Restart change reporting"
+    assert rows[index].value == str(selected)
+    assert rows[index].concise
