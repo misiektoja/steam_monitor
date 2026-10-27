@@ -623,6 +623,8 @@ STEAM_MAX_RETRY_AFTER_SECONDS = 3600.0
 WEBHOOK_TIMEOUT_SECONDS = 10
 WEBHOOK_EMBED_TITLE_LIMIT = 256
 WEBHOOK_EMBED_DESCRIPTION_LIMIT = 4096
+# Limits notification samples only; local change reports keep every detail.
+CHANGE_NOTIFICATION_DETAIL_LIMIT = 5
 NTFY_MESSAGE_LIMIT_BYTES = 4095
 NTFY_TRUNCATION_SUFFIX = "\n\n[Notification truncated to fit ntfy's 4 KB message limit]"
 NTFY_IMAGE_DOWNLOAD_LIMIT_BYTES = 5 * 1024 * 1024
@@ -3508,6 +3510,12 @@ def saved_app_names(payload):
             except (TypeError, ValueError):
                 continue
     return names
+
+
+# Selects a stable notification sample without changing the complete log or CSV data.
+def bounded_change_details(details):
+    shown = list(details[:CHANGE_NOTIFICATION_DETAIL_LIMIT])
+    return shown, len(details) - len(shown)
 
 
 # Renders one library entry as its game name followed by the application ID, or the ID alone when the name is unknown
@@ -8113,12 +8121,12 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                         else:
                             body_parts.append(f"Steam user {username} games library changed (same count: {new_count}, titles changed)")
                             body_parts_html.append(f"Steam user {steam_user_html(username, steamid)} games library changed (same count: <b>{new_count}</b>, titles changed)")
-                        if added_appids:
-                            body_parts.append(f"Added: {', '.join(steam_app_label(a, games_app_names) for a in added_appids)}")
-                            body_parts_html.append(f"Added: {', '.join(steam_app_label_html(a, games_app_names) for a in added_appids)}")
-                        if removed_appids:
-                            body_parts.append(f"Removed: {', '.join(steam_app_label(a, games_app_names) for a in removed_appids)}")
-                            body_parts_html.append(f"Removed: {', '.join(steam_app_label_html(a, games_app_names) for a in removed_appids)}")
+                        for label, appids in (("Added", added_appids), ("Removed", removed_appids)):
+                            if appids:
+                                shown, omitted = bounded_change_details(appids)
+                                counts = f" ({len(appids)} total, {omitted} omitted)"
+                                body_parts.append(f"{label}: {', '.join(steam_app_label(a, games_app_names) for a in shown)}{counts}")
+                                body_parts_html.append(f"{label}: {', '.join(steam_app_label_html(a, games_app_names) for a in shown)}{counts}")
                         m_body_games = "\n".join(body_parts) + get_cur_ts(nl_ch + nl_ch + "Timestamp: ")
                         m_body_games_html = html_email_body("<br>".join(body_parts_html) + get_cur_ts("<br><br>Timestamp: "))
                         send_notification_channels("games", m_subject_games, m_body_games, m_body_games_html, email_enabled=GAMES_LIBRARY_NOTIFICATION, image_url=current_avatar_url)
