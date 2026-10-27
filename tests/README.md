@@ -80,7 +80,6 @@ and again before anything is published to PyPI.
 
 ## Conventions
 
-
 * Keep every test offline. If a code path needs network access, stub it with
   `monkeypatch` rather than skipping the test.
 * Restore module-level globals you change. Tests share one imported module, so a
