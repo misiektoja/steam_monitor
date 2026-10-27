@@ -6,6 +6,7 @@ from email.utils import format_datetime
 import copy
 import json
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -42,6 +43,7 @@ class StoppedAfterOneCycle(Exception):
 class FakeSteamWebAPI:
     # Answers the Steam endpoints the monitoring cycle calls, failing the ones named in failing_endpoints
     def __init__(self, failing_endpoints=(), poll_error=None, healthy_polls=1, persona_state=0, healthy_after=None, **_kwargs):
+        self.IPlayerService = SimpleNamespace(GetOwnedGames=SimpleNamespace(parameters={}))
         self.failing_endpoints = set(failing_endpoints)
         self.persona_state = persona_state
         # A poll error is raised only after the startup snapshot has succeeded, so the loop is actually reached

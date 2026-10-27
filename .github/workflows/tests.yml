@@ -31,7 +31,9 @@ jobs:
 
   test:
     name: pytest (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    # Python 3.9 reached end of life before Ubuntu 26.04, so setup-python publishes no 3.9 build for the
+    # image ubuntu-latest now resolves to. 24.04 is the newest image that still carries one
+    runs-on: ${{ matrix.python-version == '3.9' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:

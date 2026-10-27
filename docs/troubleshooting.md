@@ -136,6 +136,13 @@ If a saved status file has an invalid structure, monitoring stops before replaci
 
 A games-library file the tool cannot use is reported as a warning instead. The run continues, the next lookup starts a fresh baseline and no library change is reported for it. Files written before 2.0 that recorded a game count differing from their list of game IDs still load, with the count taken from the IDs.
 
+<a id="owned-games-request-problems"></a>
+### Owned-games request problems
+
+An error saying **request parameters are incompatible with Steam's API metadata** is a local client-validation problem. It happens before the request reaches Steam, so it is not evidence that the target's games are private or that the API key is wrong. Update `steam_monitor`. Updating only the `steam` package cannot help because the required parameters come from Steam's live metadata. If it persists, report the parameter error with `--debug` output, reviewed first for private data.
+
+`--debug` also names any parameter the tool filled from Steam's metadata. The tracked library excludes family-shared licenses and free games the user does not own.
+
 An incomplete or inaccessible Steam games response leaves the previous library snapshot intact. Achievement lookups stop on rate limits or connection failures and report how to retry, instead of continuing through the rest of the library.
 
 Malformed path settings and color-theme values are reported by Doctor with the setting name. Invalid color values are ignored while rendering help so you can still find the configuration commands.

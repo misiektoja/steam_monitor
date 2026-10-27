@@ -484,6 +484,7 @@ STEAM_TARGET_FORMS = "Steam64 ID, Steam3 identifier, vanity name or full profile
 STEAM_TARGET_INPUT_ERROR = f"Enter a {STEAM_TARGET_FORMS}, for example https://steamcommunity.com/id/<vanity_name>/"
 DOCTOR_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#doctor-preflight"
 DIAGNOSTICS_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#verbose-and-debug-output"
+OWNED_GAMES_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#owned-games-request-problems"
 CONNECTION_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#connection-problems"
 DESCRIPTOR_LIMIT_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#too-many-open-files"
 
@@ -1231,6 +1232,35 @@ def steam_web_api_client(api_key=None):
         debug_print("TLS verification", target="Steam Web API session", outcome="failed", error=f"{type(exc).__name__}: {exc}")
     client.load_interfaces(client.fetch_interfaces())
     return client
+
+
+# Names an unsupported provider parameter type without confusing it with a response-data ValueError
+class OwnedGamesParameterError(ValueError):
+    pass
+
+
+# Builds owned-games arguments from explicit library choices plus Steam's live required-parameter metadata
+def owned_games_arguments(api, steamid, include_appinfo=0, appids_filter=None):
+    arguments = {"steamid": steamid, "include_appinfo": include_appinfo, "include_played_free_games": 1, "appids_filter": list(appids_filter) if appids_filter is not None else [], "include_free_sub": 0, "include_extended_appinfo": 0, "language": "en", "include_family_licenses": 0, "include_all_free_games": 0}
+    for name, parameter in api.IPlayerService.GetOwnedGames.parameters.items():
+        # Authentication and transport defaults belong to the wrapper, not to an endpoint's argument builder
+        if name in arguments or name in steam.webapi.DEFAULT_PARAMS or parameter["optional"]:
+            continue
+        kind = str(parameter.get("type", "")).lower()
+        # Every owned-games parameter selects what the response includes, so zero, empty text and an empty
+        # list are the neutral choices. An enum's zero member is its unset value. A protobuf message carries
+        # no neutral value, so an unfamiliar type is reported instead of guessed
+        if parameter.get("_array") or kind.endswith("[]"):
+            value = []
+        elif kind in ("bool", "{enum}") or re.fullmatch(r"u?int\d*", kind):
+            value = 0
+        elif kind == "string":
+            value = ""
+        else:
+            raise OwnedGamesParameterError(f"Unsupported required GetOwnedGames parameter '{name}' of type '{kind}'")
+        arguments[name] = value
+        debug_print("Owned-games required parameter default", parameter=name, type=kind)
+    return arguments
 
 
 # Silences debug output while a raw secret is entered or validated, then restores the previous mode
@@ -3030,7 +3060,7 @@ RECOVERY_CODES = frozenset({
     "secret.missing", "secret.entry",
     "auth.api_key_invalid",
     "network.unavailable", "network.timeout",
-    "steam.rate_limited", "steam.unavailable",
+    "steam.rate_limited", "steam.unavailable", "steam.parameters",
     "target.missing", "target.invalid", "target.not_found", "target.not_visible",
     "smtp.invalid", "smtp.authentication", "smtp.connection",
     "webhook.invalid", "webhook.rejected", "webhook.rate_limited", "webhook.connection",
@@ -3168,6 +3198,10 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
     # Checked ahead of every context, since a local descriptor limit is not a failure of whatever call hit it
     if error is not None and is_too_many_open_files(error):
         return advice("resource.exhausted", "This process ran out of file descriptors, which is a local limit and not a Steam problem", "Raise the file descriptor limit, for example with 'ulimit -n 4096', or set LimitNOFILE= if you run under systemd, then restart the tool", False, DESCRIPTOR_LIMIT_GUIDE_URL)
+
+    # Match provider argument validation narrowly: response decoding and snapshot validation also use ValueError
+    if isinstance(error, OwnedGamesParameterError) or isinstance(error, ValueError) and not isinstance(error, req.RequestException) and re.fullmatch(r"Method requires '[\w]+' to be set|Unrecognized parameter '[\w]+'|Expected '[\w]+' to be a list, got .+", str(error)):
+        return advice("steam.parameters", "Steam Monitor's request parameters are incompatible with Steam's API metadata", "Update steam_monitor. Changing profile privacy or the API key does not fix client argument validation. If this persists, report the parameter error with reviewed --debug output", False, OWNED_GAMES_GUIDE_URL)
 
     if context == "config":
         if "does not exist" in message:
@@ -3436,9 +3470,11 @@ def fetch_app_names(s_api, steamid, appids):
     if not wanted:
         return {}
     try:
-        owned = s_api.call("IPlayerService.GetOwnedGames", steamid=steamid, include_appinfo=1, include_played_free_games=1, appids_filter=wanted, include_free_sub=0, include_extended_appinfo=0, language="en")
+        owned = s_api.call("IPlayerService.GetOwnedGames", **owned_games_arguments(s_api, steamid, include_appinfo=1, appids_filter=wanted))
         return app_names_from_owned(owned)
     except Exception as exc:
+        if classify_recovery_error(exc).code == "steam.parameters":
+            print_recovery_error(exc)
         debug_swallowed_exception("Fetching game names (IPlayerService.GetOwnedGames)", exc)
         return {}
 
@@ -6836,18 +6872,7 @@ def fetch_recent_achievements(steamid, s_api, s_played, max_games=15, max_achiev
 
     # Fallback: if recently played games are hidden or empty, or if force_use_owned_games is True, try owned games
     if not games or force_use_owned_games:
-        # Call GetOwnedGames with all parameters that the steam.webapi wrapper
-        # considers required, to avoid local validation errors before the HTTP call.
-        owned = s_api.call(
-            "IPlayerService.GetOwnedGames",
-            steamid=steamid,
-            include_appinfo=1,
-            include_played_free_games=1,
-            appids_filter=[],          # empty list → no filtering, all games
-            include_free_sub=0,        # 0 = do not include free subscriptions
-            include_extended_appinfo=0,  # keep response small, we only need playtime/name
-            language="en",
-        )
+        owned = s_api.call("IPlayerService.GetOwnedGames", **owned_games_arguments(s_api, steamid, include_appinfo=1))
         owned_games = owned.get("response", {}).get("games", []) if isinstance(owned, dict) else []
         if owned_games:
             # Sort by total playtime (most played first) as a heuristic for relevance
@@ -7159,7 +7184,7 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
         print(f"* User is OFFLINE for:\t\t{calculate_timespan(int(time.time()), int(status_ts_old), show_seconds=False)}")
 
     try:
-        owned = s_api.call('IPlayerService.GetOwnedGames', steamid=steamid, include_appinfo=1, include_played_free_games=1)
+        owned = s_api.call('IPlayerService.GetOwnedGames', **owned_games_arguments(s_api, steamid, include_appinfo=1))
         games = owned.get('response', {}).get('games', [])
         if games:
             top = sorted(games, key=lambda g: g.get('playtime_forever', 0), reverse=True)[:5]
@@ -7168,6 +7193,8 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
                 hours = int(g.get('playtime_forever', 0) / 60)
                 print(f"{i} {sanitize_untrusted_text(g.get('name'))} - {hours}h")
     except Exception as exc:
+        if classify_recovery_error(exc).code == "steam.parameters":
+            print_recovery_error(exc)
         debug_swallowed_exception("Fetching owned games (IPlayerService.GetOwnedGames)", exc)
 
     if gameid:
@@ -7213,6 +7240,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     last_friend_ids = None
     last_games_count = None
     last_games_appids = None
+    games_parameter_error_reported = False
     # Names for the owned application IDs, so a library change reads as titles rather than bare numbers
     games_app_names = {}
 
@@ -7405,16 +7433,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     if GAMES_LIBRARY_CHECK:
         try:
             # The single snapshot per run asks for app info, so a game removed later can still be named
-            owned = s_api.call(
-                "IPlayerService.GetOwnedGames",
-                steamid=steamid,
-                include_appinfo=1,
-                include_played_free_games=1,
-                appids_filter=[],
-                include_free_sub=0,
-                include_extended_appinfo=0,
-                language="en",
-            )
+            owned = s_api.call("IPlayerService.GetOwnedGames", **owned_games_arguments(s_api, steamid, include_appinfo=1))
             current_count, owned_appids = games_library_snapshot(owned)
             current_appids = sorted(owned_appids)
             games_app_names.update(app_names_from_owned(owned))
@@ -7428,7 +7447,15 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                 print_recovery_error(e, context="file", detail=f"Cannot save games library to '{steam_games_file}'")
         except Exception as e:
             print("\nGames in library:\tN/A")
-            print_recovery_error(e, context="runtime", detail="The games library is unavailable. The saved snapshot was kept")
+            advice = classify_recovery_error(e, context="runtime")
+            games_parameter_error_reported = advice.code == "steam.parameters"
+            if games_parameter_error_reported:
+                # A local argument defect carries its own advice, which an availability detail would overwrite
+                print_recovery_advice(advice)
+            else:
+                # Only a snapshot that actually loaded can be kept
+                retained = ". The saved snapshot was kept" if last_games_appids is not None else ""
+                print_recovery_error(e, context="runtime", detail="The games library is unavailable" + retained)
 
     if last_status_ts == 0:
         if lastlogoff and status == 0:
@@ -7551,20 +7578,16 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             # Fetch games library (minimal: count + appids only) when tracking is enabled
             if GAMES_LIBRARY_CHECK:
                 try:
-                    owned = s_api.call(
-                        "IPlayerService.GetOwnedGames",
-                        steamid=steamid,
-                        include_appinfo=0,
-                        include_played_free_games=1,
-                        appids_filter=[],
-                        include_free_sub=0,
-                        include_extended_appinfo=0,
-                        language="en",
-                    )
+                    owned = s_api.call("IPlayerService.GetOwnedGames", **owned_games_arguments(s_api, steamid))
                     current_games_count, current_games_appids = games_library_snapshot(owned)
+                    games_parameter_error_reported = False
                 except Exception as exc:
                     current_games_count = None
                     current_games_appids = None
+                    advice = classify_recovery_error(exc)
+                    if advice.code == "steam.parameters" and not games_parameter_error_reported:
+                        print_recovery_advice(advice)
+                    games_parameter_error_reported = advice.code == "steam.parameters"
                     debug_swallowed_exception("Fetching the games library (IPlayerService.GetOwnedGames)", exc)
         except Exception as e:
             exit_if_out_of_file_descriptors(e)
@@ -7643,7 +7666,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         if FRIENDS_CHECK and current_friend_ids is None:
             unavailable_features["friends"] = ("The friends list is unavailable, so friends alerts cannot fire", "The friends list is available again, so friends alerts can fire")
         if GAMES_LIBRARY_CHECK and current_games_count is None:
-            unavailable_features["games_library"] = ("The games library is unavailable, so games library alerts cannot fire", "The games library is available again, so games library alerts can fire")
+            unavailable_features["games_library"] = ("Owned-games request parameters are incompatible, so games library alerts cannot fire" if games_parameter_error_reported else "The games library is unavailable, so games library alerts cannot fire", "The games library is available again, so games library alerts can fire")
         debug_print("Tracked features", unavailable=",".join(unavailable_features) or "none")
         # An outage that lasts is news once, so only the features that changed since the last cycle are reported
         verbose_notice(*feature_outages.transitions(unavailable_features))
