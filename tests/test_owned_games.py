@@ -2,6 +2,7 @@
 
 import copy
 import json
+from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -18,6 +19,11 @@ PARAMETERS = {"steamid": "uint64", "include_appinfo": "bool", "include_played_fr
 # Models required parameters before the real provider normalizes the array suffix
 def method_schema(name, parameters, extra=()):
     return {"name": name, "version": 1, "httpmethod": "GET", "parameters": [{"name": key, "type": kind, "optional": False, "description": ""} for key, kind in parameters.items()] + copy.deepcopy(list(extra))}
+
+
+# Reads the live parameter metadata the argument builder uses, from an interface the provider builds at runtime
+def owned_games_parameters(api: Any):
+    return api.IPlayerService.GetOwnedGames.parameters
 
 
 # Keeps the provider intact while replacing HTTP with endpoint-shaped synthetic responses
@@ -126,15 +132,15 @@ def test_owned_games_entrypoints_supply_required_parameters(monkeypatch, capsys,
         assert owned[0]["appids_filter[0]"] == ["20"]
 
 
-@pytest.mark.parametrize("kind,array,expected", [("bool", False, 0), ("uint32", False, 0), ("uint64", False, 0), ("uint128", False, 0), ("uint", False, 0), ("string", False, ""), ("uint32", True, []), ("string[]", False, [])])
+@pytest.mark.parametrize("kind,array,expected", [("bool", False, 0), ("uint32", False, 0), ("uint64", False, 0), ("uint128", False, 0), ("uint", False, 0), ("int32", False, 0), ("int64", False, 0), ("{enum}", False, 0), ("string", False, ""), ("uint32", True, []), ("string[]", False, [])])
 # Defaults future required parameters by type, checking array metadata before the scalar element type
 def test_future_required_parameter_defaults(monkeypatch, capsys, kind, array, expected):
     api, calls = make_client(monkeypatch, [{"name": "future_argument" + ("[0]" if array else ""), "type": kind, "optional": False}])
-    metadata = copy.deepcopy(api.IPlayerService.GetOwnedGames.parameters)
+    metadata = copy.deepcopy(owned_games_parameters(api))
     monkeypatch.setattr(monitor, "DEBUG_MODE", True)
     arguments = monitor.owned_games_arguments(api, STEAM_ID)
     assert arguments["future_argument"] == expected
-    assert api.IPlayerService.GetOwnedGames.parameters == metadata
+    assert owned_games_parameters(api) == metadata
     api.call("IPlayerService.GetOwnedGames", **arguments)
     assert len(calls) == 1
     output = capsys.readouterr().out
@@ -163,8 +169,8 @@ def test_default_arrays_are_not_shared(monkeypatch):
     assert monitor.owned_games_arguments(api, STEAM_ID)["appids_filter"] == []
 
 
-@pytest.mark.parametrize("kind", ["bytes", "int32", "struct payload", ""])
-# An unfamiliar required type is a local defect rather than a guessed request or a privacy error
+@pytest.mark.parametrize("kind", ["bytes", "{message}", "struct payload", ""])
+# A type with no neutral value is a local defect rather than a guessed request or a privacy error
 def test_unknown_required_type_is_a_local_parameter_error(monkeypatch, kind):
     api, calls = make_client(monkeypatch, [{"name": "future_argument", "type": kind, "optional": False}])
     with pytest.raises(ValueError) as failure:
@@ -234,7 +240,7 @@ def test_parameter_failure_during_polling_does_not_stop_other_features(monkeypat
 
     # Changes synthetic metadata only between iterations to exercise the actual argument builder
     def change_metadata(wait_count):
-        parameters = api.IPlayerService.GetOwnedGames.parameters
+        parameters = owned_games_parameters(api)
         if wait_count == 1:
             parameters["future_argument"] = {"type": "bytes", "optional": False, "_array": False}
         elif wait_count == 3:
