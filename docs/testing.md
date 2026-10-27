@@ -35,6 +35,8 @@ CI runs all three on every push and pull request, across Python 3.9 through 3.14
 
 The test layout mirrors the surfaces a user touches rather than the module layout. See [tests/README.md](https://github.com/misiektoja/steam_monitor/blob/main/tests/README.md) for the file-by-file map.
 
+Games-library regressions exercise startup and subsequent polling against synthetic saved snapshots. They cover same-count replacements, valid empty libraries, legacy/corrupt files, failed lookups and recovery, first-success suppression, independent delivery switches, bounded notification details, complete log output, compatible appends to an existing eight-column profile CSV, and atomic-save/delivery failures. CLI tests drive the real parser and Doctor command while blocking network access, and verify that restart-reporting settings survive configuration round trips. These tests do not replace separate controlled real-account verification of Steam data handling.
+
 <a id="conventions"></a>
 ## Conventions
 
