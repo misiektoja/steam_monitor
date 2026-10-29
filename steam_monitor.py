@@ -218,9 +218,9 @@ GAMES_LIBRARY_CHECK = False
 # Requires GAMES_LIBRARY_CHECK to be enabled; can also be enabled via the --notify-games flag
 GAMES_LIBRARY_NOTIFICATION = False
 
-# Report differences from the saved baseline at the first successful observation after startup.
-# False silently establishes the current baseline; later changes still report normally.
-# Can also be disabled for the current run with --no-restart-changes.
+# Whether to report games library changes made while the tool was stopped, at the first successful check
+# False starts from the current library without reporting them. Later changes still report normally
+# Can also be disabled for the current run with the --no-restart-changes flag
 REPORT_CHANGES_AFTER_RESTART = True
 
 # How often to check for player activity when the user is offline; in seconds
@@ -629,7 +629,7 @@ STEAM_MAX_RETRY_AFTER_SECONDS = 3600.0
 WEBHOOK_TIMEOUT_SECONDS = 10
 WEBHOOK_EMBED_TITLE_LIMIT = 256
 WEBHOOK_EMBED_DESCRIPTION_LIMIT = 4096
-# Limits notification samples only; local change reports keep every detail.
+# Most changed games one alert lists for each of added and removed. The log keeps every game
 CHANGE_NOTIFICATION_DETAIL_LIMIT = 5
 NTFY_MESSAGE_LIMIT_BYTES = 4095
 NTFY_TRUNCATION_SUFFIX = "\n\n[Notification truncated to fit ntfy's 4 KB message limit]"
@@ -3520,7 +3520,7 @@ def saved_app_names(payload):
     return names
 
 
-# Selects a stable notification sample without changing the complete log or CSV data.
+# Returns the first details an alert shows and how many it leaves out, without changing the caller's list
 def bounded_change_details(details):
     shown = list(details[:CHANGE_NOTIFICATION_DETAIL_LIMIT])
     return shown, len(details) - len(shown)
@@ -3538,12 +3538,16 @@ def steam_app_label_html(appid, app_names):
     return f"{steam_game_html(name, appid)} ({appid})" if name else steam_game_html(str(appid), appid)
 
 
-# Compares one complete observation, reports its net difference and saves the new baseline, even when unchanged.
-def observe_games_library(s_api, steamid, username, previous_appids, current_appids, app_names, games_file, profile_csv_file_name=None, report_changes=True, snapshot_saved_at=None, image_url=""):
+# Compares one complete observation, reports its net difference and saves it as the new baseline even when unchanged
+# Only a comparison against the snapshot loaded from disk spans a stopped period, so only that one follows
+# REPORT_CHANGES_AFTER_RESTART and says the change time is unknown
+def observe_games_library(s_api, steamid, username, previous_appids, current_appids, app_names, games_file, profile_csv_file_name=None, baseline_from_disk=False, snapshot_saved_at=None, image_url=""):
     observed_at = int(time.time())
     current_appids = set(current_appids)
-    changed = previous_appids is not None and current_appids != previous_appids and report_changes
-    if changed:
+    changed = False
+    report_changes = REPORT_CHANGES_AFTER_RESTART or not baseline_from_disk
+    if report_changes and previous_appids is not None and current_appids != previous_appids:
+        changed = True
         old_count, new_count = len(previous_appids), len(current_appids)
         delta = new_count - old_count
         added_appids = sorted(current_appids - previous_appids)
@@ -3556,22 +3560,25 @@ def observe_games_library(s_api, steamid, username, previous_appids, current_app
             summary = f"Steam user {username} games library changed (same count: {new_count}, titles changed)"
             summary_html = f"Steam user {steam_user_html(username, steamid)} games library changed (same count: <b>{new_count}</b>, titles changed)"
         print(summary)
-        context = "Compared with the previous successful observation; the exact change time is unknown."
-        if valid_state_timestamp(snapshot_saved_at) and not state_timestamp_ahead(snapshot_saved_at):
-            saved_time = datetime.fromtimestamp(snapshot_saved_at).strftime("%a %d %b %Y, %H:%M:%S")
-            context = f"Previous snapshot saved: {saved_time}; the exact change time is unknown."
-        print(context)
+        body_parts, body_parts_html = [summary], [summary_html]
+        if baseline_from_disk:
+            context = "Compared with the previous saved snapshot. The exact change time is unknown."
+            if snapshot_saved_at is not None and valid_state_timestamp(snapshot_saved_at) and not state_timestamp_ahead(snapshot_saved_at):
+                saved_time = datetime.fromtimestamp(snapshot_saved_at).strftime("%a %d %b %Y, %H:%M:%S")
+                context = f"Previous snapshot saved: {saved_time}. The exact change time is unknown."
+            print(context)
+            body_parts.append(context)
+            body_parts_html.append(html_text(context))
 
-        # The removed games may no longer be returned by Steam, so keep their cached names until reporting ends.
+        # Steam may no longer return a removed game, so its cached name is kept until reporting ends
         unknown_appids = [appid for appid in added_appids + removed_appids if appid not in app_names]
         if unknown_appids:
             app_names.update(fetch_app_names(s_api, steamid, unknown_appids))
-        body_parts, body_parts_html = [summary, context], [summary_html, html_text(context)]
         for label, appids in (("Added", added_appids), ("Removed", removed_appids)):
             if appids:
                 print(f"{label}: {', '.join(steam_app_label(a, app_names) for a in appids)}")
                 shown, omitted = bounded_change_details(appids)
-                counts = f" ({len(appids)} total, {omitted} omitted)"
+                counts = f" ({len(appids)} total, {omitted} omitted)" if omitted else ""
                 body_parts.append(f"{label}: {', '.join(steam_app_label(a, app_names) for a in shown)}{counts}")
                 body_parts_html.append(f"{label}: {', '.join(steam_app_label_html(a, app_names) for a in shown)}{counts}")
 
@@ -3589,7 +3596,7 @@ def observe_games_library(s_api, steamid, username, previous_appids, current_app
                 print_recovery_error(exc, context="runtime", detail="Cannot deliver the games library notification")
         print_cur_ts("Timestamp:\t\t\t")
 
-    # A failed disk write leaves its old file intact; the returned in-memory baseline still moves after comparison.
+    # A failed write leaves the old file intact while the in-memory baseline moves on, and the next observation retries it
     try:
         write_json_atomic(games_file, {"game_count": len(current_appids), "appids": sorted(current_appids), "app_names": {str(appid): app_names[appid] for appid in sorted(current_appids) if appid in app_names}})
         debug_print("Saved the games library", path=games_file, outcome="OK")
@@ -7315,9 +7322,8 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     last_steam_level = None
     last_player_xp = None
     last_friend_ids = None
-    last_games_count = None
     last_games_appids = None
-    # Only the opt-out needs first-success initialization; failed observations do not initialize it.
+    # Until one check succeeds, the baseline is still the snapshot loaded from disk
     games_observed_this_run = False
     games_snapshot_saved_at = None
     games_parameter_error_reported = False
@@ -7417,17 +7423,17 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             debug_print("Reading the games library file", path=steam_games_file)
             with open(steam_games_file, 'r', encoding="utf-8") as f:
                 games_data = json.load(f)
-            last_games_count, last_games_appids = games_library_snapshot(games_data, saved=True)
+            saved_games_count, last_games_appids = games_library_snapshot(games_data, saved=True)
             games_app_names = saved_app_names(games_data)
             try:
                 games_snapshot_saved_at = os.path.getmtime(steam_games_file)
             except OSError:
-                pass  # Timestamp context is optional; a valid snapshot remains usable without it.
-            debug_print("Reading the games library file", path=steam_games_file, games=last_games_count, names=len(games_app_names) or None, outcome="OK")
+                pass  # The saved time is only context, so the snapshot stays usable without it
+            debug_print("Reading the games library file", path=steam_games_file, games=saved_games_count, names=len(games_app_names) or None, outcome="OK")
         except Exception as e:
             # The next successful lookup replaces this file, so an unusable one costs the baseline rather than the run
             print_recovery_error(e, context="file", detail=f"Cannot load the games library from '{steam_games_file}': {e}. The first lookup starts a fresh baseline and reports no library change for it", label="Warning")
-            last_games_count, last_games_appids = None, None
+            last_games_appids = None
 
     if last_status_ts > 0 and status != last_status:
         last_status_to_save = []
@@ -7522,8 +7528,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             current_appids = sorted(owned_appids)
             games_app_names.update(app_names_from_owned(owned))
             print(f"\nGames in library:\t\t{current_count}")
-            last_games_appids, _ = observe_games_library(s_api, steamid, username, last_games_appids, set(current_appids), games_app_names, steam_games_file, profile_csv_file_name, report_changes=REPORT_CHANGES_AFTER_RESTART, snapshot_saved_at=games_snapshot_saved_at, image_url=avatar_url)
-            last_games_count = current_count
+            last_games_appids, _ = observe_games_library(s_api, steamid, username, last_games_appids, set(current_appids), games_app_names, steam_games_file, profile_csv_file_name, baseline_from_disk=True, snapshot_saved_at=games_snapshot_saved_at, image_url=avatar_url)
             games_observed_this_run = True
             games_snapshot_saved_at = None
         except Exception as e:
@@ -8141,10 +8146,9 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     alive_since = int(time.time())
                     last_friend_ids = current_friend_ids
 
-        # Startup and polling share the same successful-observation rule; failures never reach this path.
+        # Startup and polling share one rule for a successful check. A failed check never reaches this path
         if GAMES_LIBRARY_CHECK and current_games_count is not None and current_games_appids is not None:
-            last_games_appids, games_changed = observe_games_library(s_api, steamid, username, last_games_appids, current_games_appids, games_app_names, steam_games_file, profile_csv_file_name, report_changes=REPORT_CHANGES_AFTER_RESTART or games_observed_this_run, snapshot_saved_at=games_snapshot_saved_at, image_url=current_avatar_url)
-            last_games_count = current_games_count
+            last_games_appids, games_changed = observe_games_library(s_api, steamid, username, last_games_appids, current_games_appids, games_app_names, steam_games_file, profile_csv_file_name, baseline_from_disk=not games_observed_this_run, snapshot_saved_at=games_snapshot_saved_at, image_url=current_avatar_url)
             games_observed_this_run = True
             games_snapshot_saved_at = None
             if games_changed:
@@ -8498,13 +8502,6 @@ def main():
         help="Disable email on errors and the recovery alert that follows"
     )
     notify.add_argument(
-        "--no-restart-changes",
-        dest="report_changes_after_restart",
-        action="store_false",
-        default=None,
-        help="Establish the first successful games-library baseline silently; later changes still report"
-    )
-    notify.add_argument(
         "--send-test-email",
         dest="send_test_email",
         action="store_true",
@@ -8691,6 +8688,13 @@ def main():
         action="store_true",
         default=None,
         help="Track changes in games library (game count); uses minimal API data (no names/icons)"
+    )
+    opts.add_argument(
+        "--no-restart-changes",
+        dest="report_changes_after_restart",
+        action="store_false",
+        default=None,
+        help="Do not report games library changes made while the tool was stopped (later changes still report)"
     )
     opts.add_argument(
         "-b", "--csv-file",
