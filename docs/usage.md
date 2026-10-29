@@ -131,7 +131,7 @@ The tool automatically saves its output to `steam_monitor_<user_steam_id/file_su
 
 Set `ASCII_LOG_SEPARATORS` to `"Auto"` (default) to use ASCII separator-only lines on Windows, `"On"` to use them on every operating system or `"Off"` to preserve Unicode separators in logs everywhere. Terminal separators stay Unicode. Log files and all other logged text remain UTF-8.
 
-The tool also saves the timestamp and last status (after every change) to the `steam_<steam64_id>_last_status.json` file, so the last status is available after the restart of the tool. See [Status File](#status-file) to keep it somewhere else. When games library tracking is enabled, each successful observation refreshes `steam_<steam64_id>_games.json` (game count, app IDs and cached titles), even when the library is unchanged. Only changes produce events.
+The tool also saves the timestamp and last status (after every change) to the `steam_<steam64_id>_last_status.json` file, so the last status is available after the restart of the tool. See [Status File](#status-file) to keep it somewhere else. When games library tracking is enabled, a snapshot of the library (game count, app IDs and the titles seen so far) is saved to `steam_<steam64_id>_games.json` after every successful check and only changes are reported. See [Games Library After a Restart](#games-library-after-a-restart).
 
 To track when the user's **Steam level and total XP** changes:
 - set `STEAM_LEVEL_XP_CHECK` to `True`
@@ -147,24 +147,22 @@ To track changes in the user's **games library** (game count and added/removed g
 
 Added and removed games are reported by title with the app ID after it, for example `Dota 2 (570)`. Titles come from one snapshot taken at startup plus a lookup limited to the games that actually changed, so the regular checks stay small. A title the lookup cannot resolve is reported as the bare app ID.
 
-Games-library notifications show at most five added and five removed games, in app-ID order, together with total and omitted counts. This applies to both startup and ordinary monitoring notifications on email and webhook channels. The log keeps the complete game lists; the profile CSV keeps its existing single count-change row.
+Email and webhook alerts list at most five added and five removed games. When an alert leaves games out, it gives the total and the number omitted. The log always lists every changed game.
 
 <a id="games-library-after-a-restart"></a>
 ### Games Library After a Restart
 
-The first successful library lookup compares against the saved snapshot before replacing it. A library with the same count but different app IDs is a change too. A new installation or unusable snapshot establishes a fresh baseline without reporting a library change; an unusable file also produces a warning. Existing snapshot filenames and formats remain supported.
+At the first successful check after the tool starts, the library is compared with the saved snapshot before the snapshot is replaced. Games added or removed while the tool was stopped are reported then, including a swap that leaves the count unchanged. The report shows the net difference, so a game added and removed again while the tool was stopped does not appear. The exact time of the change is unknown. The report says so and, when available, shows when the previous snapshot was saved.
 
-Failed requests and incomplete responses do not replace the baseline. The next successful observation compares the retained values through the same path used by every later poll. A confirmed empty library is a valid result. A change report describes the net difference since the previous observation, not every change that may have happened while the program was stopped. The exact change time is unknown; a saved snapshot's file timestamp is comparison context, not the event timestamp.
+A failed check keeps the saved snapshot and the next successful check makes the comparison. If there is no snapshot or the tool cannot read it, the first check starts a fresh baseline and reports nothing. Level, XP, friends and the display name are not compared across restarts.
 
-To skip stopped-period change events for one run:
+To start from the current library without reporting changes made while the tool was stopped:
 
 ```sh
 steam_monitor <steam_target> --check-games --no-restart-changes
 ```
 
-Or save `REPORT_CHANGES_AFTER_RESTART = False` in the configuration file. The first successful observation silently establishes the current baseline, even after earlier failed requests. It emits no stopped-period change log event, CSV row or notification; later normal changes still report. The default is `True`. See [Restart Change Reporting](configuration.md#restart-change-reporting).
-
-Interrupted atomic writes leave the previous complete file intact. A write failure is reported while monitoring continues with the current in-memory baseline, and later successful observations try saving again. Restarting before a failed save has recovered can compare against the older disk snapshot again; notification delivery is not an exactly-once history service.
+Or set `REPORT_CHANGES_AFTER_RESTART = False` in the configuration file, see [Restart Change Reporting](configuration.md#restart-change-reporting). Later changes still report. The setting turns on no alert by itself. Alerts still follow `GAMES_LIBRARY_NOTIFICATION` and `WEBHOOK_GAMES_NOTIFICATION`.
 
 The user's **display (persona) name** is tracked automatically with no extra configuration. Whenever it changes, the tool logs the old and new name and (when a profile CSV is configured) records a `name_change` row. To also receive an email on such changes use `--notify-name-change` (see [Email Notifications](#email-notifications)).
 
@@ -343,7 +341,7 @@ steam_monitor <steam_target> --profile-csv-file steam_user_id_profile.csv
 
 Each row contains a timestamp, event type and associated values (for example: old/new Steam level or XP, friends count delta or one friend per row for added/removed friends, when available).
 
-The profile CSV keeps eight columns: `Date`, `Event`, `OldValue`, `NewValue`, `Delta`, `FriendSteamID`, `FriendPersona` and `FriendRealName`. `Date` is when the change was observed. A restart-detected library change uses the existing `games_library_change` event with old/new counts and their difference; a same-count replacement has a zero delta. Complete game titles belong in the log, without adding CSV columns or per-game event rows. Turning email or webhook notifications off does not turn these local change records off.
+`Date` is when the tool observed the change. For a change found after a restart, that is the time of the first successful check. A games library change is one `games_library_change` row with the old and new counts. A swap that keeps the count has a delta of 0.
 
 <a id="status-file"></a>
 ## Status File

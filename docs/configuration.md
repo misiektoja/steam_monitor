@@ -65,17 +65,13 @@ steam_monitor 76561201960287930
 <a id="restart-change-reporting"></a>
 ## Restart Change Reporting
 
-Games library tracking compares each complete successful observation against the retained baseline before saving the new one. This includes the first successful observation after a restart, so a stopped period no longer silently replaces the previous library. Enable games tracking with `GAMES_LIBRARY_CHECK` or `--check-games`.
+With games library tracking enabled, games added or removed while the tool was stopped are reported at the first successful check after it starts. To start from the current library without reporting them, set:
 
 ```ini
-REPORT_CHANGES_AFTER_RESTART = True
+REPORT_CHANGES_AFTER_RESTART = False
 ```
 
-This setting defaults to `True`, including when an older configuration file does not contain it. To start with the current library silently, set it to `False` or add `--no-restart-changes` for that run. The first successful observation then updates the baseline without a stopped-period change log event, profile CSV row or notification. Ordinary startup information and changes observed afterwards remain unchanged. Failed requests do not consume this silent initialization or replace a valid baseline.
-
-Notifications still use `GAMES_LIBRARY_NOTIFICATION` and `WEBHOOK_GAMES_NOTIFICATION`; this setting does not enable a delivery channel. With reporting enabled, notification switches can be off while log and configured profile CSV records still report the change. At present, cross-restart reporting applies to the games library; level/XP, friends and persona-name baselines are not persisted by this change.
-
-See [Games Library After a Restart](usage.md#games-library-after-a-restart) for snapshot compatibility, notification detail limits and timestamp meaning.
+Or add `--no-restart-changes` for one run. Later changes still report. The default is `True`, also for configuration files written before this setting existed. See [Games Library After a Restart](usage.md#games-library-after-a-restart) for what the report contains.
 
 <a id="smtp-settings"></a>
 ## SMTP Settings
