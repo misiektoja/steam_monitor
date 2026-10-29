@@ -7,6 +7,7 @@ import os
 import socket
 from datetime import datetime
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -414,6 +415,30 @@ def test_large_restart_diff_keeps_full_log_and_summary_csv(tmp_path, monkeypatch
     assert len(csv_rows(csv_path)) == 1
 
 
+# Only a comparison against the snapshot loaded from disk spans a stopped period, so only it says the time is unknown.
+@pytest.mark.parametrize("observations,context", [([[10], [10, 20]], False), ([[10, 20], [10, 20]], True), ([RuntimeError("Unavailable"), [10, 20]], True)])
+def test_unknown_time_context_only_follows_a_saved_baseline(tmp_path, monkeypatch, capsys, observations, context):
+    save_library(tmp_path, [10])
+    deliveries = delivery_probes(monkeypatch, webhook=False)
+    run_scenario(monkeypatch, observations)
+    output = capsys.readouterr().out
+    assert output.count("games library changed") == 1
+    assert ("exact change time is unknown" in output) is context
+    assert len(deliveries) == 1
+    assert ("exact change time is unknown" in deliveries[0][2]) is context
+
+
+# A list the alert shows in full keeps its plain form, and counts appear only when games are left out.
+def test_omitted_counts_appear_only_when_details_are_cut(tmp_path, monkeypatch):
+    save_library(tmp_path, [10])
+    deliveries = delivery_probes(monkeypatch, webhook=False)
+    run_scenario(monkeypatch, [[10], [20]])
+    lines = deliveries[0][2].splitlines()
+    assert "Added: Game 20 (20)" in lines
+    assert "Removed: Game 10 (10)" in lines
+    assert "omitted" not in deliveries[0][2]
+
+
 # Unicode and hostile/long names retain HTML escaping and the existing transport length and mention guards.
 def test_notification_unicode_escaping_and_transport_guards(tmp_path, monkeypatch):
     save_library(tmp_path, [10])
@@ -424,7 +449,7 @@ def test_notification_unicode_escaping_and_transport_guards(tmp_path, monkeypatc
     body, body_html = deliveries[0][2:]
     assert "中文" in body
     assert "<script>" not in body_html and "&lt;script&gt;" in body_html
-    discord = monitor.build_webhook_payload("Games", deliveries[1][3], "games")
+    discord: Any = monitor.build_webhook_payload("Games", deliveries[1][3], "games")
     assert discord["allowed_mentions"] == {"parse": []}
     assert len(discord["embeds"][0]["description"]) <= monitor.WEBHOOK_EMBED_DESCRIPTION_LIMIT
     ntfy_body = monitor.truncate_utf8_bytes(body, monitor.NTFY_MESSAGE_LIMIT_BYTES, monitor.NTFY_TRUNCATION_SUFFIX)
