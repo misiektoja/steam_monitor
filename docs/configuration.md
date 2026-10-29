@@ -62,6 +62,17 @@ TARGET_STEAM_ID = "76561201960435530"
 steam_monitor 76561201960287930
 ```
 
+<a id="restart-change-reporting"></a>
+## Restart Change Reporting
+
+With games library tracking enabled, games added or removed while the tool was stopped are reported at the first successful check after it starts. To start from the current library without reporting them, set:
+
+```ini
+REPORT_CHANGES_AFTER_RESTART = False
+```
+
+Or add `--no-restart-changes` for one run. Later changes still report. The default is `True`, also for configuration files written before this setting existed. See [Games Library After a Restart](usage.md#games-library-after-a-restart) for what the report contains.
+
 <a id="smtp-settings"></a>
 ## SMTP Settings
 

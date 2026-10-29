@@ -700,7 +700,7 @@ def test_an_internet_outage_that_flaps_alerts_once(tmp_path, monkeypatch):
 # the response list while deduplicating the IDs and the two can disagree in a file this tool wrote itself
 def test_a_legacy_games_library_file_still_loads(tmp_path, monkeypatch, capsys):
     legacy = tmp_path / monitor.default_games_file(STEAM_ID)
-    legacy.write_text(json.dumps({"game_count": 3, "appids": [10, 20]}), encoding="utf-8")
+    legacy.write_text(json.dumps({"game_count": 3, "appids": [440]}), encoding="utf-8")
 
     run_one_cycle(tmp_path, monkeypatch, diagnostics=False)
 

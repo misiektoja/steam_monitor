@@ -4,10 +4,15 @@ This is a high-level summary of the most important changes.
 
 # Changes in 2.1.1 (TBD)
 
-Version **2.1.1** restores games library tracking, which Steam's API stopped accepting. It reports unavailable notification channels and skips automatic sends until their settings are fixed. It fixes webhook delivery with non-ASCII custom headers and keeps generated recovery commands usable. Settings guidance explains which options need repeating and Doctor includes selected monitoring options in its start command.
+Version **2.1.1** restores games library tracking that stopped working when Steam changed its API and reports games added or removed while the tool was stopped. It reports unavailable notification channels and skips automatic sends until their settings are fixed. It fixes webhook delivery with non-ASCII custom headers and keeps generated recovery commands usable. Settings guidance explains which options need repeating and Doctor includes selected monitoring options in its start command.
+
+**Features and improvements**:
+
+- **IMPROVE:** **Bounded games library notifications** - Email and webhook notifications list at most five added and five removed games. When a notification leaves games out, it gives the total and the number omitted. The log still lists every changed game and the profile CSV keeps its summary row
 
 **Bug fixes**:
 
+- **BUGFIX:** **Library changes made while stopped are reported** - Games added or removed while the tool was stopped are reported at the first successful check after it starts again. Previously startup replaced the saved library without comparing it. The alert says the exact change time is unknown and gives the time the previous snapshot was saved when that is known. Set **`REPORT_CHANGES_AFTER_RESTART = False`** or use **`--no-restart-changes`** to start from the current library without reporting them. Later changes still report normally. The profile CSV records the time the change was found
 - **BUGFIX:** **Games library tracking works again** - Steam started requiring more parameters on owned-games requests, which stopped games library tracking, game-name lookup, the information display and the achievements fallback before any request was sent. All four work again, and the library still excludes family licenses and free games you do not own. A parameter problem now reports a client incompatibility to fix by updating, rather than a private or unavailable profile, and startup no longer claims a saved snapshot was kept when none had loaded
 - **BUGFIX:** **Recovery commands and saved settings** - Guidance distinguishes saved settings from command-line options needed on each run. Doctor's monitoring command retains the selected options and shows placeholders for private values. Generated commands keep paths, targets and flags intact when they match stored credentials. Error summaries and technical details still redact credentials
 - **BUGFIX:** **Unavailable notification channels stay quiet** - The startup summary shows **`Unavailable`** and names the missing or invalid local setting. Automatic email and webhook alerts make no send attempt and print no delivery line until that channel is configured. **`Off`** means alerts are disabled for that channel

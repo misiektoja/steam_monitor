@@ -131,7 +131,7 @@ The tool automatically saves its output to `steam_monitor_<user_steam_id/file_su
 
 Set `ASCII_LOG_SEPARATORS` to `"Auto"` (default) to use ASCII separator-only lines on Windows, `"On"` to use them on every operating system or `"Off"` to preserve Unicode separators in logs everywhere. Terminal separators stay Unicode. Log files and all other logged text remain UTF-8.
 
-The tool also saves the timestamp and last status (after every change) to the `steam_<steam64_id>_last_status.json` file, so the last status is available after the restart of the tool. See [Status File](#status-file) to keep it somewhere else. When games library tracking is enabled, a snapshot of the library (game count, app IDs and the titles seen so far) is stored in `steam_<steam64_id>_games.json` and only changes are reported.
+The tool also saves the timestamp and last status (after every change) to the `steam_<steam64_id>_last_status.json` file, so the last status is available after the restart of the tool. See [Status File](#status-file) to keep it somewhere else. When games library tracking is enabled, a snapshot of the library (game count, app IDs and the titles seen so far) is saved to `steam_<steam64_id>_games.json` after every successful check and only changes are reported. See [Games Library After a Restart](#games-library-after-a-restart).
 
 To track when the user's **Steam level and total XP** changes:
 - set `STEAM_LEVEL_XP_CHECK` to `True`
@@ -147,7 +147,16 @@ To track changes in the user's **games library** (game count and added/removed g
 
 Added and removed games are reported by title with the app ID after it, for example `Dota 2 (570)`. Titles come from one snapshot taken at startup plus a lookup limited to the games that actually changed, so the regular checks stay small. A title the lookup cannot resolve is reported as the bare app ID.
 
+Email and webhook alerts list at most five added and five removed games. When an alert leaves games out, it gives the total and the number omitted. The log always lists every changed game.
+
 The user's **display (persona) name** is tracked automatically with no extra configuration. Whenever it changes, the tool logs the old and new name and (when a profile CSV is configured) records a `name_change` row. To also receive an email on such changes use `--notify-name-change` (see [Email Notifications](#email-notifications)).
+
+<a id="games-library-after-a-restart"></a>
+### Games Library After a Restart
+
+At the first successful check after a start, the tool compares the library with the saved snapshot and reports the net difference: games added or removed while it was stopped. The exact change time is unknown, so the report says so and shows when the snapshot was saved if that is known. A failed check keeps the snapshot for the next one. Without a readable snapshot, the first check starts a fresh baseline. Only the games library is compared this way.
+
+To skip this report, use `--no-restart-changes` or set `REPORT_CHANGES_AFTER_RESTART = False` (see [Restart Change Reporting](configuration.md#restart-change-reporting)). Later changes still report.
 
 <a id="terminal-output"></a>
 ## Terminal Output
@@ -323,6 +332,8 @@ steam_monitor <steam_target> --profile-csv-file steam_user_id_profile.csv
 ```
 
 Each row contains a timestamp, event type and associated values (for example: old/new Steam level or XP, friends count delta or one friend per row for added/removed friends, when available).
+
+`Date` is when the tool observed the change. For a change found after a restart, that is the time of the first successful check. A games library change is one `games_library_change` row with the old and new counts. A swap that keeps the count has a delta of 0.
 
 <a id="status-file"></a>
 ## Status File

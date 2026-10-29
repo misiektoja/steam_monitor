@@ -341,6 +341,37 @@ def test_discord_bodies_keep_the_plain_wording(scenario_alerts):
         assert stripped == alert["webhook_body"].strip()
 
 
+# Bounds both sides of a large live-library change without dropping any console detail.
+def test_library_notification_details_are_bounded_but_log_is_complete(tmp_path, monkeypatch, capsys):
+    old_ids = tuple(range(10, 18))
+    new_ids = tuple(range(100, 112))
+    names = {appid: "Fixture title {}".format(appid) for appid in old_ids + new_ids}
+    monkeypatch.setattr(monitor, "fetch_app_names", lambda *_args: names)
+    monkeypatch.setitem(APP_NAMES, 17, names[17])
+    alerts = capture_alerts(tmp_path, monkeypatch, [cycle(owned=old_ids), cycle(owned=new_ids)])
+    games = [alert for alert in alerts if alert["type"] == "games"]
+    assert len(games) == 1
+    alert = games[0]
+    assert "12 total, 7 omitted" in alert["body"]
+    assert "8 total, 3 omitted" in alert["body"]
+    assert "Fixture title 111" not in alert["body"]
+    assert "Fixture title 17" not in alert["body"]
+    output = capsys.readouterr().out
+    assert "Fixture title 111" in output
+    assert "Fixture title 17" in output
+    assert structural_diff(alert["body"], alert["body_html"]) == ""
+
+
+# The shared selector can later limit friend details without changing order or mutating caller data.
+@pytest.mark.parametrize("count", [0, 1, 5, 6, 100])
+def test_change_detail_selector_preserves_input_and_reports_omissions(count):
+    items = list(range(count))
+    shown, omitted = monitor.bounded_change_details(items)
+    assert shown == items[:5]
+    assert omitted == max(0, count - 5)
+    assert items == list(range(count))
+
+
 # Verifies the monitored account and the games it plays are linked in every alert that names them
 def test_alerts_link_the_entities_they_name(scenario_alerts):
     for alert in scenario_alerts:

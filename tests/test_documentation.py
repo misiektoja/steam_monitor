@@ -146,7 +146,7 @@ def test_no_repository_document_links_at_a_missing_local_target():
 
 
 # Verifies each user-facing command is documented, since an undocumented one may as well not exist
-@pytest.mark.parametrize("flag", ["--setup", "--doctor", "--verbose", "--debug", "--generate-config", "--set-steam-api-key", "--set-webhook-url", "--send-test-email", "--send-test-webhook", "--env-file", "--config-file"])
+@pytest.mark.parametrize("flag", ["--setup", "--doctor", "--verbose", "--debug", "--generate-config", "--set-steam-api-key", "--set-webhook-url", "--send-test-email", "--send-test-webhook", "--env-file", "--config-file", "--no-restart-changes"])
 def test_user_facing_flags_are_documented(flag):
     assert flag in all_docs_text(), f"{flag} is not documented on the site"
 
