@@ -149,22 +149,14 @@ Added and removed games are reported by title with the app ID after it, for exam
 
 Email and webhook alerts list at most five added and five removed games. When an alert leaves games out, it gives the total and the number omitted. The log always lists every changed game.
 
+The user's **display (persona) name** is tracked automatically with no extra configuration. Whenever it changes, the tool logs the old and new name and (when a profile CSV is configured) records a `name_change` row. To also receive an email on such changes use `--notify-name-change` (see [Email Notifications](#email-notifications)).
+
 <a id="games-library-after-a-restart"></a>
 ### Games Library After a Restart
 
-At the first successful check after the tool starts, the library is compared with the saved snapshot before the snapshot is replaced. Games added or removed while the tool was stopped are reported then, including a swap that leaves the count unchanged. The report shows the net difference, so a game added and removed again while the tool was stopped does not appear. The exact time of the change is unknown. The report says so and, when available, shows when the previous snapshot was saved.
+At the first successful check after a start, the tool compares the library with the saved snapshot and reports the net difference: games added or removed while it was stopped. The exact change time is unknown, so the report says so and shows when the snapshot was saved if that is known. A failed check keeps the snapshot for the next one. Without a readable snapshot, the first check starts a fresh baseline. Only the games library is compared this way.
 
-A failed check keeps the saved snapshot and the next successful check makes the comparison. If there is no snapshot or the tool cannot read it, the first check starts a fresh baseline and reports nothing. Level, XP, friends and the display name are not compared across restarts.
-
-To start from the current library without reporting changes made while the tool was stopped:
-
-```sh
-steam_monitor <steam_target> --check-games --no-restart-changes
-```
-
-Or set `REPORT_CHANGES_AFTER_RESTART = False` in the configuration file, see [Restart Change Reporting](configuration.md#restart-change-reporting). Later changes still report. The setting turns on no alert by itself. Alerts still follow `GAMES_LIBRARY_NOTIFICATION` and `WEBHOOK_GAMES_NOTIFICATION`.
-
-The user's **display (persona) name** is tracked automatically with no extra configuration. Whenever it changes, the tool logs the old and new name and (when a profile CSV is configured) records a `name_change` row. To also receive an email on such changes use `--notify-name-change` (see [Email Notifications](#email-notifications)).
+To skip this report, use `--no-restart-changes` or set `REPORT_CHANGES_AFTER_RESTART = False` (see [Restart Change Reporting](configuration.md#restart-change-reporting)). Later changes still report.
 
 <a id="terminal-output"></a>
 ## Terminal Output
