@@ -41,9 +41,9 @@ test = [
   "pytest>=7.0",
   "pyyaml>=6.0",
   "Pillow>=8.0,<9.0; python_version < '3.7'",
-  "Pillow>=9.0,<10.0; python_version == '3.7'",
-  "Pillow>=10.0,<11.0; python_version == '3.8'",
-  "Pillow>=11.3.0,<12; python_version == '3.9'",
+  "Pillow>=9.0,<13.0; python_version == '3.7'",
+  "Pillow>=10.0,<13.0; python_version == '3.8'",
+  "Pillow>=11.3.0,<13; python_version == '3.9'",
   "Pillow>=12.0.0; python_version >= '3.10'",
 ]
 # Pinned so a new ruff release cannot fail CI on a rule that did not exist when the change was written
@@ -51,9 +51,9 @@ lint = ["ruff==0.16.10"]
 # Each Pillow major dropped an older Python, so every supported version pins the newest release that still supports it
 ntfy-images = [
   "Pillow>=8.0,<9.0; python_version < '3.7'",
-  "Pillow>=9.0,<10.0; python_version == '3.7'",
-  "Pillow>=10.0,<11.0; python_version == '3.8'",
-  "Pillow>=11.3.0,<12; python_version == '3.9'",
+  "Pillow>=9.0,<13.0; python_version == '3.7'",
+  "Pillow>=10.0,<13.0; python_version == '3.8'",
+  "Pillow>=11.3.0,<13; python_version == '3.9'",
   "Pillow>=12.0.0; python_version >= '3.10'",
 ]
 
