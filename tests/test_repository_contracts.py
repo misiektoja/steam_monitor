@@ -84,9 +84,10 @@ class TestGovernanceDocuments:
         assert runtime is not None and "Pillow" not in runtime.group(1)
         extra = re.search(r"^ntfy-images = \[(.*?)^\]", pyproject, re.S | re.M)
         assert extra is not None
-        assert re.findall(r'"(Pillow[^"]+)"', extra.group(1)) == ["Pillow>=8.0,<9.0; python_version < '3.7'", "Pillow>=9.0,<10.0; python_version == '3.7'", "Pillow>=10.0,<11.0; python_version == '3.8'", "Pillow>=11.3.0,<12; python_version == '3.9'", "Pillow>=12.0.0; python_version >= '3.10'"]
+        assert re.findall(r'"(Pillow[^"]+)"', extra.group(1)) == ["Pillow>=8.0,<9.0; python_version < '3.7'", "Pillow>=9.0,<10.0; python_version == '3.7'", "Pillow>=10.0,<11.0; python_version == '3.8'", "Pillow>=11.3.0,<12; python_version == '3.9'", "Pillow>=12.0.0,<13; python_version == '3.10'", "Pillow>=13.0.0; python_version >= '3.11'"]
         assert not any(line.strip().startswith("Pillow") for line in requirements.splitlines())
-        assert '# Pillow>=12.0.0; python_version >= "3.10"' in requirements
+        assert '# Pillow>=12.0.0,<13; python_version == "3.10"' in requirements
+        assert '# Pillow>=13.0.0; python_version >= "3.11"' in requirements
 
     # The support document must route each request type to a channel that exists
     def test_support_document_routes_every_request_type(self):

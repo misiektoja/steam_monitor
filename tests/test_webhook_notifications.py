@@ -302,7 +302,7 @@ class WebhookNotificationTests(unittest.TestCase):
 
     # Verifies every supported Python gets the newest Pillow release that still supports it
     def test_ntfy_images_requirement_matches_python_version(self):
-        expected = {(3, 6, 15): "Pillow>=8.0,<9.0", (3, 7, 17): "Pillow>=9.0,<10.0", (3, 8, 18): "Pillow>=10.0,<11.0", (3, 9, 23): "Pillow>=11.3.0,<12", (3, 10, 0): "Pillow>=12.0.0", (3, 14, 0): "Pillow>=12.0.0"}
+        expected = {(3, 6, 15): "Pillow>=8.0,<9.0", (3, 7, 17): "Pillow>=9.0,<10.0", (3, 8, 18): "Pillow>=10.0,<11.0", (3, 9, 23): "Pillow>=11.3.0,<12", (3, 10, 0): "Pillow>=12.0.0,<13", (3, 11, 0): "Pillow>=13.0.0", (3, 14, 0): "Pillow>=13.0.0"}
         for version, requirement in expected.items():
             with patch.object(steam_monitor.sys, "version_info", version):
                 self.assertEqual(steam_monitor.ntfy_images_requirement(), requirement, version)
