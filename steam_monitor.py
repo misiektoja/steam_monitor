@@ -1326,7 +1326,9 @@ def ntfy_images_requirement():
         return "Pillow>=10.0,<11.0"
     if sys.version_info < (3, 10):
         return "Pillow>=11.3.0,<12"
-    return "Pillow>=12.0.0"
+    if sys.version_info < (3, 11):
+        return "Pillow>=12.0.0,<13"
+    return "Pillow>=13.0.0"
 
 
 # Returns the command that installs optional ntfy artwork support for the active installation
