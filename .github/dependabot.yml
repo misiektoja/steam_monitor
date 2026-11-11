@@ -19,10 +19,10 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
-    # Each Python version pins the newest Pillow major that still supports it, so a major update would only widen those caps
+    # Each Python version pins the newest Pillow major that still supports it, so those caps are maintained by hand
+    # Pillow is declared only as ranges, so Dependabot cannot classify an update type and would widen every cap
     ignore:
       - dependency-name: "pillow"
-        update-types: ["version-update:semver-major"]
     groups:
       python-minor-and-patch:
         patterns: ["*"]
