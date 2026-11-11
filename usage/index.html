@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
     
     
       
@@ -460,6 +460,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Monitoring Mode">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#games-library-after-a-restart" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Games Library After a Restart
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -730,6 +747,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Monitoring Mode">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#games-library-after-a-restart" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Games Library After a Restart
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -880,6 +914,7 @@
 
 
 <h1 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h1>
+<p>Setting flags in these examples apply to that run. Repeat them on later runs or <a href="../configuration/#configuration-file">save the corresponding settings</a>.</p>
 <p><a id="command-format-by-installation-method"></a></p>
 <h2 id="command-format-by-installation-method">Command Format by Installation Method<a class="headerlink" href="#command-format-by-installation-method" title="Permanent link">&para;</a></h2>
 <p>Examples use the PyPI command. For a downloaded script, run commands from the directory containing <code>steam_monitor.py</code> and keep the same arguments:</p>
@@ -974,7 +1009,7 @@
 <p>You can monitor multiple Steam players by running multiple instances of the script.</p>
 <p>The tool automatically saves its output to <code>steam_monitor_&lt;user_steam_id/file_suffix&gt;.log</code> file. The log file name can be changed via <code>ST_LOGFILE</code> configuration option and its suffix via <code>FILE_SUFFIX</code> / <code>-y</code> flag. Logging can be disabled completely via <code>DISABLE_LOGGING</code> / <code>-d</code> flag.</p>
 <p>Set <code>ASCII_LOG_SEPARATORS</code> to <code>"Auto"</code> (default) to use ASCII separator-only lines on Windows, <code>"On"</code> to use them on every operating system or <code>"Off"</code> to preserve Unicode separators in logs everywhere. Terminal separators stay Unicode. Log files and all other logged text remain UTF-8.</p>
-<p>The tool also saves the timestamp and last status (after every change) to the <code>steam_&lt;steam64_id&gt;_last_status.json</code> file, so the last status is available after the restart of the tool. See <a href="#status-file">Status File</a> to keep it somewhere else. When games library tracking is enabled, a snapshot of the library (game count, app IDs and the titles seen so far) is stored in <code>steam_&lt;steam64_id&gt;_games.json</code> and only changes are reported.</p>
+<p>The tool also saves the timestamp and last status (after every change) to the <code>steam_&lt;steam64_id&gt;_last_status.json</code> file, so the last status is available after the restart of the tool. See <a href="#status-file">Status File</a> to keep it somewhere else. When games library tracking is enabled, a snapshot of the library (game count, app IDs and the titles seen so far) is saved to <code>steam_&lt;steam64_id&gt;_games.json</code> after every successful check and only changes are reported. See <a href="#games-library-after-a-restart">Games Library After a Restart</a>.</p>
 <p>To track when the user's <strong>Steam level and total XP</strong> changes:
 - set <code>STEAM_LEVEL_XP_CHECK</code> to <code>True</code>
 - or use the <code>--check-level-xp</code> flag</p>
@@ -985,7 +1020,12 @@
 - set <code>GAMES_LIBRARY_CHECK</code> to <code>True</code>
 - or use the <code>--check-games</code> flag</p>
 <p>Added and removed games are reported by title with the app ID after it, for example <code>Dota 2 (570)</code>. Titles come from one snapshot taken at startup plus a lookup limited to the games that actually changed, so the regular checks stay small. A title the lookup cannot resolve is reported as the bare app ID.</p>
+<p>Email and webhook alerts list at most five added and five removed games. When an alert leaves games out, it gives the total and the number omitted. The log always lists every changed game.</p>
 <p>The user's <strong>display (persona) name</strong> is tracked automatically with no extra configuration. Whenever it changes, the tool logs the old and new name and (when a profile CSV is configured) records a <code>name_change</code> row. To also receive an email on such changes use <code>--notify-name-change</code> (see <a href="#email-notifications">Email Notifications</a>).</p>
+<p><a id="games-library-after-a-restart"></a></p>
+<h3 id="games-library-after-a-restart">Games Library After a Restart<a class="headerlink" href="#games-library-after-a-restart" title="Permanent link">&para;</a></h3>
+<p>At the first successful check after a start, the tool compares the library with the saved snapshot and reports the net difference: games added or removed while it was stopped. The exact change time is unknown, so the report says so and shows when the snapshot was saved if that is known. A failed check keeps the snapshot for the next one. Without a readable snapshot, the first check starts a fresh baseline. Only the games library is compared this way.</p>
+<p>To skip this report, use <code>--no-restart-changes</code> or set <code>REPORT_CHANGES_AFTER_RESTART = False</code> (see <a href="../configuration/#restart-change-reporting">Restart Change Reporting</a>). Later changes still report.</p>
 <p><a id="terminal-output"></a></p>
 <h2 id="terminal-output">Terminal Output<a class="headerlink" href="#terminal-output" title="Permanent link">&para;</a></h2>
 <p>Use <code>--help</code> for examples grouped by task and matched to your installation.</p>
@@ -1132,6 +1172,7 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>--profile-csv-file<span class="w"> </span>steam_user_id_profile.csv
 </code></pre></div>
 <p>Each row contains a timestamp, event type and associated values (for example: old/new Steam level or XP, friends count delta or one friend per row for added/removed friends, when available).</p>
+<p><code>Date</code> is when the tool observed the change. For a change found after a restart, that is the time of the first successful check. A games library change is one <code>games_library_change</code> row with the old and new counts. A swap that keeps the count has a delta of 0.</p>
 <p><a id="status-file"></a></p>
 <h2 id="status-file">Status File<a class="headerlink" href="#status-file" title="Permanent link">&para;</a></h2>
 <p>The tool saves the timestamp and last status after every change, so the last status is available after a restart. By default it uses <code>steam_&lt;steam64_id&gt;_last_status.json</code> in the current directory. Set <code>STEAM_STATUS_FILE</code> or use the <code>--status-file</code> flag to keep it somewhere else:</p>
@@ -1286,7 +1327,7 @@
       <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.top", "navigation.sections", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.c21346df.min.js"></script>
+      <script src="../assets/javascripts/bundle.a5f9d56c.min.js"></script>
       
     
   </body>

@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
     
     
       
@@ -425,6 +425,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#restart-change-reporting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Restart Change Reporting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#smtp-settings" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -683,6 +694,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#restart-change-reporting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Restart Change Reporting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#smtp-settings" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -805,7 +827,7 @@
 <p>Examples on this page use the PyPI command <code>steam_monitor</code>. Manual script users should keep the shown options and use the matching prefix under <a href="../usage/#command-format-by-installation-method">Command Format by Installation Method</a>.</p>
 <p><a id="configuration-file"></a></p>
 <h2 id="configuration-file">Configuration File<a class="headerlink" href="#configuration-file" title="Permanent link">&para;</a></h2>
-<p>You can pass most settings as command-line options or save them in a configuration file for later runs.</p>
+<p>Command-line setting options apply to the current run and do not update the configuration file. Include them on every run that needs those settings. To reuse settings without repeating the options, save them through <code>--setup</code> or edit the configuration file. Commands such as <code>--setup</code> and <code>--set-smtp-password</code> save the values they collect.</p>
 <p>The easiest way to create this file is <code>steam_monitor --setup</code>.</p>
 <p>To edit every available setting yourself, generate a default configuration file:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># On macOS, Linux or Windows Command Prompt (cmd.exe)</span>
@@ -842,58 +864,66 @@
 <p><code>TARGET_STEAM_ID</code> accepts the same forms as the command line. Then <code>steam_monitor</code> alone starts monitoring that profile. A positional argument still wins, so you can watch someone else for one run without editing the file:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>steam_monitor<span class="w"> </span><span class="m">76561201960287930</span>
 </code></pre></div>
+<p><a id="restart-change-reporting"></a></p>
+<h2 id="restart-change-reporting">Restart Change Reporting<a class="headerlink" href="#restart-change-reporting" title="Permanent link">&para;</a></h2>
+<p>With games library tracking enabled, games added or removed while the tool was stopped are reported at the first successful check after it starts. To start from the current library without reporting them, set:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="na">REPORT_CHANGES_AFTER_RESTART</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">False</span>
+</code></pre></div>
+<p>Or add <code>--no-restart-changes</code> for one run. Later changes still report. The default is <code>True</code>, also for configuration files written before this setting existed. See <a href="../usage/#games-library-after-a-restart">Games Library After a Restart</a> for what the report contains.</p>
 <p><a id="smtp-settings"></a></p>
 <h2 id="smtp-settings">SMTP Settings<a class="headerlink" href="#smtp-settings" title="Permanent link">&para;</a></h2>
 <p>Email notifications need SMTP server details for the sending account. Add them to <code>steam_monitor.conf</code> or use the setup wizard. Setup checks the login without sending an email. To replace only the password, run <code>steam_monitor --set-smtp-password</code>. Password entry is hidden and preserves spaces.</p>
+<p>If email alerts are selected but local SMTP settings are missing or invalid, the startup summary shows <code>Unavailable</code> with the reason. Automatic email sends are skipped silently until the settings are fixed. <code>Off</code> means no email alert types are selected.</p>
 <p>Send one test message to verify the settings:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>steam_monitor<span class="w"> </span>--send-test-email
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>steam_monitor<span class="w"> </span>--send-test-email
 </code></pre></div>
 <p>Every alert is sent as both HTML and plain text in one message. Mail clients that render HTML show the Steam user, the game, the status and the values that changed in bold, with the profile and store pages as links. Clients that do not fall back to the plain text, which is unchanged.</p>
 <p><a id="webhook-settings"></a></p>
 <h2 id="webhook-settings">Webhook Settings<a class="headerlink" href="#webhook-settings" title="Permanent link">&para;</a></h2>
 <p>Steam Monitor can send activity alerts through Discord or the native <a href="https://docs.ntfy.sh/publish/">ntfy publish API</a>. Webhook alerts are independent from email, so either channel can be enabled alone or both can receive the same event.</p>
 <p><a href="../setup-and-first-run/#run-the-setup-wizard"><code>--setup</code></a> collects the webhook URL and detects the provider from it. To configure it separately, save the private destination through a hidden prompt:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>steam_monitor<span class="w"> </span>--set-webhook-url
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>steam_monitor<span class="w"> </span>--set-webhook-url
 </code></pre></div>
 <p>The command checks the URL and saves <code>WEBHOOK_URL</code> to <code>.env</code> without sending a message. Use <code>--env-file PATH</code> for another destination. Select the provider and event switches in <code>steam_monitor.conf</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">WEBHOOK_ENABLED</span> <span class="o">=</span> <span class="kc">True</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="n">WEBHOOK_PROVIDER</span> <span class="o">=</span> <span class="s2">"discord"</span>  <span class="c1"># or "ntfy"</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="n">WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION</span> <span class="o">=</span> <span class="kc">True</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="n">WEBHOOK_STATUS_NOTIFICATION</span> <span class="o">=</span> <span class="kc">False</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="n">WEBHOOK_GAME_CHANGE_NOTIFICATION</span> <span class="o">=</span> <span class="kc">True</span>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="n">WEBHOOK_LEVEL_XP_NOTIFICATION</span> <span class="o">=</span> <span class="kc">False</span>
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="n">WEBHOOK_FRIENDS_NOTIFICATION</span> <span class="o">=</span> <span class="kc">False</span>
-<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="n">WEBHOOK_GAMES_NOTIFICATION</span> <span class="o">=</span> <span class="kc">False</span>
-<a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="n">WEBHOOK_NAME_CHANGE_NOTIFICATION</span> <span class="o">=</span> <span class="kc">False</span>
-<a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="n">WEBHOOK_ERROR_NOTIFICATION</span> <span class="o">=</span> <span class="kc">True</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">WEBHOOK_ENABLED</span> <span class="o">=</span> <span class="kc">True</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="n">WEBHOOK_PROVIDER</span> <span class="o">=</span> <span class="s2">"discord"</span>  <span class="c1"># or "ntfy"</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="n">WEBHOOK_ACTIVE_INACTIVE_NOTIFICATION</span> <span class="o">=</span> <span class="kc">True</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">WEBHOOK_STATUS_NOTIFICATION</span> <span class="o">=</span> <span class="kc">False</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="n">WEBHOOK_GAME_CHANGE_NOTIFICATION</span> <span class="o">=</span> <span class="kc">True</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="n">WEBHOOK_LEVEL_XP_NOTIFICATION</span> <span class="o">=</span> <span class="kc">False</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="n">WEBHOOK_FRIENDS_NOTIFICATION</span> <span class="o">=</span> <span class="kc">False</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="n">WEBHOOK_GAMES_NOTIFICATION</span> <span class="o">=</span> <span class="kc">False</span>
+<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="n">WEBHOOK_NAME_CHANGE_NOTIFICATION</span> <span class="o">=</span> <span class="kc">False</span>
+<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="n">WEBHOOK_ERROR_NOTIFICATION</span> <span class="o">=</span> <span class="kc">True</span>
 </code></pre></div>
-<p>A <code>WEBHOOK_URL</code> left unset, or left at its <code>your_webhook_url</code> placeholder, switches webhook alerts off at startup instead of failing at the first alert. <code>--verbose</code> reports why.</p>
+<p>If webhook alerts are selected but the URL, provider or other local settings are invalid, the startup summary shows <code>Unavailable</code> with the reason. Automatic webhook sends are skipped silently until the settings are fixed. <code>Off</code> means the master switch or all webhook alert types are off.</p>
 <p>The service is detected from the URL. While <code>WEBHOOK_PROVIDER</code> is left at its default, that detection is silent and <code>--verbose</code> reports it. A warning appears only when your configuration file sets a provider the URL disagrees with.</p>
 <p>Verify delivery without starting monitoring:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>steam_monitor<span class="w"> </span>--send-test-webhook
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>steam_monitor<span class="w"> </span>--send-test-webhook
 </code></pre></div>
 <p><a id="ntfy"></a></p>
 <h3 id="ntfy">ntfy<a class="headerlink" href="#ntfy" title="Permanent link">&para;</a></h3>
 <p>For ntfy.sh or a self-hosted ntfy server, use a complete private topic URL such as <code>https://ntfy.sh/steam-monitor-long-random-value</code>. Public <code>ntfy.sh</code> URLs select the ntfy request format automatically. Set the provider in <code>steam_monitor.conf</code> for a self-hosted endpoint:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="na">WEBHOOK_PROVIDER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"ntfy"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="na">WEBHOOK_PROVIDER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"ntfy"</span>
 </code></pre></div>
 <p>The ntfy provider needs no template. Steam Monitor sends the alert body as a native ntfy message with the subject as its title. Long ntfy text messages are visibly truncated below ntfy's 4 KB boundary so they remain notifications instead of temporary attachments.</p>
 <p>Topics on the public ntfy.sh service are public unless protected through an account reservation. Treat an unprotected topic name like a password. Protected ntfy topics can use <code>NTFY_ACCESS_TOKEN</code> from an environment variable or dotenv file:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="na">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s">"tk_your_ntfy_access_token"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="na">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s">"tk_your_ntfy_access_token"</span>
 </code></pre></div>
 <p><code>NTFY_IMAGES</code> enables bounded Steam avatar or game artwork attachments. It is disabled by default and needs the optional Pillow package:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"steam_monitor[ntfy-images]"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"steam_monitor[ntfy-images]"</span>
 </code></pre></div>
 <p>Then enable it in <code>steam_monitor.conf</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="na">NTFY_IMAGES</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">True</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="na">NTFY_IMAGES</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">True</span>
 </code></pre></div>
 <p>If artwork is enabled while Pillow is missing, startup says so, names the exact install command and keeps sending text-only alerts. If image preparation or upload fails, delivery falls back to text. Debug mode records why image preparation failed. Intentional image attachments through <code>NTFY_IMAGES</code> are not affected by the text truncation above.</p>
 <p>Customize ntfy delivery further through <code>WEBHOOK_HEADERS</code>, for example <code>X-Priority</code> or <code>X-Tags</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="na">WEBHOOK_HEADERS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">{</span>
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">    </span><span class="na">"X-Webhook-Title"</span><span class="o">:</span><span class="w"> </span><span class="s">"{title}"</span><span class="na">,</span>
-<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="na">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="na">WEBHOOK_HEADERS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">{</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">    </span><span class="na">"X-Webhook-Title"</span><span class="o">:</span><span class="w"> </span><span class="s">"{title}"</span><span class="na">,</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="na">}</span>
 </code></pre></div>
 <p>Header values support the same placeholders as <code>WEBHOOK_TEMPLATE</code> and apply to both Discord and ntfy.</p>
+<p>A header value that contains emoji or other non-ASCII text after placeholder expansion is sent in RFC 2047 encoded form (<code>=?UTF-8?B?...?=</code>), since a plain HTTP header cannot carry it. ntfy decodes it back to the original text. Other receivers see the encoded form unless they decode RFC 2047. ASCII values are sent exactly as written, including values you already encoded yourself, such as an emoji tag from the ntfy documentation.</p>
 <p><a id="discord"></a></p>
 <h3 id="discord">Discord<a class="headerlink" href="#discord" title="Permanent link">&para;</a></h3>
 <p>If you are new to Discord, follow these steps to get your private webhook URL:</p>
@@ -905,14 +935,14 @@
 </ol>
 <p>Treat this link like a password because anyone who has it can post through it.</p>
 <p>Keep the default provider in <code>steam_monitor.conf</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="na">WEBHOOK_PROVIDER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"discord"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="na">WEBHOOK_PROVIDER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"discord"</span>
 </code></pre></div>
 <p>Discord alerts carry the same emphasis as the HTML email, since Discord renders markdown in an embed. Bold values stay bold and links stay clickable. Only Discord gets that wording: ntfy receives the plain body, because it would show the markers literally.</p>
 <p><a id="advanced-discord-format-customization"></a></p>
 <h3 id="advanced-discord-format-customization">Advanced Discord-format customization<a class="headerlink" href="#advanced-discord-format-customization" title="Permanent link">&para;</a></h3>
 <p><code>WEBHOOK_USERNAME</code> and <code>WEBHOOK_AVATAR_URL</code> change the sender name and HTTPS avatar for Discord-format payloads:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="na">WEBHOOK_USERNAME</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"Steam Monitor"</span>
-<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="na">WEBHOOK_AVATAR_URL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"https://example.com/path/avatar.png"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="na">WEBHOOK_USERNAME</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"Steam Monitor"</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="na">WEBHOOK_AVATAR_URL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"https://example.com/path/avatar.png"</span>
 </code></pre></div>
 <p><code>WEBHOOK_TEMPLATE</code> controls the Discord-format request body. It supports these placeholders:</p>
 <ul>
@@ -928,11 +958,11 @@
 </ul>
 <p>Discord templates must produce a JSON object. Use a dictionary or a JSON string encoding an object, including legacy strings with doubled object braces. Lists, non-JSON strings and unsupported placeholders are rejected before delivery. Alert text is kept literal and all payloads replace <code>allowed_mentions</code> with <code>{"parse": []}</code> so alert text cannot trigger Discord mentions. Reloaded settings apply to the next delivery.</p>
 <p><code>WEBHOOK_TRANSFORMS</code> applies string methods to shared placeholder values before the template and headers are rendered:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="na">WEBHOOK_TRANSFORMS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">[</span>
-<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="w">    </span><span class="na">("title", "upper"),</span>
-<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="w">    </span><span class="na">("description", "replace", "**", ""),</span>
-<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="w">    </span><span class="na">("description", "strip"),</span>
-<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="na">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="na">WEBHOOK_TRANSFORMS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">[</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="w">    </span><span class="na">("title", "upper"),</span>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="w">    </span><span class="na">("description", "replace", "**", ""),</span>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="w">    </span><span class="na">("description", "strip"),</span>
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="na">]</span>
 </code></pre></div>
 <p>The tuple format is <code>(field_to_target, method_name, *optional_arguments)</code>. Invalid templates, avatar URLs, transforms or formatted headers fail before a request is attempted. <code>WEBHOOK_TEMPLATE</code>, <code>WEBHOOK_USERNAME</code> and <code>WEBHOOK_AVATAR_URL</code> apply only to the Discord request format and are ignored when <code>WEBHOOK_PROVIDER</code> is <code>"ntfy"</code>. ntfy continues to use its native publish API while transformations and header placeholders use the same shared title and description values.</p>
 <p><a id="terminal-colours"></a></p>
@@ -940,18 +970,18 @@
 <p>Terminal output is coloured by default. <code>COLORED_OUTPUT</code> and <code>COLOR_THEME</code> apply to monitoring output and to the <code>--setup</code>, <code>--doctor</code> and <code>--help</code> screens. <code>--no-color</code> turns colour off for all of them.</p>
 <p>The <code>--help</code> screen is coloured too. Group headings, option names, the values those options take, the example commands and the comments above them each get their own colour, so the screen can be scanned instead of read.</p>
 <p>Turn it off for one run:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>--no-color
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>--no-color
 </code></pre></div>
 <p>Turn it off permanently in the config file:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="n">COLORED_OUTPUT</span> <span class="o">=</span> <span class="kc">False</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="n">COLORED_OUTPUT</span> <span class="o">=</span> <span class="kc">False</span>
 </code></pre></div>
 <p>On Windows, install <a href="https://pypi.org/project/colorama/">colorama</a> for colours in the older Command Prompt. Windows Terminal needs nothing extra.</p>
 <p>Each part of the output has a logical name. <code>COLOR_THEME</code> in the config file overrides only the names it lists. Combine attributes with spaces or <code>+</code>, for example <code>"bright_cyan bold"</code> or <code>"red underline"</code>. Valid colours are <code>black</code>, <code>red</code>, <code>green</code>, <code>yellow</code>, <code>blue</code>, <code>magenta</code>, <code>cyan</code>, <code>white</code> and their <code>bright_</code> variants, plus the <code>bold</code>, <code>dim</code>, <code>underline</code> and <code>blink</code> attributes. An empty string leaves that part uncoloured.</p>
 <p>The built-in colours apply unless you set <code>COLOR_THEME</code>. Older configurations may set every colour explicitly. Remove that block to use current defaults or edit individual values to keep a custom theme. The old <code>steam_id</code> key is still accepted as <code>id</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="n">COLOR_THEME</span> <span class="o">=</span> <span class="p">{</span>
-<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>    <span class="s2">"game"</span><span class="p">:</span> <span class="s2">"bright_magenta bold"</span><span class="p">,</span>
-<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>    <span class="s2">"duration"</span><span class="p">:</span> <span class="s2">"cyan"</span><span class="p">,</span>
-<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="n">COLOR_THEME</span> <span class="o">=</span> <span class="p">{</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>    <span class="s2">"game"</span><span class="p">:</span> <span class="s2">"bright_magenta bold"</span><span class="p">,</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>    <span class="s2">"duration"</span><span class="p">:</span> <span class="s2">"cyan"</span><span class="p">,</span>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="p">}</span>
 </code></pre></div>
 <p>The four presence colours apply where the tool reports a state, such as a <code>Status:</code> row, a status change line or a capitalised state like <code>*** User got OFFLINE !</code>. A sentence that only mentions a state, such as the liveness line <code>The user is offline with no status or game change since the last check</code>, stays in the default colour. The two boolean colours apply to a <code>Yes</code> or <code>No</code> that is the whole value of a labelled row, not to the word inside a sentence.</p>
 <table>
@@ -1135,31 +1165,31 @@
 <p>It is recommended to store secrets like <code>STEAM_API_KEY</code>, <code>SMTP_PASSWORD</code>, <code>WEBHOOK_URL</code> or <code>NTFY_ACCESS_TOKEN</code> as either an environment variable or in a dotenv file.</p>
 <p>Both work on their own. An exported environment variable is applied whether or not a dotenv file exists, and a value exported in your shell overrides the same name in the dotenv file. Run with <code>--verbose</code> to see which of the two supplied each secret.</p>
 <p>Set environment variables using <code>export</code> on <strong>Linux/Unix/macOS/WSL</strong> systems:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">STEAM_API_KEY</span><span class="o">=</span><span class="s2">"your_steam_web_api_key"</span>
-<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SMTP_PASSWORD</span><span class="o">=</span><span class="s2">"your_smtp_password"</span>
-<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">WEBHOOK_URL</span><span class="o">=</span><span class="s2">"https://discord.com/api/webhooks/..."</span>
-<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="nb">export</span><span class="w"> </span><span class="nv">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s2">"your_ntfy_access_token"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">STEAM_API_KEY</span><span class="o">=</span><span class="s2">"your_steam_web_api_key"</span>
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SMTP_PASSWORD</span><span class="o">=</span><span class="s2">"your_smtp_password"</span>
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">WEBHOOK_URL</span><span class="o">=</span><span class="s2">"https://discord.com/api/webhooks/..."</span>
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="nb">export</span><span class="w"> </span><span class="nv">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s2">"your_ntfy_access_token"</span>
 </code></pre></div>
 <p>On <strong>Windows Command Prompt</strong> use <code>set</code> instead of <code>export</code> and on <strong>Windows PowerShell</strong> use <code>$env</code>.</p>
 <p>Alternatively store them persistently in a dotenv file (recommended):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="na">STEAM_API_KEY</span><span class="o">=</span><span class="s">"your_steam_web_api_key"</span>
-<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="na">SMTP_PASSWORD</span><span class="o">=</span><span class="s">"your_smtp_password"</span>
-<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="na">WEBHOOK_URL</span><span class="o">=</span><span class="s">"https://discord.com/api/webhooks/..."</span>
-<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="na">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s">"your_ntfy_access_token"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="na">STEAM_API_KEY</span><span class="o">=</span><span class="s">"your_steam_web_api_key"</span>
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="na">SMTP_PASSWORD</span><span class="o">=</span><span class="s">"your_smtp_password"</span>
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="na">WEBHOOK_URL</span><span class="o">=</span><span class="s">"https://discord.com/api/webhooks/..."</span>
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="na">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s">"your_ntfy_access_token"</span>
 </code></pre></div>
 <p>Use <code>steam_monitor --set-smtp-password</code> after configuring the other SMTP settings. It checks sign-in before saving and keeps input hidden. An exported <code>SMTP_PASSWORD</code> overrides the saved value at startup.</p>
 <p>Secret commands save the dotenv file with owner-only permissions and leave the original intact if writing fails. Replaced secrets are not backed up.</p>
 <p>By default the tool will auto-search for dotenv file named <code>.env</code> in current directory and then upward from it.</p>
 <p>You can specify a custom file with <code>DOTENV_FILE</code> or <code>--env-file</code> flag:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>--env-file<span class="w"> </span>/path/.env-steam_monitor
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>--env-file<span class="w"> </span>/path/.env-steam_monitor
 </code></pre></div>
 <p>You can also disable <code>.env</code> auto-search with <code>DOTENV_FILE = "none"</code> or <code>--env-file none</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>--env-file<span class="w"> </span>none
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>steam_monitor<span class="w"> </span>&lt;steam_target&gt;<span class="w"> </span>--env-file<span class="w"> </span>none
 </code></pre></div>
 <p>As a fallback, you can also store secrets in the configuration file or source code.</p>
 <p>A forgotten <code>export</code> can shadow the dotenv file invisibly, so <code>--debug</code> names every secret and the source it resolved from, never the value:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>[DEBUG 12:00:00] Secret resolution: name=STEAM_API_KEY, source=environment, value=set, chars=32
-<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>[DEBUG 12:00:00] Secret resolution: name=SMTP_PASSWORD, source=dotenv file, value=set
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>[DEBUG 12:00:00] Secret resolution: name=STEAM_API_KEY, source=environment, value=set, chars=32
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>[DEBUG 12:00:00] Secret resolution: name=SMTP_PASSWORD, source=dotenv file, value=set
 </code></pre></div>
 <p>A secret still holding its <code>your_...</code> placeholder counts as unset and is left out, and a run with no secret anywhere says so on one line. A length appears only for the secrets whose length the provider issues, never for a password you chose.</p>
 <p>Secret commands update the selected value without changing other dotenv settings. Clearing a value removes its assignment.</p>
@@ -1230,7 +1260,7 @@
       <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.top", "navigation.sections", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.c21346df.min.js"></script>
+      <script src="../assets/javascripts/bundle.a5f9d56c.min.js"></script>
       
     
   </body>
