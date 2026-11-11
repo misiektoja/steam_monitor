@@ -19,6 +19,10 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    # Each Python version pins the newest Pillow major that still supports it, so a major update would only widen those caps
+    ignore:
+      - dependency-name: "pillow"
+        update-types: ["version-update:semver-major"]
     groups:
       python-minor-and-patch:
         patterns: ["*"]

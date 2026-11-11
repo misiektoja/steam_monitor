@@ -59,4 +59,4 @@ Pull requests target `dev`. The pull request template lists the checks to report
 
 ## Code style
 
-The codebase favors complete implementations over minimal patches, explicit validation of anything Steam supplies and one concise summary comment directly above each shared function. Follow the surrounding code rather than introducing a new style.
+Use complete implementations and validate data supplied by Steam. Place a concise comment immediately before every function and method, including private helpers. Summarize its purpose or contract. Use additional comments for non-obvious constraints and reasons. Follow the surrounding code.

@@ -8,6 +8,7 @@ import os
 import re
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -55,6 +56,7 @@ class StopScenario(Exception):
 class ScriptedSteamWebAPI:
     # Answers each Steam endpoint from the scenario entry for the current cycle
     def __init__(self, scenario, fail_cycles=()):
+        self.IPlayerService = SimpleNamespace(GetOwnedGames=SimpleNamespace(parameters={}))
         self.scenario = scenario
         self.fail_cycles = set(fail_cycles)
         self.index = 0
@@ -132,6 +134,8 @@ def capture_alerts(tmp_path, monkeypatch, scenario, fail_cycles=(), api_class=No
             raise StopScenario()
 
     for name, value in {"STATUS_NOTIFICATION": True, "ACTIVE_INACTIVE_NOTIFICATION": True, "GAME_CHANGE_NOTIFICATION": True, "STEAM_LEVEL_XP_NOTIFICATION": True, "STEAM_LEVEL_XP_CHECK": True, "FRIENDS_NOTIFICATION": True, "FRIENDS_CHECK": True, "GAMES_LIBRARY_NOTIFICATION": True, "GAMES_LIBRARY_CHECK": True, "NAME_CHANGE_NOTIFICATION": True, "ERROR_NOTIFICATION": True, "STEAM_CHECK_INTERVAL": 60, "STEAM_ACTIVE_CHECK_INTERVAL": 30, "ERROR_ALERT_AFTER_SECONDS": 0, "FILE_SUFFIX": "", "VERBOSE_MODE": False, "DEBUG_MODE": False}.items():
+        monkeypatch.setattr(monitor, name, value)
+    for name, value in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "sender@example.com"), ("SMTP_PASSWORD", "test-password"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "receiver@example.com")):
         monkeypatch.setattr(monitor, name, value)
     monkeypatch.setattr(monitor, "send_notification_channels", fake_send)
     monkeypatch.setattr(monitor, "steam_web_api_client", lambda *args, **kwargs: api)
@@ -335,6 +339,37 @@ def test_discord_bodies_keep_the_plain_wording(scenario_alerts):
         stripped = re.sub(r"\[([^\]]*)\]\((?:[^)]*)\)", r"\1", alert["discord"]).replace("**", "").replace("*", "")
 
         assert stripped == alert["webhook_body"].strip()
+
+
+# Bounds both sides of a large live-library change without dropping any console detail.
+def test_library_notification_details_are_bounded_but_log_is_complete(tmp_path, monkeypatch, capsys):
+    old_ids = tuple(range(10, 18))
+    new_ids = tuple(range(100, 112))
+    names = {appid: "Fixture title {}".format(appid) for appid in old_ids + new_ids}
+    monkeypatch.setattr(monitor, "fetch_app_names", lambda *_args: names)
+    monkeypatch.setitem(APP_NAMES, 17, names[17])
+    alerts = capture_alerts(tmp_path, monkeypatch, [cycle(owned=old_ids), cycle(owned=new_ids)])
+    games = [alert for alert in alerts if alert["type"] == "games"]
+    assert len(games) == 1
+    alert = games[0]
+    assert "12 total, 7 omitted" in alert["body"]
+    assert "8 total, 3 omitted" in alert["body"]
+    assert "Fixture title 111" not in alert["body"]
+    assert "Fixture title 17" not in alert["body"]
+    output = capsys.readouterr().out
+    assert "Fixture title 111" in output
+    assert "Fixture title 17" in output
+    assert structural_diff(alert["body"], alert["body_html"]) == ""
+
+
+# The shared selector can later limit friend details without changing order or mutating caller data.
+@pytest.mark.parametrize("count", [0, 1, 5, 6, 100])
+def test_change_detail_selector_preserves_input_and_reports_omissions(count):
+    items = list(range(count))
+    shown, omitted = monitor.bounded_change_details(items)
+    assert shown == items[:5]
+    assert omitted == max(0, count - 5)
+    assert items == list(range(count))
 
 
 # Verifies the monitored account and the games it plays are linked in every alert that names them

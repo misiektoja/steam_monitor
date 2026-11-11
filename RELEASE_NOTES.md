@@ -2,6 +2,22 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 2.2 (11 Nov 2026)
+
+Version **2.2** reports games added or removed while the tool was stopped and fixes games library tracking after a Steam API change. It also skips alerts on unavailable channels, fixes webhook alerts with emoji in custom headers and keeps recovery and Doctor commands reusable.
+
+**Features and improvements**:
+
+- **NEW:** **Library changes made while stopped are reported** - The first successful check after a start compares the library with the saved snapshot and reports the difference. Use **`--no-restart-changes`** or **`REPORT_CHANGES_AFTER_RESTART = False`** to skip this report. See [Games Library After a Restart](https://misiektoja.github.io/steam_monitor/usage/#games-library-after-a-restart) (thanks [@Jazzwind](https://github.com/Jazzwind) for the proposal in [#18](https://github.com/misiektoja/steam_monitor/discussions/18) and the implementation in [#20](https://github.com/misiektoja/steam_monitor/pull/20))
+- **IMPROVE:** **Shorter games library alerts** - Email and webhook alerts list at most five added and five removed games and give the total and the number omitted when they leave games out. The log still lists every game (thanks [@Jazzwind](https://github.com/Jazzwind), from [#20](https://github.com/misiektoja/steam_monitor/pull/20))
+
+**Bug fixes**:
+
+- **BUGFIX:** **Games library tracking works again** - Steam now marks two owned-games parameters as required, which broke library tracking, game names, the information display and the achievements fallback. All four work again. A parameter error is reported as a client problem rather than a private profile (thanks [@Jazzwind](https://github.com/Jazzwind) for reporting in [#18](https://github.com/misiektoja/steam_monitor/discussions/18) and the fix in [#19](https://github.com/misiektoja/steam_monitor/pull/19))
+- **BUGFIX:** **Recovery commands and saved settings** - Guidance says which options are saved and which must be repeated on every run. Doctor's start command keeps the selected options with placeholders for private values. Generated commands keep paths, targets and flags intact when they match a stored credential
+- **BUGFIX:** **Unavailable notification channels stay quiet** - A channel with missing or invalid settings shows as **`Unavailable`** in the startup summary with the setting to fix. Automatic alerts skip it until it is configured
+- **BUGFIX:** **Custom headers with emoji no longer drop webhook alerts** - A **`WEBHOOK_HEADERS`** value with emoji or other text outside Latin-1 made the whole alert fail. Such values are now sent RFC 2047 encoded. ntfy decodes them and other receivers see the encoded form
+
 # Changes in 2.1 (22 Sep 2026)
 
 Version **2.1** sends every alert as an **HTML email** with the changed values in bold and the Steam profile and store pages as links, and gives Discord the same formatting. Games library changes now name the **game title** instead of the bare app ID. It also gives every monitoring failure unified subject and body across email and webhook, followed by a **recovery alert** when monitoring resumes. Network failures now link to a new **Connection Problems** page section. Alert delivery messages stay within the correct check report and alert channels that still use placeholder configuration values are shown as not configured.

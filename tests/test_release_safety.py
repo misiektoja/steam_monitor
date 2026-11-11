@@ -175,7 +175,7 @@ def test_achievement_failure_stops_real_client(monkeypatch, capsys, status):
     from urllib.parse import urlsplit
     import requests
     from requests.adapters import HTTPAdapter
-    methods = {"IPlayerService": {"GetOwnedGames": ["steamid", "include_appinfo", "include_played_free_games", "appids_filter[0]", "include_free_sub", "include_extended_appinfo", "language"]}, "ISteamUserStats": {"GetPlayerAchievements": ["steamid", "appid"]}}
+    methods = {"IPlayerService": {"GetOwnedGames": {"steamid": "uint64", "include_appinfo": "bool", "include_played_free_games": "bool", "appids_filter[0]": "uint32", "include_free_sub": "bool", "include_extended_appinfo": "bool", "language": "string", "include_family_licenses": "bool", "include_all_free_games": "bool"}}, "ISteamUserStats": {"GetPlayerAchievements": {"steamid": "uint64", "appid": "uint32"}}}
     calls = []
 
     # Returns real responses at the HTTP boundary while keeping the provider library intact
@@ -188,7 +188,7 @@ def test_achievement_failure_stops_real_client(monkeypatch, capsys, status):
         path = urlsplit(request.url).path
         calls.append(path)
         if "GetSupportedAPIList" in path:
-            payload = {"apilist": {"interfaces": [{"name": interface, "methods": [{"name": method, "version": 1, "httpmethod": "GET", "parameters": [{"name": parameter, "type": "string", "optional": True, "description": ""} for parameter in parameters]} for method, parameters in entries.items()]} for interface, entries in methods.items()]}}
+            payload = {"apilist": {"interfaces": [{"name": interface, "methods": [{"name": method, "version": 1, "httpmethod": "GET", "parameters": [{"name": parameter, "type": kind, "optional": False, "description": ""} for parameter, kind in parameters.items()]} for method, parameters in entries.items()]} for interface, entries in methods.items()]}}
         elif "GetOwnedGames" in path:
             payload = {"response": {"game_count": 100, "games": [{"appid": number, "name": "Game", "playtime_forever": 1} for number in range(1, 101)]}}
         else:

@@ -6,6 +6,7 @@ from email.utils import format_datetime
 import copy
 import json
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -42,6 +43,7 @@ class StoppedAfterOneCycle(Exception):
 class FakeSteamWebAPI:
     # Answers the Steam endpoints the monitoring cycle calls, failing the ones named in failing_endpoints
     def __init__(self, failing_endpoints=(), poll_error=None, healthy_polls=1, persona_state=0, healthy_after=None, **_kwargs):
+        self.IPlayerService = SimpleNamespace(GetOwnedGames=SimpleNamespace(parameters={}))
         self.failing_endpoints = set(failing_endpoints)
         self.persona_state = persona_state
         # A poll error is raised only after the startup snapshot has succeeded, so the loop is actually reached
@@ -84,6 +86,8 @@ class FakeSteamWebAPI:
 
 # Runs one monitoring cycle with every tracked feature on and the named endpoints failing
 def run_one_cycle(tmp_path, monkeypatch, failing_endpoints=(), diagnostics=True, poll_error=None, stop_after_sleeps=2, error_notifications=False, liveness_seconds=0, debug=None, persona_state=0, healthy_after=None):
+    for name, value in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "sender@example.com"), ("SMTP_PASSWORD", "test-password"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "receiver@example.com"), ("WEBHOOK_PROVIDER", "discord"), ("WEBHOOK_URL", "https://discord.com/api/webhooks/123/private-token")):
+        monkeypatch.setattr(monitor, name, value)
     monkeypatch.setattr(monitor, "DEBUG_MODE", diagnostics if debug is None else debug)
     monkeypatch.setattr(monitor, "VERBOSE_MODE", diagnostics)
     monkeypatch.setattr(monitor, "STEAM_LEVEL_XP_CHECK", True)
@@ -696,7 +700,7 @@ def test_an_internet_outage_that_flaps_alerts_once(tmp_path, monkeypatch):
 # the response list while deduplicating the IDs and the two can disagree in a file this tool wrote itself
 def test_a_legacy_games_library_file_still_loads(tmp_path, monkeypatch, capsys):
     legacy = tmp_path / monitor.default_games_file(STEAM_ID)
-    legacy.write_text(json.dumps({"game_count": 3, "appids": [10, 20]}), encoding="utf-8")
+    legacy.write_text(json.dumps({"game_count": 3, "appids": [440]}), encoding="utf-8")
 
     run_one_cycle(tmp_path, monkeypatch, diagnostics=False)
 

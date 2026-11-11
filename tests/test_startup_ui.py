@@ -478,9 +478,12 @@ def test_the_concise_summary_points_at_the_diagnostic_modes(summary_globals):
 
 # Verifies both notification channels are reported with the categories that are actually enabled
 def test_the_notification_rollups_name_their_categories(monkeypatch, summary_globals):
-    # The rollup reports a channel with no mail server as off, whatever its alert types are
+    # The rollup reports selected categories as on when email has valid local settings
     monkeypatch.setattr(monitor, "SMTP_HOST", "smtp.example.com")
     monkeypatch.setattr(monitor, "SMTP_PORT", 587)
+    monkeypatch.setattr(monitor, "SMTP_USER", "sender@example.com")
+    monkeypatch.setattr(monitor, "SMTP_PASSWORD", "test-password")
+    monkeypatch.setattr(monitor, "SENDER_EMAIL", "sender@example.com")
     monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "michal.k@example.com")
     monkeypatch.setattr(monitor, "ACTIVE_INACTIVE_NOTIFICATION", True)
     monkeypatch.setattr(monitor, "GAME_CHANGE_NOTIFICATION", True)
@@ -554,7 +557,8 @@ def test_the_help_examples_are_grouped():
 
     for group in ("Getting started", "Notifications", "Information and diagnostics"):
         assert f"\n{group}:\n" in epilog, f"the {group} group is missing"
-    assert epilog.startswith("Examples:")
+    assert epilog.startswith("Setting options apply to the current run")
+    assert "\n\nExamples:\n\n" in epilog
     assert monitor.QUICK_START_GUIDE_URL in epilog
 
 
@@ -829,7 +833,7 @@ def test_a_missing_target_reports_the_shared_error_block():
 
     assert result.returncode == 1
     assert "* Error: A Steam profile target needs to be defined" in result.stdout
-    assert f"To fix: Pass the profile to watch as a {monitor.STEAM_TARGET_FORMS}" in result.stdout
+    assert f"To fix: Save TARGET_STEAM_ID in the configuration file or include a {monitor.STEAM_TARGET_FORMS} on each run" in result.stdout
     assert f"Guide: {monitor.QUICK_START_GUIDE_URL}" in result.stdout
     assert "usage: steam_monitor" not in result.stdout + result.stderr
 

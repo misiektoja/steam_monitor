@@ -21,7 +21,7 @@ The Notifications section **signs in to the configured SMTP server** and validat
 
 In an interactive terminal, Doctor offers one real test message per ready channel. Each needs separate approval and defaults to No. Noninteractive runs send no test messages.
 
-Follow the report's **Next steps** after correcting any failed checks. The printed start command uses the configuration and dotenv files you checked.
+Follow the report's **Next steps** after correcting any failed checks. The start command keeps the files and explicit monitoring options selected for Doctor. Repeat the options on later runs or save the corresponding settings. Command-line credentials appear as uppercase placeholders. Replace those placeholders before running or save the credentials and remove their flags.
 
 It exits `0` when every check passed and `1` when any check or approved delivery test failed, so it can be used as a container healthcheck or a CI smoke test:
 
@@ -34,7 +34,7 @@ steam_monitor --doctor <steam_target> && echo "ready"
 <a id="common-problems"></a>
 ## Common Problems
 
-Every failure is reported in the same three-part shape: what went wrong, a `To fix:` action and a `Guide:` link to the page that covers it. The fix command matches how you installed the tool and carries the `--config-file` or `--env-file` you started with, so it can be pasted as it is. `--debug` appends a `Technical detail:` line for bug reports. Secrets are redacted from all three.
+Every failure is reported in the same three-part shape: what went wrong, a `To fix:` action and a `Guide:` link to the page that covers it. The fix command matches how you installed the tool and carries the `--config-file` or `--env-file` you started with. `--debug` appends a `Technical detail:` line for bug reports. Generated commands preserve their paths, targets and flags. They refer to credential files or hidden entry instead of including credential values. Error summaries and technical details still redact credentials.
 
 | Symptom | Likely cause | Where to look |
 | --- | --- | --- |
@@ -135,6 +135,13 @@ Timing values must be finite and within the documented range. Normal startup che
 If a saved status file has an invalid structure, monitoring stops before replacing it. Correct the named file or move it aside to start fresh. Keep a copy if you need the old history. Older valid records and extra trailing metadata remain accepted.
 
 A games-library file the tool cannot use is reported as a warning instead. The run continues, the next lookup starts a fresh baseline and no library change is reported for it. Files written before 2.0 that recorded a game count differing from their list of game IDs still load, with the count taken from the IDs.
+
+<a id="owned-games-request-problems"></a>
+### Owned-games request problems
+
+An error saying **request parameters are incompatible with Steam's API metadata** is a local client-validation problem. It happens before the request reaches Steam, so it is not evidence that the target's games are private or that the API key is wrong. Update `steam_monitor`. Updating only the `steam` package cannot help because the required parameters come from Steam's live metadata. If it persists, report the parameter error with `--debug` output, reviewed first for private data.
+
+`--debug` also names any parameter the tool filled from Steam's metadata. The tracked library excludes family-shared licenses and free games the user does not own.
 
 An incomplete or inaccessible Steam games response leaves the previous library snapshot intact. Achievement lookups stop on rate limits or connection failures and report how to retry, instead of continuing through the rest of the library.
 

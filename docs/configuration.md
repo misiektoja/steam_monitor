@@ -5,7 +5,7 @@ Examples on this page use the PyPI command `steam_monitor`. Manual script users 
 <a id="configuration-file"></a>
 ## Configuration File
 
-You can pass most settings as command-line options or save them in a configuration file for later runs.
+Command-line setting options apply to the current run and do not update the configuration file. Include them on every run that needs those settings. To reuse settings without repeating the options, save them through `--setup` or edit the configuration file. Commands such as `--setup` and `--set-smtp-password` save the values they collect.
 
 The easiest way to create this file is `steam_monitor --setup`.
 
@@ -62,10 +62,23 @@ TARGET_STEAM_ID = "76561201960435530"
 steam_monitor 76561201960287930
 ```
 
+<a id="restart-change-reporting"></a>
+## Restart Change Reporting
+
+With games library tracking enabled, games added or removed while the tool was stopped are reported at the first successful check after it starts. To start from the current library without reporting them, set:
+
+```ini
+REPORT_CHANGES_AFTER_RESTART = False
+```
+
+Or add `--no-restart-changes` for one run. Later changes still report. The default is `True`, also for configuration files written before this setting existed. See [Games Library After a Restart](usage.md#games-library-after-a-restart) for what the report contains.
+
 <a id="smtp-settings"></a>
 ## SMTP Settings
 
 Email notifications need SMTP server details for the sending account. Add them to `steam_monitor.conf` or use the setup wizard. Setup checks the login without sending an email. To replace only the password, run `steam_monitor --set-smtp-password`. Password entry is hidden and preserves spaces.
+
+If email alerts are selected but local SMTP settings are missing or invalid, the startup summary shows `Unavailable` with the reason. Automatic email sends are skipped silently until the settings are fixed. `Off` means no email alert types are selected.
 
 Send one test message to verify the settings:
 
@@ -101,7 +114,7 @@ WEBHOOK_NAME_CHANGE_NOTIFICATION = False
 WEBHOOK_ERROR_NOTIFICATION = True
 ```
 
-A `WEBHOOK_URL` left unset, or left at its `your_webhook_url` placeholder, switches webhook alerts off at startup instead of failing at the first alert. `--verbose` reports why.
+If webhook alerts are selected but the URL, provider or other local settings are invalid, the startup summary shows `Unavailable` with the reason. Automatic webhook sends are skipped silently until the settings are fixed. `Off` means the master switch or all webhook alert types are off.
 
 The service is detected from the URL. While `WEBHOOK_PROVIDER` is left at its default, that detection is silent and `--verbose` reports it. A warning appears only when your configuration file sets a provider the URL disagrees with.
 
@@ -151,6 +164,8 @@ WEBHOOK_HEADERS = {
 ```
 
 Header values support the same placeholders as `WEBHOOK_TEMPLATE` and apply to both Discord and ntfy.
+
+A header value that contains emoji or other non-ASCII text after placeholder expansion is sent in RFC 2047 encoded form (`=?UTF-8?B?...?=`), since a plain HTTP header cannot carry it. ntfy decodes it back to the original text. Other receivers see the encoded form unless they decode RFC 2047. ASCII values are sent exactly as written, including values you already encoded yourself, such as an emoji tag from the ntfy documentation.
 
 <a id="discord"></a>
 ### Discord

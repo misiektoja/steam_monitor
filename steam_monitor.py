@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v2.1
+v2.2
 
 Tool implementing real-time tracking of Steam players activities:
 https://github.com/misiektoja/steam_monitor/
@@ -16,7 +16,7 @@ Pillow (optional, needed only when NTFY_IMAGES attaches artwork to ntfy alerts)
 colorama (optional, for better colours on Windows terminals)
 """
 
-VERSION = "2.1"
+VERSION = "2.2"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -217,6 +217,11 @@ GAMES_LIBRARY_CHECK = False
 # Whether to send an email when the user's games library changes
 # Requires GAMES_LIBRARY_CHECK to be enabled; can also be enabled via the --notify-games flag
 GAMES_LIBRARY_NOTIFICATION = False
+
+# Whether to report games library changes made while the tool was stopped, at the first successful check
+# False starts from the current library without reporting them. Later changes still report normally
+# Can also be disabled for the current run with the --no-restart-changes flag
+REPORT_CHANGES_AFTER_RESTART = True
 
 # How often to check for player activity when the user is offline; in seconds
 # Can also be set using the -c flag
@@ -424,6 +429,7 @@ FRIENDS_CHECK = False
 FRIENDS_NOTIFICATION = False
 GAMES_LIBRARY_CHECK = False
 GAMES_LIBRARY_NOTIFICATION = False
+REPORT_CHANGES_AFTER_RESTART = True
 STEAM_CHECK_INTERVAL = 0
 STEAM_ACTIVE_CHECK_INTERVAL = 0
 OFFLINE_INTERRUPT = 0
@@ -484,6 +490,7 @@ STEAM_TARGET_FORMS = "Steam64 ID, Steam3 identifier, vanity name or full profile
 STEAM_TARGET_INPUT_ERROR = f"Enter a {STEAM_TARGET_FORMS}, for example https://steamcommunity.com/id/<vanity_name>/"
 DOCTOR_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#doctor-preflight"
 DIAGNOSTICS_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#verbose-and-debug-output"
+OWNED_GAMES_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#owned-games-request-problems"
 CONNECTION_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#connection-problems"
 DESCRIPTOR_LIMIT_GUIDE_URL = f"{DOCS_BASE_URL}/troubleshooting/#too-many-open-files"
 
@@ -562,6 +569,7 @@ if sys.version_info < MINIMUM_PYTHON_VERSION:
 import time
 import textwrap
 import json
+import base64
 import os
 from datetime import datetime
 from dateutil import relativedelta
@@ -621,6 +629,8 @@ STEAM_MAX_RETRY_AFTER_SECONDS = 3600.0
 WEBHOOK_TIMEOUT_SECONDS = 10
 WEBHOOK_EMBED_TITLE_LIMIT = 256
 WEBHOOK_EMBED_DESCRIPTION_LIMIT = 4096
+# Most changed games one alert lists for each of added and removed. The log keeps every game
+CHANGE_NOTIFICATION_DETAIL_LIMIT = 5
 NTFY_MESSAGE_LIMIT_BYTES = 4095
 NTFY_TRUNCATION_SUFFIX = "\n\n[Notification truncated to fit ntfy's 4 KB message limit]"
 NTFY_IMAGE_DOWNLOAD_LIMIT_BYTES = 5 * 1024 * 1024
@@ -1083,6 +1093,8 @@ def apply_runtime_cli_overrides(args):
             globals()[setting] = True
     if getattr(args, "notify_errors", None) is False:
         globals()["ERROR_NOTIFICATION"] = False
+    if getattr(args, "report_changes_after_restart", None) is False:
+        globals()["REPORT_CHANGES_AFTER_RESTART"] = False
 
 
 # Recognizes the provider's specific response for a game without achievement statistics
@@ -1230,6 +1242,35 @@ def steam_web_api_client(api_key=None):
         debug_print("TLS verification", target="Steam Web API session", outcome="failed", error=f"{type(exc).__name__}: {exc}")
     client.load_interfaces(client.fetch_interfaces())
     return client
+
+
+# Names an unsupported provider parameter type without confusing it with a response-data ValueError
+class OwnedGamesParameterError(ValueError):
+    pass
+
+
+# Builds owned-games arguments from explicit library choices plus Steam's live required-parameter metadata
+def owned_games_arguments(api, steamid, include_appinfo=0, appids_filter=None):
+    arguments = {"steamid": steamid, "include_appinfo": include_appinfo, "include_played_free_games": 1, "appids_filter": list(appids_filter) if appids_filter is not None else [], "include_free_sub": 0, "include_extended_appinfo": 0, "language": "en", "include_family_licenses": 0, "include_all_free_games": 0}
+    for name, parameter in api.IPlayerService.GetOwnedGames.parameters.items():
+        # Authentication and transport defaults belong to the wrapper, not to an endpoint's argument builder
+        if name in arguments or name in steam.webapi.DEFAULT_PARAMS or parameter["optional"]:
+            continue
+        kind = str(parameter.get("type", "")).lower()
+        # Every owned-games parameter selects what the response includes, so zero, empty text and an empty
+        # list are the neutral choices. An enum's zero member is its unset value. A protobuf message carries
+        # no neutral value, so an unfamiliar type is reported instead of guessed
+        if parameter.get("_array") or kind.endswith("[]"):
+            value = []
+        elif kind in ("bool", "{enum}") or re.fullmatch(r"u?int\d*", kind):
+            value = 0
+        elif kind == "string":
+            value = ""
+        else:
+            raise OwnedGamesParameterError(f"Unsupported required GetOwnedGames parameter '{name}' of type '{kind}'")
+        arguments[name] = value
+        debug_print("Owned-games required parameter default", parameter=name, type=kind)
+    return arguments
 
 
 # Silences debug output while a raw secret is entered or validated, then restores the previous mode
@@ -2486,6 +2527,14 @@ def smtp_settings_problem():
     return None
 
 
+# Names a missing SMTP credential or the local setting that prevents automatic email delivery
+def email_settings_problem():
+    unset = [name for name in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD") if not doctor_value_is_set(globals()[name])]
+    if unset:
+        return f"{join_setting_names(unset, 'or')} is empty or still set to its placeholder"
+    return smtp_settings_problem()
+
+
 # Closes an SMTP session without changing the result of an accepted or failed message
 def smtp_quit_quietly(smtp_object):
     if smtp_object is None:
@@ -2994,11 +3043,11 @@ def _selected_webhook_notification_categories():
     return [label for enabled, label in settings if enabled]
 
 
-# Returns one channel's rollup value, naming the enabled categories, or reporting a channel with no destination as off
-def _startup_notification_state(categories, configured):
+# Returns selected alert categories or names an unusable local setting
+def _startup_notification_state(categories, problem):
     if not categories:
         return "Off"
-    return "On (" + ", ".join(categories) + ")" if configured else "Off (not configured)"
+    return f"Unavailable ({problem})" if problem else "On (" + ", ".join(categories) + ")"
 
 
 # Redacts configured secrets and API key query values from one error-shaped value
@@ -3021,7 +3070,7 @@ RECOVERY_CODES = frozenset({
     "secret.missing", "secret.entry",
     "auth.api_key_invalid",
     "network.unavailable", "network.timeout",
-    "steam.rate_limited", "steam.unavailable",
+    "steam.rate_limited", "steam.unavailable", "steam.parameters",
     "target.missing", "target.invalid", "target.not_found", "target.not_visible",
     "smtp.invalid", "smtp.authentication", "smtp.connection",
     "webhook.invalid", "webhook.rejected", "webhook.rate_limited", "webhook.connection",
@@ -3046,11 +3095,12 @@ class RecoveryError(Exception):
         super().__init__(advice.summary)
 
 
-# Builds one piece of recovery advice, refusing any code outside the closed set and sanitizing every field
+# Builds validated recovery advice with private diagnostics and unchanged generated instructions
 def make_recovery_advice(code, summary, fix, retryable, detail=""):
     if code not in RECOVERY_CODES:
         raise ValueError(f"Unsupported recovery code: {code}")
-    return RecoveryAdvice(code, sanitize_error_text(summary), sanitize_error_text(fix), bool(retryable), sanitize_error_text(detail) if detail else "")
+    # Fixes contain generated instructions and non-secret arguments, so redaction must not rewrite them
+    return RecoveryAdvice(code, sanitize_error_text(summary), fix, bool(retryable), sanitize_error_text(detail) if detail else "")
 
 
 # Adds a directly relevant documentation link on its own line
@@ -3159,6 +3209,10 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
     if error is not None and is_too_many_open_files(error):
         return advice("resource.exhausted", "This process ran out of file descriptors, which is a local limit and not a Steam problem", "Raise the file descriptor limit, for example with 'ulimit -n 4096', or set LimitNOFILE= if you run under systemd, then restart the tool", False, DESCRIPTOR_LIMIT_GUIDE_URL)
 
+    # Match provider argument validation narrowly: response decoding and snapshot validation also use ValueError
+    if isinstance(error, OwnedGamesParameterError) or isinstance(error, ValueError) and not isinstance(error, req.RequestException) and re.fullmatch(r"Method requires '[\w]+' to be set|Unrecognized parameter '[\w]+'|Expected '[\w]+' to be a list, got .+", str(error)):
+        return advice("steam.parameters", "Steam Monitor's request parameters are incompatible with Steam's API metadata", "Update steam_monitor. Changing profile privacy or the API key does not fix client argument validation. If this persists, report the parameter error with reviewed --debug output", False, OWNED_GAMES_GUIDE_URL)
+
     if context == "config":
         if "does not exist" in message:
             return advice("config.missing", safe_detail or "The configuration file was not found", f"Create one with '{render_command(['--generate-config', 'steam_monitor.conf'], include_paths=False)}' or correct the --config-file path", False, CONFIG_GUIDE_URL)
@@ -3185,7 +3239,7 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
         return advice("webhook.invalid", safe_detail or "The webhook URL was not changed", f"Copy a complete Discord or ntfy webhook URL then run {flag} again", False, guide)
 
     if context == "target.missing":
-        return advice("target.missing", safe_detail or "No Steam profile was provided", f"Pass the profile to watch as a {STEAM_TARGET_FORMS}: {render_command(['<steam_target>'])}", False, QUICK_START_GUIDE_URL)
+        return advice("target.missing", safe_detail or "No Steam profile was provided", f"Save TARGET_STEAM_ID in the configuration file or include a {STEAM_TARGET_FORMS} on each run: {render_command(['<steam_target>'])}", False, QUICK_START_GUIDE_URL)
 
     if context == "target":
         if "rate limit" in message or mentions_status_code("429", message) or status == 429:
@@ -3240,7 +3294,7 @@ def classify_recovery_error(error=None, context="runtime", detail=""):
 
     # Runtime, which is the monitoring loop and every Steam Web API call it makes
     if status == 429 or "rate limit" in message or "too many requests" in message:
-        return advice("steam.rate_limited", "Steam is rate limiting requests", "The tool will wait and retry. Increase the polling intervals if this repeats", True, INTERVALS_GUIDE_URL)
+        return advice("steam.rate_limited", "Steam is rate limiting requests", "The tool will wait and retry. If this repeats, raise STEAM_CHECK_INTERVAL and STEAM_ACTIVE_CHECK_INTERVAL in the configuration file, then restart. To override them without saving, include --check-interval SECONDS and --active-interval SECONDS on each run", True, INTERVALS_GUIDE_URL)
     if status in (401, 403) or "forbidden" in message or "unauthorized" in message:
         return advice("auth.api_key_invalid", "Steam rejected the configured Web API key", f"Validate and replace it with '{render_command(['--set-steam-api-key'])}'", False, STEAM_API_KEY_GUIDE_URL)
     if status == 404 or "not found" in message:
@@ -3426,9 +3480,11 @@ def fetch_app_names(s_api, steamid, appids):
     if not wanted:
         return {}
     try:
-        owned = s_api.call("IPlayerService.GetOwnedGames", steamid=steamid, include_appinfo=1, include_played_free_games=1, appids_filter=wanted, include_free_sub=0, include_extended_appinfo=0, language="en")
+        owned = s_api.call("IPlayerService.GetOwnedGames", **owned_games_arguments(s_api, steamid, include_appinfo=1, appids_filter=wanted))
         return app_names_from_owned(owned)
     except Exception as exc:
+        if classify_recovery_error(exc).code == "steam.parameters":
+            print_recovery_error(exc)
         debug_swallowed_exception("Fetching game names (IPlayerService.GetOwnedGames)", exc)
         return {}
 
@@ -3464,6 +3520,12 @@ def saved_app_names(payload):
     return names
 
 
+# Returns the first details an alert shows and how many it leaves out, without changing the caller's list
+def bounded_change_details(details):
+    shown = list(details[:CHANGE_NOTIFICATION_DETAIL_LIMIT])
+    return shown, len(details) - len(shown)
+
+
 # Renders one library entry as its game name followed by the application ID, or the ID alone when the name is unknown
 def steam_app_label(appid, app_names):
     name = app_names.get(int(appid))
@@ -3474,6 +3536,73 @@ def steam_app_label(appid, app_names):
 def steam_app_label_html(appid, app_names):
     name = app_names.get(int(appid))
     return f"{steam_game_html(name, appid)} ({appid})" if name else steam_game_html(str(appid), appid)
+
+
+# Compares one complete observation, reports its net difference and saves it as the new baseline even when unchanged
+# Only a comparison against the snapshot loaded from disk spans a stopped period, so only that one follows
+# REPORT_CHANGES_AFTER_RESTART and says the change time is unknown
+def observe_games_library(s_api, steamid, username, previous_appids, current_appids, app_names, games_file, profile_csv_file_name=None, baseline_from_disk=False, snapshot_saved_at=None, image_url=""):
+    observed_at = int(time.time())
+    current_appids = set(current_appids)
+    changed = False
+    report_changes = REPORT_CHANGES_AFTER_RESTART or not baseline_from_disk
+    if report_changes and previous_appids is not None and current_appids != previous_appids:
+        changed = True
+        old_count, new_count = len(previous_appids), len(current_appids)
+        delta = new_count - old_count
+        added_appids = sorted(current_appids - previous_appids)
+        removed_appids = sorted(previous_appids - current_appids)
+        if delta:
+            delta_str = f"+{delta}" if delta > 0 else str(delta)
+            summary = f"Steam user {username} games library changed from {old_count} to {new_count} ({delta_str})"
+            summary_html = f"Steam user {steam_user_html(username, steamid)} games library changed from <b>{old_count}</b> to <b>{new_count}</b> (<b>{html_text(delta_str)}</b>)"
+        else:
+            summary = f"Steam user {username} games library changed (same count: {new_count}, titles changed)"
+            summary_html = f"Steam user {steam_user_html(username, steamid)} games library changed (same count: <b>{new_count}</b>, titles changed)"
+        print(summary)
+        body_parts, body_parts_html = [summary], [summary_html]
+        if baseline_from_disk:
+            context = "Compared with the previous saved snapshot. The exact change time is unknown."
+            if snapshot_saved_at is not None and valid_state_timestamp(snapshot_saved_at) and not state_timestamp_ahead(snapshot_saved_at):
+                saved_time = datetime.fromtimestamp(snapshot_saved_at).strftime("%a %d %b %Y, %H:%M:%S")
+                context = f"Previous snapshot saved: {saved_time}. The exact change time is unknown."
+            print(context)
+            body_parts.append(context)
+            body_parts_html.append(html_text(context))
+
+        # Steam may no longer return a removed game, so its cached name is kept until reporting ends
+        unknown_appids = [appid for appid in added_appids + removed_appids if appid not in app_names]
+        if unknown_appids:
+            app_names.update(fetch_app_names(s_api, steamid, unknown_appids))
+        for label, appids in (("Added", added_appids), ("Removed", removed_appids)):
+            if appids:
+                print(f"{label}: {', '.join(steam_app_label(a, app_names) for a in appids)}")
+                shown, omitted = bounded_change_details(appids)
+                counts = f" ({len(appids)} total, {omitted} omitted)" if omitted else ""
+                body_parts.append(f"{label}: {', '.join(steam_app_label(a, app_names) for a in shown)}{counts}")
+                body_parts_html.append(f"{label}: {', '.join(steam_app_label_html(a, app_names) for a in shown)}{counts}")
+
+        if profile_csv_file_name:
+            try:
+                write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(observed_at), event="games_library_change", old_value=old_count, new_value=new_count, delta=delta)
+            except Exception as exc:
+                print_recovery_error(exc, context="file.unwritable")
+        if GAMES_LIBRARY_NOTIFICATION or webhook_event_enabled("games"):
+            body = "\n".join(body_parts) + nl_ch + nl_ch + "Timestamp: " + get_date_from_ts(observed_at)
+            body_html = html_email_body("<br>".join(body_parts_html) + "<br><br>Timestamp: " + get_date_from_ts(observed_at))
+            try:
+                send_notification_channels("games", f"Steam user {username} games library changed (now {new_count})", body, body_html, email_enabled=GAMES_LIBRARY_NOTIFICATION, image_url=image_url)
+            except Exception as exc:
+                print_recovery_error(exc, context="runtime", detail="Cannot deliver the games library notification")
+        print_cur_ts("Timestamp:\t\t\t")
+
+    # A failed write leaves the old file intact while the in-memory baseline moves on, and the next observation retries it
+    try:
+        write_json_atomic(games_file, {"game_count": len(current_appids), "appids": sorted(current_appids), "app_names": {str(appid): app_names[appid] for appid in sorted(current_appids) if appid in app_names}})
+        debug_print("Saved the games library", path=games_file, outcome="OK")
+    except Exception as exc:
+        print_recovery_error(exc, context="file.unwritable", detail=f"Cannot save the games library to '{games_file}'")
+    return current_appids, changed
 
 
 # Renders one friend list entry as a bold profile link followed by the same details the plain line carries
@@ -3584,12 +3713,14 @@ def report_monitor_recovery(target, username, error_alert, outage, image_url="")
         lasted = max(1, lasted)
         advice = error_alert.advice
         # Gated on the channels the failure alert reached and on their switches, so a channel that never heard of the outage stays quiet
-        email_owed = advice is not None and error_alert.delivered("email", ERROR_NOTIFICATION)
-        webhook_owed = advice is not None and error_alert.delivered("webhook", webhook_event_enabled("error"))
+        email_ready = bool(ERROR_NOTIFICATION and email_settings_problem() is None)
+        webhook_ready = bool(webhook_event_enabled("error") and webhook_settings_problem() is None)
+        email_owed = advice is not None and error_alert.delivered("email", email_ready)
+        webhook_owed = advice is not None and error_alert.delivered("webhook", webhook_ready)
         # A channel whose failure alert never got through hears about the outage and its end together, rather than
         # nothing at all, which is what a channel blocked for the length of the outage would otherwise receive
-        email_missed = advice is not None and error_alert.missed("email", ERROR_NOTIFICATION)
-        webhook_missed = advice is not None and error_alert.missed("webhook", webhook_event_enabled("error"))
+        email_missed = advice is not None and error_alert.missed("email", email_ready)
+        webhook_missed = advice is not None and error_alert.missed("webhook", webhook_ready)
         print_outage_recovery(target, lasted, close=False)
         if email_owed or webhook_owed or email_missed or webhook_missed:
             m_subject = outage_recovered_alert_subject(username, lasted)
@@ -3917,6 +4048,23 @@ def validate_webhook_headers(provider=None):
     return None
 
 
+# Returns one text value as a base64 RFC 2047 UTF-8 encoded word
+def rfc2047_encoded_word(text):
+    return "=?UTF-8?B?" + base64.b64encode(text.encode("utf-8")).decode("ascii") + "?="
+
+
+# Encodes one HTTP header value as an RFC 2047 UTF-8 word when it contains non-ASCII text
+def encode_non_ascii_header_value(value):
+    text = str(value)
+    # HTTP clients send header values as Latin-1 or ASCII, which cannot carry emoji or most non-Latin letters.
+    # str.isascii needs Python 3.7, so the check encodes instead to keep the declared Python 3.6 floor
+    try:
+        text.encode("ascii")
+    except UnicodeEncodeError:
+        return rfc2047_encoded_word(text)
+    return text
+
+
 # Builds provider-specific headers with custom placeholders and private ntfy authentication
 def build_webhook_headers(provider, payload):
     validation_error = validate_webhook_headers(provider)
@@ -3941,7 +4089,9 @@ def build_webhook_headers(provider, payload):
         if token:
             headers = {name: value for name, value in headers.items() if name.casefold() != "authorization"}
             headers["Authorization"] = f"Bearer {token}"
-    return headers
+    # Placeholders can expand to emoji or letters a raw header cannot carry. ASCII values stay as written,
+    # so a value already encoded as RFC 2047, as ntfy documents for emoji tags, is not encoded a second time
+    return {name: encode_non_ascii_header_value(value) for name, value in headers.items()}
 
 
 # Returns whether one image URL is a complete HTTPS URL on a Steam image host
@@ -4156,8 +4306,9 @@ def send_webhook(title, description, notification_type="status", force=False, sl
 # Sends one alert through the enabled email and webhook channels, with its own webhook text when the email body
 # carries a part such as the timestamp that the webhook service already shows
 def send_notification_channels(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, image_url="", ntfy_priority=0, ntfy_tags="", webhook_body=None, webhook_body_html=""):
-    email_attempted = bool(email_enabled)
-    webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    email_attempted = bool(email_enabled and email_settings_problem() is None)
+    webhook_selected = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    webhook_attempted = bool(webhook_selected and WEBHOOK_ENABLED and webhook_settings_problem() is None)
     email_delivered = False
     webhook_delivered = False
     if email_attempted:
@@ -4650,14 +4801,14 @@ def render_doctor_sections(report):
             continue
         lines.extend(("", colorize("section", section)))
         for check in section_checks:
-            lines.append(f"{render_doctor_marker(check.status)} {check.label}")
+            lines.append(f"{render_doctor_marker(check.status)} {sanitize_error_text(check.label)}")
             if check.detail:
-                lines.append(f"  {colorize_links(check.detail)}")
+                lines.append(f"  {colorize_links(sanitize_error_text(check.detail))}")
             if check.status != "PASS" and check.advice is not None:
                 # The fix carries its own guide line, so each line is indented and styled on its own rather
                 # than leaving one colour sequence open across the newline
                 lines.extend(f"  {colorize_fix_line(advice_line)}" for advice_line in f"To fix: {check.advice.fix}".splitlines())
-    return sanitize_error_text("\n".join(lines))
+    return "\n".join(lines)
 
 
 # Renders the one sentence that says whether the setup is usable and where to read more
@@ -5156,7 +5307,7 @@ def _wizard_collect_target_section(state, initial_target=None, input_func=None):
         print(f"  '{vanity}' will be resolved after the Steam Web API key is set up.")
         break
     if not state.target and not state.pending_vanity:
-        print("  No target selected. Nothing can be monitored until one is set. Run --setup again or pass the target on the command line.")
+        print("  No target selected. Nothing can be monitored until one is set. Run --setup again to save a target or include the target on each monitoring run.")
         _wizard_apply_target(state)
         return
     state.persist_target = _wizard_ask_yes_no("Persist this target in the generated config?", default=state.persist_target, input_func=input_func)
@@ -5958,14 +6109,41 @@ def _wizard_print_command(label, command, suffix=""):
     print(f"    {colorize('section', command)}{colorize('info', suffix) if suffix else ''}\n")
 
 
-# Prints the command that starts monitoring with the files this run checked, so a report read on its own
-# ends with the next action rather than leaving the reader to assemble the command
-def print_doctor_next_steps(target_value=None, saved_target=None, doctor_exit=0):
+# Rebuilds explicit monitoring options while replacing private values with named placeholders
+def doctor_monitoring_overrides(args):
+    parts = []
+    value_options = (("webhook_provider", "--webhook-provider"), ("check_interval", "--check-interval"), ("active_interval", "--active-interval"), ("csv_file", "--csv-file"), ("profile_csv_file", "--profile-csv-file"), ("status_file", "--status-file"), ("file_suffix", "--file-suffix"), ("truncate", "--truncate"))
+    for name, option in value_options:
+        value = getattr(args, name, None)
+        if value is not None:
+            # An equals sign keeps a value beginning with a dash from being parsed as another option
+            if str(value).startswith("-"):
+                parts.append(f"{option}={value}")
+            else:
+                parts.extend((option, str(value)))
+    switches = (("notify_active_inactive", "--notify-active-inactive", True), ("notify_game_change", "--notify-game-change", True), ("notify_status", "--notify-status", True), ("notify_name_change", "--notify-name-change", True), ("notify_level_xp", "--notify-level-xp", True), ("notify_friends", "--notify-friends", True), ("notify_games", "--notify-games", True), ("notify_errors", "--no-error-notify", False), ("report_changes_after_restart", "--no-restart-changes", False), ("webhook_enabled", "--webhook", True), ("webhook_enabled", "--no-webhook", False), ("webhook_active_inactive", "--webhook-active-inactive", True), ("webhook_status", "--webhook-status", True), ("webhook_game_changes", "--webhook-game-changes", True), ("webhook_level_xp", "--webhook-level-xp", True), ("webhook_friends", "--webhook-friends", True), ("webhook_games", "--webhook-games", True), ("webhook_name_change", "--webhook-name-change", True), ("webhook_errors", "--webhook-errors", True), ("webhook_errors", "--no-webhook-error-notify", False), ("check_level_xp", "--check-level-xp", True), ("check_friends", "--check-friends", True), ("check_games", "--check-games", True), ("disable_logging", "--disable-logging", True), ("no_color", "--no-color", True), ("verbose", "--verbose", True), ("debug", "--debug", True))
+    for name, option, selected in switches:
+        if getattr(args, name, None) is selected:
+            parts.append(option)
+    private_options = (("steam_api_key", "--steam-api-key", "STEAM_API_KEY"), ("webhook_url", "--webhook-url", "WEBHOOK_URL"))
+    has_private_values = False
+    for name, option, placeholder in private_options:
+        if getattr(args, name, None) is not None:
+            parts.extend((option, placeholder))
+            has_private_values = True
+    return parts, has_private_values
+
+
+# Prints the monitoring command with the settings selected for Doctor
+def print_doctor_next_steps(target_value=None, saved_target=None, doctor_exit=0, cli_args=None):
     print(colorize("header", "\nNext steps\n"))
     label = "After Doctor passes, start monitoring:" if doctor_exit else "Start monitoring:"
     monitor_target = command_targets(target_value, saved_target)[1]
-    _wizard_print_command(label, render_command([monitor_target] if monitor_target else []))
-    # No trailing blank line: the command printer already left one and the report must not end on two
+    monitor_arguments = [monitor_target] if monitor_target else []
+    overrides, private_values = doctor_monitoring_overrides(cli_args)
+    _wizard_print_command(label, render_command(monitor_arguments + overrides))
+    if private_values:
+        print("Replace the uppercase credential placeholders before running. Doctor does not repeat private command-line values.\n")
     print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}")
 
 
@@ -6069,6 +6247,20 @@ def webhook_channel_configured():
     return bool(normalized_webhook_provider()) and doctor_value_is_set(WEBHOOK_URL)
 
 
+# Names the first local webhook setting that prevents automatic alert delivery
+def webhook_settings_problem():
+    if not doctor_value_is_set(WEBHOOK_URL):
+        return "WEBHOOK_URL is empty or still set to its placeholder"
+    if not validate_webhook_url():
+        return "WEBHOOK_URL must contain a complete HTTPS link"
+    provider = normalized_webhook_provider()
+    if not provider:
+        return "WEBHOOK_PROVIDER must be discord or ntfy"
+    if validate_webhook_customization(provider) is not None:
+        return "Webhook customization is invalid"
+    return validate_webhook_headers(provider)
+
+
 # Names the mail server this run would use, leaving out the account that signs in to it
 def startup_email_transport():
     if not smtp_server_configured():
@@ -6093,10 +6285,10 @@ def build_startup_summary(target=None, config_path=None, env_path=None, log_path
         StartupSummaryRow("Target", str(target) if target else "None", concise=True),
         StartupSummaryRow("Polling intervals", f"[offline: {display_time(STEAM_CHECK_INTERVAL)}] [online: {display_time(STEAM_ACTIVE_CHECK_INTERVAL)}]", concise=True),
         StartupSummaryRow("Offline grace period", display_time(OFFLINE_INTERRUPT) if OFFLINE_INTERRUPT else "Disabled"),
-        StartupSummaryRow("Notifications (email)", _startup_notification_state(_startup_email_notification_categories(), email_channel_configured()), concise=True),
+        StartupSummaryRow("Notifications (email)", _startup_notification_state(_startup_email_notification_categories(), email_settings_problem() if _startup_email_notification_categories() else None), concise=True),
         StartupSummaryRow("Email transport", startup_email_transport()),
         StartupSummaryRow("Email recipient", mask_email_address(RECEIVER_EMAIL) if doctor_value_is_set(RECEIVER_EMAIL) else "Not configured"),
-        StartupSummaryRow("Notifications (webhook)", _startup_notification_state(_startup_webhook_notification_categories(), webhook_channel_configured()), concise=True),
+        StartupSummaryRow("Notifications (webhook)", _startup_notification_state(_startup_webhook_notification_categories(), webhook_settings_problem() if _startup_webhook_notification_categories() else None), concise=True),
         StartupSummaryRow("Webhook provider", startup_webhook_provider()),
     ]
     # The ntfy attachment setting says nothing about a run that posts to Discord, which ignores it
@@ -6112,6 +6304,7 @@ def build_startup_summary(target=None, config_path=None, env_path=None, log_path
         StartupSummaryRow("Level/XP tracking", str(STEAM_LEVEL_XP_CHECK), concise=bool(STEAM_LEVEL_XP_CHECK)),
         StartupSummaryRow("Friends tracking", str(FRIENDS_CHECK), concise=bool(FRIENDS_CHECK)),
         StartupSummaryRow("Games tracking", str(GAMES_LIBRARY_CHECK), concise=bool(GAMES_LIBRARY_CHECK)),
+        StartupSummaryRow("Restart change reporting", str(REPORT_CHANGES_AFTER_RESTART), concise=bool(GAMES_LIBRARY_CHECK)),
         StartupSummaryRow("Liveness output", display_time(LIVENESS_CHECK_INTERVAL) if LIVENESS_CHECK_INTERVAL else "Disabled", concise=bool(LIVENESS_CHECK_INTERVAL)),
         StartupSummaryRow("CSV output", CSV_FILE or "Disabled", concise=bool(CSV_FILE)),
         StartupSummaryRow("Profile CSV output", PROFILE_CSV_FILE or "Disabled", concise=bool(PROFILE_CSV_FILE)),
@@ -6172,7 +6365,8 @@ def help_examples():
             ("Trace what the tool is doing", f"{prefix} <steam_target> --debug"),
         )),
     )
-    return render_help_examples(groups, QUICK_START_GUIDE_URL)
+    notice = "Setting options apply to the current run and do not update the configuration file.\nInclude them on each run or save the settings through --setup or in a configuration file.\n\n"
+    return notice + render_help_examples(groups, QUICK_START_GUIDE_URL)
 
 
 # Initializes the CSV file
@@ -6574,13 +6768,7 @@ def argparse_color_kwargs() -> Dict[str, Any]:
 
 # Finds an optional config file
 def find_config_file(cli_path=None):
-    """
-    Search for an optional config file in:
-      1) CLI-provided path (must exist if given)
-      2) ./{DEFAULT_CONFIG_FILENAME}
-      3) ~/.{DEFAULT_CONFIG_FILENAME}
-      4) script-directory/{DEFAULT_CONFIG_FILENAME}
-    """
+    """Return the first config file, without fallback for a missing explicit path."""
 
     if cli_path:
         p = Path(os.path.expanduser(cli_path))
@@ -6768,18 +6956,7 @@ def fetch_recent_achievements(steamid, s_api, s_played, max_games=15, max_achiev
 
     # Fallback: if recently played games are hidden or empty, or if force_use_owned_games is True, try owned games
     if not games or force_use_owned_games:
-        # Call GetOwnedGames with all parameters that the steam.webapi wrapper
-        # considers required, to avoid local validation errors before the HTTP call.
-        owned = s_api.call(
-            "IPlayerService.GetOwnedGames",
-            steamid=steamid,
-            include_appinfo=1,
-            include_played_free_games=1,
-            appids_filter=[],          # empty list → no filtering, all games
-            include_free_sub=0,        # 0 = do not include free subscriptions
-            include_extended_appinfo=0,  # keep response small, we only need playtime/name
-            language="en",
-        )
+        owned = s_api.call("IPlayerService.GetOwnedGames", **owned_games_arguments(s_api, steamid, include_appinfo=1))
         owned_games = owned.get("response", {}).get("games", []) if isinstance(owned, dict) else []
         if owned_games:
             # Sort by total playtime (most played first) as a heuristic for relevance
@@ -7091,7 +7268,7 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
         print(f"* User is OFFLINE for:\t\t{calculate_timespan(int(time.time()), int(status_ts_old), show_seconds=False)}")
 
     try:
-        owned = s_api.call('IPlayerService.GetOwnedGames', steamid=steamid, include_appinfo=1, include_played_free_games=1)
+        owned = s_api.call('IPlayerService.GetOwnedGames', **owned_games_arguments(s_api, steamid, include_appinfo=1))
         games = owned.get('response', {}).get('games', [])
         if games:
             top = sorted(games, key=lambda g: g.get('playtime_forever', 0), reverse=True)[:5]
@@ -7100,6 +7277,8 @@ def display_user_info(steamid, list_friends=False, show_name_history=False, show
                 hours = int(g.get('playtime_forever', 0) / 60)
                 print(f"{i} {sanitize_untrusted_text(g.get('name'))} - {hours}h")
     except Exception as exc:
+        if classify_recovery_error(exc).code == "steam.parameters":
+            print_recovery_error(exc)
         debug_swallowed_exception("Fetching owned games (IPlayerService.GetOwnedGames)", exc)
 
     if gameid:
@@ -7143,8 +7322,11 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     last_steam_level = None
     last_player_xp = None
     last_friend_ids = None
-    last_games_count = None
     last_games_appids = None
+    # Until one check succeeds, the baseline is still the snapshot loaded from disk
+    games_observed_this_run = False
+    games_snapshot_saved_at = None
+    games_parameter_error_reported = False
     # Names for the owned application IDs, so a library change reads as titles rather than bare numbers
     games_app_names = {}
 
@@ -7241,13 +7423,17 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             debug_print("Reading the games library file", path=steam_games_file)
             with open(steam_games_file, 'r', encoding="utf-8") as f:
                 games_data = json.load(f)
-            last_games_count, last_games_appids = games_library_snapshot(games_data, saved=True)
+            saved_games_count, last_games_appids = games_library_snapshot(games_data, saved=True)
             games_app_names = saved_app_names(games_data)
-            debug_print("Reading the games library file", path=steam_games_file, games=last_games_count, names=len(games_app_names) or None, outcome="OK")
+            try:
+                games_snapshot_saved_at = os.path.getmtime(steam_games_file)
+            except OSError:
+                pass  # The saved time is only context, so the snapshot stays usable without it
+            debug_print("Reading the games library file", path=steam_games_file, games=saved_games_count, names=len(games_app_names) or None, outcome="OK")
         except Exception as e:
             # The next successful lookup replaces this file, so an unusable one costs the baseline rather than the run
             print_recovery_error(e, context="file", detail=f"Cannot load the games library from '{steam_games_file}': {e}. The first lookup starts a fresh baseline and reports no library change for it", label="Warning")
-            last_games_count, last_games_appids = None, None
+            last_games_appids = None
 
     if last_status_ts > 0 and status != last_status:
         last_status_to_save = []
@@ -7337,30 +7523,25 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
     if GAMES_LIBRARY_CHECK:
         try:
             # The single snapshot per run asks for app info, so a game removed later can still be named
-            owned = s_api.call(
-                "IPlayerService.GetOwnedGames",
-                steamid=steamid,
-                include_appinfo=1,
-                include_played_free_games=1,
-                appids_filter=[],
-                include_free_sub=0,
-                include_extended_appinfo=0,
-                language="en",
-            )
+            owned = s_api.call("IPlayerService.GetOwnedGames", **owned_games_arguments(s_api, steamid, include_appinfo=1))
             current_count, owned_appids = games_library_snapshot(owned)
             current_appids = sorted(owned_appids)
             games_app_names.update(app_names_from_owned(owned))
             print(f"\nGames in library:\t\t{current_count}")
-            last_games_count = current_count
-            last_games_appids = set(current_appids)
-            try:
-                write_json_atomic(steam_games_file, {"game_count": current_count, "appids": current_appids, "app_names": {str(appid): games_app_names[appid] for appid in current_appids if appid in games_app_names}})
-                debug_print("Saved the games library", path=steam_games_file, outcome="OK")
-            except Exception as e:
-                print_recovery_error(e, context="file", detail=f"Cannot save games library to '{steam_games_file}'")
+            last_games_appids, _ = observe_games_library(s_api, steamid, username, last_games_appids, set(current_appids), games_app_names, steam_games_file, profile_csv_file_name, baseline_from_disk=True, snapshot_saved_at=games_snapshot_saved_at, image_url=avatar_url)
+            games_observed_this_run = True
+            games_snapshot_saved_at = None
         except Exception as e:
             print("\nGames in library:\tN/A")
-            print_recovery_error(e, context="runtime", detail="The games library is unavailable. The saved snapshot was kept")
+            advice = classify_recovery_error(e, context="runtime")
+            games_parameter_error_reported = advice.code == "steam.parameters"
+            if games_parameter_error_reported:
+                # A local argument defect carries its own advice, which an availability detail would overwrite
+                print_recovery_advice(advice)
+            else:
+                # Only a snapshot that actually loaded can be kept
+                retained = ". The saved snapshot was kept" if last_games_appids is not None else ""
+                print_recovery_error(e, context="runtime", detail="The games library is unavailable" + retained)
 
     if last_status_ts == 0:
         if lastlogoff and status == 0:
@@ -7483,20 +7664,16 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             # Fetch games library (minimal: count + appids only) when tracking is enabled
             if GAMES_LIBRARY_CHECK:
                 try:
-                    owned = s_api.call(
-                        "IPlayerService.GetOwnedGames",
-                        steamid=steamid,
-                        include_appinfo=0,
-                        include_played_free_games=1,
-                        appids_filter=[],
-                        include_free_sub=0,
-                        include_extended_appinfo=0,
-                        language="en",
-                    )
+                    owned = s_api.call("IPlayerService.GetOwnedGames", **owned_games_arguments(s_api, steamid))
                     current_games_count, current_games_appids = games_library_snapshot(owned)
+                    games_parameter_error_reported = False
                 except Exception as exc:
                     current_games_count = None
                     current_games_appids = None
+                    advice = classify_recovery_error(exc)
+                    if advice.code == "steam.parameters" and not games_parameter_error_reported:
+                        print_recovery_advice(advice)
+                    games_parameter_error_reported = advice.code == "steam.parameters"
                     debug_swallowed_exception("Fetching the games library (IPlayerService.GetOwnedGames)", exc)
         except Exception as e:
             exit_if_out_of_file_descriptors(e)
@@ -7537,8 +7714,8 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
             # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
             alert_due = not advice.retryable or int(time.time()) - outage.since >= ERROR_ALERT_AFTER_SECONDS
             now = int(time.time())
-            error_email_pending = alert_due and error_alert.pending("email", ERROR_NOTIFICATION, now)
-            error_webhook_pending = alert_due and error_alert.pending("webhook", webhook_event_enabled("error"), now)
+            error_email_pending = alert_due and error_alert.pending("email", ERROR_NOTIFICATION and email_settings_problem() is None, now)
+            error_webhook_pending = alert_due and error_alert.pending("webhook", webhook_event_enabled("error") and webhook_settings_problem() is None, now)
             if error_email_pending or error_webhook_pending:
                 m_subject = recovery_alert_subject(advice, username)
                 # Built once without the timestamp, which the webhook service shows itself and only the email carries
@@ -7575,7 +7752,7 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
         if FRIENDS_CHECK and current_friend_ids is None:
             unavailable_features["friends"] = ("The friends list is unavailable, so friends alerts cannot fire", "The friends list is available again, so friends alerts can fire")
         if GAMES_LIBRARY_CHECK and current_games_count is None:
-            unavailable_features["games_library"] = ("The games library is unavailable, so games library alerts cannot fire", "The games library is available again, so games library alerts can fire")
+            unavailable_features["games_library"] = ("Owned-games request parameters are incompatible, so games library alerts cannot fire" if games_parameter_error_reported else "The games library is unavailable, so games library alerts cannot fire", "The games library is available again, so games library alerts can fire")
         debug_print("Tracked features", unavailable=",".join(unavailable_features) or "none")
         # An outage that lasts is news once, so only the features that changed since the last cycle are reported
         verbose_notice(*feature_outages.transitions(unavailable_features))
@@ -7969,73 +8146,13 @@ def steam_monitor_user(steamid, csv_file_name, profile_csv_file_name=None):
                     alive_since = int(time.time())
                     last_friend_ids = current_friend_ids
 
-        # Games library changed
+        # Startup and polling share one rule for a successful check. A failed check never reaches this path
         if GAMES_LIBRARY_CHECK and current_games_count is not None and current_games_appids is not None:
-            if last_games_count is None or last_games_appids is None:
-                last_games_count = current_games_count
-                last_games_appids = set(current_games_appids)
-            else:
-                count_changed = current_games_count != last_games_count
-                appids_changed = current_games_appids != last_games_appids
-                if count_changed or appids_changed:
-                    old_count = last_games_count
-                    new_count = current_games_count
-                    delta = new_count - old_count
-                    added_appids = sorted(current_games_appids - last_games_appids)
-                    removed_appids = sorted(last_games_appids - current_games_appids)
-
-                    if delta != 0:
-                        delta_str = f"+{delta}" if delta > 0 else str(delta)
-                        print(f"Steam user {username} games library changed from {old_count} to {new_count} ({delta_str})")
-                    else:
-                        print(f"Steam user {username} games library changed (same count: {new_count}, titles changed)")
-
-                    # Only the changed IDs are looked up, and only when the library actually changed
-                    unknown_appids = [appid for appid in added_appids + removed_appids if appid not in games_app_names]
-                    if unknown_appids:
-                        games_app_names.update(fetch_app_names(s_api, steamid, unknown_appids))
-
-                    if added_appids:
-                        print(f"Added: {', '.join(steam_app_label(a, games_app_names) for a in added_appids)}")
-                    if removed_appids:
-                        print(f"Removed: {', '.join(steam_app_label(a, games_app_names) for a in removed_appids)}")
-
-                    try:
-                        write_json_atomic(steam_games_file, {"game_count": new_count, "appids": sorted(current_games_appids), "app_names": {str(appid): games_app_names[appid] for appid in sorted(current_games_appids) if appid in games_app_names}})
-                    except Exception as e:
-                        print_recovery_error(e, context="file.unwritable", detail=f"Cannot save the games library to '{steam_games_file}': {e}")
-
-                    if profile_csv_file_name:
-                        try:
-                            write_profile_csv_entry(profile_csv_file_name, date=datetime.fromtimestamp(int(time.time())), event="games_library_change", old_value=old_count, new_value=new_count, delta=delta,)
-                        except Exception as e:
-                            print_recovery_error(e, context="file.unwritable")
-
-                    if GAMES_LIBRARY_NOTIFICATION or webhook_event_enabled("games"):
-                        m_subject_games = f"Steam user {username} games library changed (now {new_count})"
-                        body_parts = []
-                        body_parts_html = []
-                        if delta != 0:
-                            delta_str = f"+{delta}" if delta > 0 else str(delta)
-                            body_parts.append(f"Steam user {username} games library changed from {old_count} to {new_count} ({delta_str})")
-                            body_parts_html.append(f"Steam user {steam_user_html(username, steamid)} games library changed from <b>{old_count}</b> to <b>{new_count}</b> (<b>{html_text(delta_str)}</b>)")
-                        else:
-                            body_parts.append(f"Steam user {username} games library changed (same count: {new_count}, titles changed)")
-                            body_parts_html.append(f"Steam user {steam_user_html(username, steamid)} games library changed (same count: <b>{new_count}</b>, titles changed)")
-                        if added_appids:
-                            body_parts.append(f"Added: {', '.join(steam_app_label(a, games_app_names) for a in added_appids)}")
-                            body_parts_html.append(f"Added: {', '.join(steam_app_label_html(a, games_app_names) for a in added_appids)}")
-                        if removed_appids:
-                            body_parts.append(f"Removed: {', '.join(steam_app_label(a, games_app_names) for a in removed_appids)}")
-                            body_parts_html.append(f"Removed: {', '.join(steam_app_label_html(a, games_app_names) for a in removed_appids)}")
-                        m_body_games = "\n".join(body_parts) + get_cur_ts(nl_ch + nl_ch + "Timestamp: ")
-                        m_body_games_html = html_email_body("<br>".join(body_parts_html) + get_cur_ts("<br><br>Timestamp: "))
-                        send_notification_channels("games", m_subject_games, m_body_games, m_body_games_html, email_enabled=GAMES_LIBRARY_NOTIFICATION, image_url=current_avatar_url)
-
-                    print_cur_ts("Timestamp:\t\t\t")
-                    alive_since = int(time.time())
-                    last_games_count = current_games_count
-                    last_games_appids = set(current_games_appids)
+            last_games_appids, games_changed = observe_games_library(s_api, steamid, username, last_games_appids, current_games_appids, games_app_names, steam_games_file, profile_csv_file_name, baseline_from_disk=not games_observed_this_run, snapshot_saved_at=games_snapshot_saved_at, image_url=current_avatar_url)
+            games_observed_this_run = True
+            games_snapshot_saved_at = None
+            if games_changed:
+                alive_since = int(time.time())
 
         # Display (persona) name changed
         if current_username and current_username != username:
@@ -8161,7 +8278,7 @@ def validate_secret_action_args(args, parser, action_dest, action_flag, permitte
 
 # Parses configuration and starts the selected Steam Monitor action
 def main():
-    global CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LIVENESS_REMINDER_SECONDS, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, STEAM_STATUS_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, NAME_CHANGE_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME, NTFY_IMAGES, EXPORTED_SECRET_KEYS, TRUNCATE_CHARS, WEBHOOK_ENABLED, DEBUG_MODE, COMMAND_LINE_SECRET_KEYS
+    global CLI_CONFIG_PATH, CONFIG_DISCOVERY_DISABLED, DOTENV_FILE, LIVENESS_REMINDER_SECONDS, STEAM_API_KEY, CSV_FILE, PROFILE_CSV_FILE, STEAM_STATUS_FILE, DISABLE_LOGGING, ST_LOGFILE, ACTIVE_INACTIVE_NOTIFICATION, GAME_CHANGE_NOTIFICATION, STATUS_NOTIFICATION, NAME_CHANGE_NOTIFICATION, ERROR_NOTIFICATION, STEAM_LEVEL_XP_CHECK, STEAM_LEVEL_XP_NOTIFICATION, FRIENDS_CHECK, FRIENDS_NOTIFICATION, GAMES_LIBRARY_CHECK, GAMES_LIBRARY_NOTIFICATION, REPORT_CHANGES_AFTER_RESTART, STEAM_CHECK_INTERVAL, STEAM_ACTIVE_CHECK_INTERVAL, FILE_SUFFIX, SMTP_PASSWORD, stdout_bck, COLORED_OUTPUT, COLOR_THEME, NTFY_IMAGES, EXPORTED_SECRET_KEYS, TRUNCATE_CHARS, WEBHOOK_ENABLED, DEBUG_MODE, COMMAND_LINE_SECRET_KEYS
 
     if "--generate-config" in sys.argv and not any(flag in sys.argv for flag in SECRET_ACTION_FLAGS):
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
@@ -8573,6 +8690,13 @@ def main():
         help="Track changes in games library (game count); uses minimal API data (no names/icons)"
     )
     opts.add_argument(
+        "--no-restart-changes",
+        dest="report_changes_after_restart",
+        action="store_false",
+        default=None,
+        help="Do not report games library changes made while the tool was stopped (later changes still report)"
+    )
+    opts.add_argument(
         "-b", "--csv-file",
         dest="csv_file",
         metavar="CSV_FILENAME",
@@ -8797,7 +8921,7 @@ def main():
         doctor_target = args.resolve_community_url or args.steam64_id or TARGET_STEAM_ID
         doctor_exit = run_doctor(target_value=doctor_target, config_path=cfg_path, env_path=env_path)
         # A target the config file already carries is left out, so the command stays as short as the wizard's
-        print_doctor_next_steps(doctor_target, TARGET_STEAM_ID, doctor_exit)
+        print_doctor_next_steps(doctor_target, TARGET_STEAM_ID, doctor_exit, cli_args=args)
         sys.exit(doctor_exit)
 
     configuration_errors = runtime_configuration_errors() + runtime_boolean_errors()
@@ -8911,7 +9035,7 @@ def main():
         sys.stdout = stdout_bck
         sys.exit(1 if info_result is False else 0)
 
-    if SMTP_HOST.startswith("your_smtp_server_"):
+    if SMTP_HOST.startswith("your_smtp_server_") and set(_startup_email_notification_categories()) <= {"errors"}:
         verbose_print("Email notifications are off because SMTP_HOST is still the shipped placeholder")
         ACTIVE_INACTIVE_NOTIFICATION = False
         GAME_CHANGE_NOTIFICATION = False
@@ -8921,9 +9045,6 @@ def main():
         STEAM_LEVEL_XP_NOTIFICATION = False
         FRIENDS_NOTIFICATION = False
         GAMES_LIBRARY_NOTIFICATION = False
-    if WEBHOOK_ENABLED and not validate_webhook_url():
-        verbose_print("Webhook notifications are off because WEBHOOK_URL is not a complete HTTPS link")
-        WEBHOOK_ENABLED = False
 
     emit_startup_summary(build_startup_summary(s_id, cfg_path, env_path, FINAL_LOG_PATH), show_full=full_startup_summary_enabled())
 
