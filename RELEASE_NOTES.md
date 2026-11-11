@@ -8,7 +8,7 @@ Version **2.2** reports games added or removed while the tool was stopped and fi
 
 **Features and improvements**:
 
-- **NEW:** **Library changes made while stopped are reported** - The first successful check after a start compares the library with the saved snapshot and reports the difference. Use **`--no-restart-changes`** or **`REPORT_CHANGES_AFTER_RESTART = False`** to skip this report. See [Games Library After a Restart](https://misiektoja.github.io/steam_monitor/usage/#games-library-after-a-restart) (thanks [@Jazzwind](https://github.com/Jazzwind) for the proposal in [#18](https://github.com/misiektoja/steam_monitor/discussions/18) and the implementation in [#20](https://github.com/misiektoja/steam_monitor/pull/20))
+- **NEW:** **Games library changes made while stopped are reported** - The first successful check after a start compares the games library with the saved snapshot and reports the difference. Use **`--no-restart-changes`** or **`REPORT_CHANGES_AFTER_RESTART = False`** to skip this report. See [Games Library After a Restart](https://misiektoja.github.io/steam_monitor/usage/#games-library-after-a-restart) (thanks [@Jazzwind](https://github.com/Jazzwind) for the proposal in [#18](https://github.com/misiektoja/steam_monitor/discussions/18) and the implementation in [#20](https://github.com/misiektoja/steam_monitor/pull/20))
 - **IMPROVE:** **Shorter games library alerts** - Email and webhook alerts list at most five added and five removed games and give the total and the number omitted when they leave games out. The log still lists every game (thanks [@Jazzwind](https://github.com/Jazzwind), from [#20](https://github.com/misiektoja/steam_monitor/pull/20))
 
 **Bug fixes**:
