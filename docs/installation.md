@@ -1,3 +1,7 @@
+---
+description: "Install steam_monitor from PyPI or as a manual script on Windows, macOS or Linux. Covers requirements, a Python walkthrough and upgrades."
+---
+
 # Installation
 
 Steam Monitor runs as a local Python program. Choose the PyPI package for the shortest command or the manual script to run a downloaded file.

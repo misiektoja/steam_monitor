@@ -1,3 +1,8 @@
+---
+title: "Steam player activity tracker with real-time alerts"
+description: "Track Steam players in real time: game sessions, profile changes, friends and game libraries, with email, Discord and ntfy alerts."
+---
+
 # steam_monitor
 
 [![GitHub Release](https://img.shields.io/github/v/release/misiektoja/steam_monitor?style=flat-square&color=blue)](https://github.com/misiektoja/steam_monitor/releases)

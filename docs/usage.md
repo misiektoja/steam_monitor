@@ -1,3 +1,7 @@
+---
+description: "How to run steam_monitor: user info and monitoring modes, email and webhook alerts, CSV export, status file, check intervals and signals."
+---
+
 # Usage
 
 Setting flags in these examples apply to that run. Repeat them on later runs or [save the corresponding settings](configuration.md#configuration-file).

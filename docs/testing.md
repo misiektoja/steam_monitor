@@ -1,3 +1,7 @@
+---
+description: "Run the offline steam_monitor test suite with pytest and see what it covers. Steam client and Web API calls are replaced with test doubles."
+---
+
 # Testing
 
 The offline test suite covers everything in `steam_monitor.py` that can run without network access. Steam client and Web API calls are replaced with test doubles.

@@ -1,3 +1,7 @@
+---
+description: "Set up steam_monitor with the setup wizard. Covers the Steam Web API key, profile privacy settings and the commands that start monitoring."
+---
+
 # Setup & First Run
 
 <a id="run-the-setup-wizard"></a>
